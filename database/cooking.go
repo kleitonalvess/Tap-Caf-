@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"coffe-mania/database/playerstate"
+	"coffe-mania/shared/gamerules"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -16,13 +18,17 @@ import (
 )
 
 const starterStoveItemID = 3070000
+
+// Placing ingredients is the avatar animation before the recipe timer starts.
 const cookingPlacementDuration = 2 * time.Second
-const betaCakeDuration = 30 * time.Second
 
 var errStoveOccupied = errors.New("stove occupied")
 var errStoveNotOwned = errors.New("stove not owned")
 var errDishNotReady = errors.New("dish not ready")
 var errCookingCannotCancel = errors.New("cooking cannot be canceled")
+var errUnknownRecipe = errors.New("Receita desconhecida.")
+var errRecipeLocked = errors.New("Receita bloqueada para o seu nível.")
+var errCookingCoins = errors.New("Moedas insuficientes para esta receita.")
 
 type cookingView struct {
 	ID          string `json:"id"`
@@ -107,9 +113,12 @@ func snapshotCooking(app core.App, userID string, now types.DateTime) (cookingSn
 	return result, nil
 }
 
+// startCooking debits the recipe cost only after ownership and occupancy checks,
+// in the same transaction that creates the job.
 func startCooking(app core.App, userID, stoveID, recipeID string, now types.DateTime) error {
-	if recipeID != "cake_1" {
-		return errors.New("unknown recipe")
+	recipe, ok := gamerules.RecipeByID(recipeID)
+	if !ok {
+		return errUnknownRecipe
 	}
 	return app.RunInTransaction(func(txApp core.App) error {
 		stove, err := txApp.FindRecordById("player_stoves", stoveID)
@@ -133,16 +142,32 @@ func startCooking(app core.App, userID, stoveID, recipeID string, now types.Date
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
+		state, err := txApp.FindFirstRecordByData(playerstate.Collection, "user", userID)
+		if err != nil {
+			return err
+		}
+		if state.GetInt("level") < recipe.Level {
+			return errRecipeLocked
+		}
+		if state.GetInt64("gold") < recipe.CostCoins {
+			return errCookingCoins
+		}
+		if recipe.CostCoins > 0 {
+			state.Set("gold", state.GetInt64("gold")-recipe.CostCoins)
+			if err = txApp.Save(state); err != nil {
+				return err
+			}
+		}
 		collection, err := txApp.FindCollectionByNameOrId("stove_cooking")
 		if err != nil {
 			return err
 		}
 		job := core.NewRecord(collection)
 		job.Load(map[string]any{
-			"user": userID, "stove": stoveID, "recipe_id": recipeID,
+			"user": userID, "stove": stoveID, "recipe_id": recipe.ID,
 			"preparing_at": now,
 			"started_at":   now.Add(cookingPlacementDuration),
-			"ready_at":     now.Add(cookingPlacementDuration + betaCakeDuration),
+			"ready_at":     now.Add(cookingPlacementDuration + recipe.CookDuration()),
 		})
 		return txApp.Save(job)
 	})
@@ -168,8 +193,13 @@ func serveCooking(app core.App, userID, stoveID string, now types.DateTime) erro
 		if err != nil {
 			return err
 		}
+		// A recipe removed from the catalogue still leaves one serving to clear the stove.
+		servings := 1
+		if recipe, ok := gamerules.RecipeByID(job.GetString("recipe_id")); ok {
+			servings = recipe.Servings
+		}
 		food := core.NewRecord(foods)
-		food.Load(map[string]any{"user": userID, "recipe_id": job.GetString("recipe_id"), "job_id": job.Id})
+		food.Load(map[string]any{"user": userID, "recipe_id": job.GetString("recipe_id"), "job_id": job.Id, "servings": servings})
 		if err = txApp.Save(food); err != nil {
 			return err
 		}
@@ -244,7 +274,7 @@ func registerCookingRoutes(e *core.ServeEvent) {
 		if err := decoder.Decode(new(any)); err != io.EOF {
 			return r.BadRequestError("Pedido inválido.", nil)
 		}
-		if body.StoveID == "" || body.RecipeID != "cake_1" {
+		if _, ok := gamerules.RecipeByID(body.RecipeID); body.StoveID == "" || !ok {
 			return r.BadRequestError("Fogão ou receita inválidos.", nil)
 		}
 		if roomService(r.App) != nil {
@@ -256,6 +286,8 @@ func registerCookingRoutes(e *core.ServeEvent) {
 				return r.NotFoundError("Fogão indisponível.", nil)
 			case errors.Is(err, errStoveOccupied):
 				return apis.NewApiError(http.StatusConflict, "Fogão ocupado.", nil)
+			case errors.Is(err, errRecipeLocked), errors.Is(err, errCookingCoins):
+				return apis.NewApiError(http.StatusConflict, err.Error(), nil)
 			default:
 				return r.InternalServerError("Não foi possível iniciar o preparo.", err)
 			}

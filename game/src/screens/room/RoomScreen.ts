@@ -7,9 +7,9 @@ import {
   Sprite,
   Text,
   TextStyle,
+  Texture,
   type FederatedPointerEvent,
   type FederatedWheelEvent,
-  type Texture,
 } from 'pixi.js';
 
 import { FONT_FAMILY } from '../../core/fonts';
@@ -24,7 +24,7 @@ import { createActionBarBetaSlots } from './ActionBarBetaSlots';
 import { MAIN_ACTION_BAR_SCALE, StoreActionBar } from './StoreActionBar';
 import { RoomStoreController } from './RoomStoreController';
 import { roomModelItems, type RoomSnapshot, type RoomInventoryClient } from '../../game/room-inventory';
-import { RoomRealtime, type RoomEvent, type SharedActor, type SharedWorld } from '../../game/room-realtime';
+import { RoomRealtime, type RoomEvent, type SharedActor, type SharedPayment, type SharedWorld } from '../../game/room-realtime';
 import { WardrobeScreenModal, type WardrobeScreenTextures } from './WardrobeScreenModal';
 import { SettingsModal, type SettingsModalOptions } from '../../ui/SettingsModal';
 import { findPath } from '../../world/PathFinder';
@@ -65,7 +65,8 @@ import { NpcEmotion } from './NpcEmotion';
 import { RoomDepthSorter, setItemOverlayDepth } from './RoomDepthSorter';
 import { OutsideNpcManager, type PreparedNpcView } from './OutsideNpcManager';
 import { createProceduralWallView, type WallWallpaper } from './ProceduralWallView';
-import { TopBars, type TopBarsTextures } from './TopBars';
+import { TOP_BAR_ICON_FRAMES, TopBars, type TopBarsTextures } from './TopBars';
+import { FloatingRewards, LevelUpToast } from './FloatingRewards';
 import type { PlayerState } from '../../game/player-state';
 import { cookingTime, type CookingClient, type CookingSnapshot, type StoveCooking } from '../../game/cooking';
 import {
@@ -243,6 +244,8 @@ export class RoomScreen implements Screen {
 
   /** Barras de recursos fora da câmera. */
   readonly topBars?: TopBars;
+  private readonly floatingRewards: FloatingRewards;
+  private readonly levelUpToast = new LevelUpToast();
 
   private readonly cameraLayer = new Container();
   /** Cidade/estrada atrás do quarto, movida e ampliada pela mesma câmera. */
@@ -493,6 +496,13 @@ export class RoomScreen implements Screen {
       this.topBarsBaseWidth = options.topBarsTextures.back.width;
       this.view.addChild(this.topBars.view);
     }
+    // Same coin and XP icons as the top bars, cut from their shared atlas.
+    const rewardIcon = (index: 1 | 2) => options.topBarsTextures && new Texture({
+      source: options.topBarsTextures.icons.source,
+      frame: new Rectangle(TOP_BAR_ICON_FRAMES[index].x, TOP_BAR_ICON_FRAMES[index].y, TOP_BAR_ICON_FRAMES[index].width, TOP_BAR_ICON_FRAMES[index].height),
+    });
+    this.floatingRewards = new FloatingRewards(this.world, { coin: rewardIcon(1), xp: rewardIcon(2) });
+    this.view.addChild(this.levelUpToast.view);
 
     if (options.actionBarTexture) {
       this.actionBarLayer.label = 'room-action-bar-layer';
@@ -780,6 +790,7 @@ export class RoomScreen implements Screen {
         playRandomSfx([SFX_START_COOKING_URL]);
       }
     }
+    if (event.type === 'payment' && event.payment) this.showPayment(event.payment);
     for (const id of event.removed ?? []) { const entry = this.liveActors.get(id); if (entry) { this.removeLiveActor(id, entry); this.liveActors.delete(id); } }
     if (event.type === 'world' && this.roomSnapshot && event.revision !== undefined && event.revision >= this.roomSnapshot.revision) {
       const units = new Map(this.roomSnapshot.inventory.map((unit) => [unit.unitId, unit]));
@@ -791,10 +802,24 @@ export class RoomScreen implements Screen {
     if (event.cooking) this.acceptSharedCooking(event.cooking);
     if (event.type === 'error') {
       this.target.clear();
-      if (this.connectionHint) { clearTimeout(this.noticeTimer); this.connectionHint.text = event.message ?? 'Ação recusada.'; this.connectionHint.visible = true;
-        this.noticeTimer = setTimeout(() => { if (this.connectionHint && this.realtime?.connected) this.connectionHint.visible = false; }, 3000);
-      }
+      this.showNotice(event.message ?? 'Ação recusada.');
     }
+  }
+
+  private showNotice(message: string): void {
+    if (!this.connectionHint) return;
+    clearTimeout(this.noticeTimer); this.connectionHint.text = message; this.connectionHint.visible = true;
+    this.noticeTimer = setTimeout(() => { if (this.connectionHint && this.realtime?.connected) this.connectionHint.visible = false; }, 3000);
+  }
+
+  /** Coins rise over the customer who paid; only the owner sees the level-up banner. */
+  private showPayment(payment: SharedPayment): void {
+    const entry = payment.actorId ? this.liveActors.get(payment.actorId) : undefined;
+    if (entry) {
+      const view = entry.view.view;
+      this.floatingRewards.spawn(view.x, view.y, view.zIndex, payment.coins, payment.xp);
+    }
+    if (payment.levelUp && this.roomSnapshot?.canEdit !== false) this.levelUpToast.show(payment.level, payment.levelReward ?? 0);
   }
 
   private acceptSharedWorld(world: SharedWorld): void {
@@ -980,6 +1005,7 @@ export class RoomScreen implements Screen {
         this.startingCook = false;
         this.stoveViews.get(pending.stove)?.forEach((view) => { view.alpha = 1; });
         console.warn('[cooking] preparo rejeitado', error);
+        if (!this.destroyed) this.showNotice(error instanceof Error ? error.message : 'Não foi possível iniciar o preparo.');
         void this.cookingClient!.refresh().then((snapshot) => {
           if (!this.destroyed) this.acceptCookingSnapshot(snapshot, true);
         }).catch((refreshError: unknown) => console.warn('[cooking] falha ao atualizar fogões', refreshError));
@@ -2321,6 +2347,8 @@ export class RoomScreen implements Screen {
     }
 
     this.outsideNpcManager?.update(deltaMs);
+    this.floatingRewards.update(deltaMs, !this.storeBar?.isOpen);
+    this.levelUpToast.update(deltaMs);
     if (this.doorViews.length) {
       const actors = this.actors;
       for (const door of this.doorViews) door.update(deltaMs, actors);
@@ -2401,6 +2429,8 @@ export class RoomScreen implements Screen {
     this.sharedCookingViews.forEach((view) => view.destroy()); this.sharedCookingViews.clear();
     this.sharedCookingProgress.forEach(({ bar }) => bar.destroy()); this.sharedCookingProgress.clear();
     this.liveEmotions.forEach(({ effect }) => effect.destroy()); this.liveEmotions.clear();
+    this.floatingRewards.destroy();
+    this.levelUpToast.destroy();
     this.roomStore?.destroy();
     this.destroyed = true;
     this.closeStoveActions();

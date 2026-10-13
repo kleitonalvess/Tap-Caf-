@@ -94,7 +94,7 @@ func publicWorld(app core.App, owner string) (gamewire.World, error) {
 		return w, err
 	}
 	for _, food := range foods {
-		w.Foods = append(w.Foods, gamewire.Food{ID: food.Id, Recipe: food.GetString("recipe_id")})
+		w.Foods = append(w.Foods, gamewire.Food{ID: food.Id, Recipe: food.GetString("recipe_id"), Servings: max(1, food.GetInt("servings"))})
 	}
 	return w, nil
 }
@@ -143,7 +143,15 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 			return fail(404, "Item indisponível.")
 		case errors.Is(err, errRoomPosition):
 			return fail(400, err.Error())
-		case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy), errors.Is(err, errStoveOccupied), errors.Is(err, errDishNotReady), errors.Is(err, errCookingCannotCancel):
+		case errors.Is(err, errStoveOccupied):
+			return fail(409, "Fogão ocupado.")
+		case errors.Is(err, errDishNotReady):
+			return fail(409, "O prato ainda não está pronto.")
+		case errors.Is(err, errCookingCannotCancel):
+			return fail(409, "Este preparo não pode mais ser cancelado.")
+		case errors.Is(err, errUnknownRecipe):
+			return fail(400, err.Error())
+		case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy), errors.Is(err, errRecipeLocked), errors.Is(err, errCookingCoins):
 			return fail(409, err.Error())
 		default:
 			return fail(500, "Não foi possível salvar a operação.")
@@ -301,7 +309,11 @@ func registerGameBridge(e *core.ServeEvent) error {
 		if err != nil {
 			return err
 		}
-		return r.JSON(200, gamewire.Seed{World: world, NPCs: npcs, Looks: looks})
+		state, err := playerstate.GetOrCreate(r.App, owner)
+		if err != nil {
+			return err
+		}
+		return r.JSON(200, gamewire.Seed{World: world, NPCs: npcs, Looks: looks, PopularityTenths: state.GetInt("satisfaction_current_tenths")})
 	})
 	group.POST("/{owner}/active", func(r *core.RequestEvent) error {
 		var body struct {
@@ -338,17 +350,30 @@ func registerGameBridge(e *core.ServeEvent) error {
 		var body struct {
 			FoodID string `json:"foodId"`
 		}
+		if r.BindBody(&body) != nil || body.FoodID == "" {
+			return r.BadRequestError("Inválido.", nil)
+		}
+		payment, err := serveCustomer(r.App, r.Request.PathValue("owner"), body.FoodID)
+		if errors.Is(err, errFoodGone) {
+			return r.NotFoundError("Prato indisponível.", nil)
+		}
+		if err != nil {
+			return err
+		}
+		return r.JSON(200, payment)
+	})
+	group.POST("/{owner}/feedback", func(r *core.RequestEvent) error {
+		var body struct {
+			Satisfied bool `json:"satisfied"`
+		}
 		if r.BindBody(&body) != nil {
 			return r.BadRequestError("Inválido.", nil)
 		}
-		food, err := r.App.FindRecordById("room_food", body.FoodID)
-		if err != nil || food.GetString("user") != r.Request.PathValue("owner") {
-			return r.NotFoundError("Prato indisponível.", nil)
-		}
-		if err = r.App.Delete(food); err != nil {
+		popularity, err := recordVerdict(r.App, r.Request.PathValue("owner"), body.Satisfied)
+		if err != nil {
 			return err
 		}
-		return r.JSON(200, map[string]bool{"ok": true})
+		return r.JSON(200, map[string]int{"popularityTenths": popularity})
 	})
 	return nil
 }

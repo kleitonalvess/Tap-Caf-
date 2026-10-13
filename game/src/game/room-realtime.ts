@@ -2,7 +2,12 @@ import type { CookingSnapshot } from './cooking';
 import type { RoomUnit } from './room-inventory';
 import type { Tile } from '../world/iso';
 
-export interface SharedFood { id: string; recipeId: string }
+export interface SharedFood { id: string; recipeId: string; servings?: number }
+/** Credited by the server when the customer received the serving; the HUD refresh comes from the same save. */
+export interface SharedPayment {
+  actorId?: string; recipeId: string; coins: number; xp: number; level: number;
+  levelUp?: boolean; levelReward?: number; servingsLeft: number; popularityTenths: number;
+}
 export interface SharedAction { kind: 'cooking' | 'serving' | 'seated' | 'eating'; stoveId?: string; startedAt: number; duration: number }
 export interface SharedEmotion { id: string; kind: 'satisfied' | 'dissatisfied'; startedAt: number; duration: number }
 export interface SharedActor {
@@ -17,9 +22,9 @@ export interface SharedWorld {
   units: RoomUnit[]; foods: SharedFood[]; cooking?: CookingSnapshot;
 }
 export interface RoomEvent {
-  type: 'welcome' | 'actors' | 'world' | 'food' | 'ack' | 'error'; epoch: string; seq: number; serverNow: number;
+  type: 'welcome' | 'actors' | 'world' | 'food' | 'payment' | 'ack' | 'error'; epoch: string; seq: number; serverNow: number;
   selfId?: string; world?: SharedWorld; actors?: SharedActor[]; removed?: string[];
-  units?: RoomUnit[]; revision?: number; foods?: SharedFood[]; cooking?: CookingSnapshot;
+  units?: RoomUnit[]; revision?: number; foods?: SharedFood[]; cooking?: CookingSnapshot; payment?: SharedPayment;
   requestId?: string; message?: string;
 }
 

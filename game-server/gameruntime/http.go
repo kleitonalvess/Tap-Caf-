@@ -52,7 +52,7 @@ func (s *HTTPStorage) request(ctx context.Context, method, path string, body, ou
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return fmt.Errorf("persistence %s: HTTP %d", path, res.StatusCode)
+		return &statusError{path: path, code: res.StatusCode}
 	}
 	if out != nil {
 		return json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(out)
@@ -75,9 +75,25 @@ func (s *HTTPStorage) Operate(ctx context.Context, op gamewire.Operation) (gamew
 	err := s.request(ctx, "POST", op.Owner+"/operation", op, &out)
 	return out, err
 }
-func (s *HTTPStorage) Consume(ctx context.Context, id, food string) error {
-	return s.request(ctx, "POST", id+"/consume", map[string]string{"foodId": food}, nil)
+func (s *HTTPStorage) Consume(ctx context.Context, id, food string) (gamewire.Payment, error) {
+	var out gamewire.Payment
+	err := s.request(ctx, "POST", id+"/consume", map[string]string{"foodId": food}, &out)
+	var status *statusError
+	if errors.As(err, &status) && status.code == http.StatusNotFound {
+		return out, ErrFoodGone
+	}
+	return out, err
 }
+func (s *HTTPStorage) Feedback(ctx context.Context, id string, satisfied bool) error {
+	return s.request(ctx, "POST", id+"/feedback", map[string]bool{"satisfied": satisfied}, nil)
+}
+
+type statusError struct {
+	path string
+	code int
+}
+
+func (e *statusError) Error() string { return fmt.Sprintf("persistence %s: HTTP %d", e.path, e.code) }
 
 type Server struct {
 	Manager     *Manager

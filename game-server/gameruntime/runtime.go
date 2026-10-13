@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"coffe-mania/shared/gamerules"
 	"coffe-mania/shared/gamewire"
 	"coffe-mania/shared/roomcatalog"
 	"github.com/google/uuid"
@@ -23,7 +24,10 @@ type Storage interface {
 	Active(context.Context, string, int) error
 	Sleep(context.Context, string, gamewire.Sleep) error
 	Operate(context.Context, gamewire.Operation) (gamewire.Result, error)
-	Consume(context.Context, string, string) error
+	// Consume takes one serving and returns the payment already credited to the owner.
+	Consume(context.Context, string, string) (gamewire.Payment, error)
+	// Feedback records a customer verdict that came without a payment.
+	Feedback(context.Context, string, bool) error
 }
 type Options struct {
 	Tick, Step, Grace            time.Duration
@@ -54,6 +58,9 @@ func (o Options) defaults() Options {
 
 var ErrBusy = errors.New("fila do quarto ocupada; tente novamente")
 var ErrClosed = errors.New("instância encerrada")
+
+// ErrFoodGone means persistence no longer has the dish the room listed.
+var ErrFoodGone = errors.New("prato indisponível")
 
 type slot struct {
 	ready chan struct{}
@@ -116,6 +123,8 @@ type room struct {
 	frozenAt      time.Time
 	sleepRetry    time.Time
 	sleepFailures int
+	// Owner popularity in tenths, mirrored from persistence to pace arrivals.
+	popularity int
 }
 
 func (m *Manager) get(ctx context.Context, id string) (*room, error) {
@@ -147,6 +156,10 @@ func (m *Manager) get(ctx context.Context, id string) (*room, error) {
 			m.wg.Done()
 		} else {
 			r := &room{manager: m, id: id, epoch: uuid.NewString(), world: seed.World, grid: newGrid(seed.World), actors: map[string]*entity{}, peers: map[string]*Peer{}, seats: map[string]string{}, looks: seed.Looks, tasks: make(chan task, 256), done: make(chan struct{}), stop: make(chan struct{}), idleAt: time.Now(), spawnAt: time.Now().Add(time.Second)}
+			r.popularity = seed.PopularityTenths
+			if low, _ := gamerules.PopularityBoundsTenths(); r.popularity < low {
+				r.popularity = low
+			}
 			r.occupancy = map[Tile]map[string]bool{}
 			r.actorTiles = map[string][]Tile{}
 			r.frozenAt = time.Now()
@@ -1141,8 +1154,15 @@ func (r *room) tick(now time.Time) {
 	}
 	if count < r.manager.options.MaxNPCs && !now.Before(r.spawnAt) {
 		r.spawnNPC(now)
-		r.spawnAt = now.Add(time.Duration(4+rand.IntN(4)) * time.Second)
+		r.spawnAt = now.Add(r.arrivalInterval())
 	}
+}
+
+// arrivalInterval follows the popularity band, with ±25% jitter so customers
+// do not arrive in lockstep. MaxNPCs still caps how many are inside.
+func (r *room) arrivalInterval() time.Duration {
+	base := time.Minute / time.Duration(gamerules.CustomersPerMinute(r.popularity))
+	return time.Duration(float64(base) * (0.75 + rand.Float64()/2))
 }
 func line(from, to Tile) []Tile {
 	result := []Tile{}
@@ -1246,16 +1266,26 @@ func (r *room) advanceNPC(a *entity, now time.Time) bool {
 		if a.TableID != "" && len(r.world.Foods) > 0 {
 			food := r.world.Foods[0]
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			err := r.manager.store.Consume(ctx, r.id, food.ID)
+			payment, err := r.manager.store.Consume(ctx, r.id, food.ID)
 			cancel()
 			if err == nil {
-				r.world.Foods = r.world.Foods[1:]
+				r.takeServing(food.ID, payment.ServingsLeft)
+				food.Servings = 0
 				a.Food = &food
+				r.popularity = payment.PopularityTenths
 				a.State = "eating"
 				a.due = now.Add(8 * time.Second)
 				a.Action = &gamewire.ActorAction{Kind: "eating", StartedAt: now.UnixMilli(), Duration: 8000}
 				r.broadcast(gamewire.Event{Type: "food", Foods: r.world.Foods}, "")
+				// Shown when credited: the owner's HUD updates from the same transaction.
+				payment.ActorID = a.ID
+				r.broadcast(gamewire.Event{Type: "payment", Payment: &payment}, "")
 				return false
+			}
+			if errors.Is(err, ErrFoodGone) {
+				// Drop the stale entry, so the next customer tries the following dish.
+				r.takeServing(food.ID, 0)
+				r.broadcast(gamewire.Event{Type: "food", Foods: r.world.Foods}, "")
 			}
 		}
 		a.due = now.Add(2 * time.Second)
@@ -1273,6 +1303,37 @@ func (r *room) advanceNPC(a *entity, now time.Time) bool {
 	}
 	return false
 }
+
+// takeServing mirrors persistence after a serving was taken or found missing.
+func (r *room) takeServing(foodID string, left int) {
+	foods := r.world.Foods[:0:0]
+	for _, food := range r.world.Foods {
+		if food.ID == foodID {
+			if left <= 0 {
+				continue
+			}
+			food.Servings = left
+		}
+		foods = append(foods, food)
+	}
+	r.world.Foods = foods
+}
+
+// reportUnsatisfied applies the verdict locally and persists it off the room
+// goroutine; the HTTP call never touches room state.
+func (r *room) reportUnsatisfied() {
+	r.popularity = gamerules.ApplyCustomer(r.popularity, false)
+	r.manager.wg.Add(1)
+	go func() {
+		defer r.manager.wg.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := r.manager.store.Feedback(ctx, r.id, false); err != nil {
+			log.Printf("customer feedback not saved: room=%s error=%v", r.id, err)
+		}
+	}()
+}
+
 func (r *room) standNPC(a *entity, now time.Time) {
 	dest, ok := r.freeNeighbour(Tile{X: a.X, Y: a.Y}, a)
 	if !ok {
@@ -1299,6 +1360,11 @@ func (r *room) exitNPC(a *entity, now time.Time) {
 	entry := Tile{X: door.X, Y: door.Y}
 	a.State = "leaving"
 	a.Action = nil
+	// A customer shows one verdict. Without the satisfied one from eating, this
+	// exit is a complaint and costs popularity exactly once (the flag is saved).
+	if !a.EmotionShown {
+		r.reportUnsatisfied()
+	}
 	r.startEmotion(a, "dissatisfied", now)
 	if (Tile{X: a.X, Y: a.Y}) != entry {
 		if !r.route(a, entry, now) {

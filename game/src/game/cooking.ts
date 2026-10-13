@@ -55,6 +55,15 @@ export class CookingClient {
     return response;
   }
 
+  /** Conflicts carry the server's reason, such as missing coins or a locked recipe. */
+  private async conflict(response: Response, fallback: string): Promise<Error> {
+    try {
+      const body = await response.json() as { message?: unknown };
+      if (typeof body.message === 'string' && body.message) return new Error(body.message);
+    } catch { /* Corpo ausente ou inválido: usa a mensagem padrão. */ }
+    return new Error(fallback);
+  }
+
   private async read(response: Response): Promise<CookingSnapshot> {
     if (!response.ok) throw new Error('Não foi possível atualizar os fogões.');
     const snapshot = await response.json() as CookingSnapshot;
@@ -80,7 +89,7 @@ export class CookingClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stoveId, recipeId }),
     });
-    if (response.status === 409) throw new Error('Fogão ocupado.');
+    if (response.status === 409) throw await this.conflict(response, 'Fogão ocupado.');
     return this.read(response);
   }
 
@@ -90,7 +99,7 @@ export class CookingClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stoveId }),
     });
-    if (response.status === 409) throw new Error('O prato ainda não está pronto.');
+    if (response.status === 409) throw await this.conflict(response, 'O prato ainda não está pronto.');
     return this.read(response);
   }
 
@@ -100,7 +109,7 @@ export class CookingClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stoveId }),
     });
-    if (response.status === 409) throw new Error('Este preparo não pode mais ser cancelado.');
+    if (response.status === 409) throw await this.conflict(response, 'Este preparo não pode mais ser cancelado.');
     return this.read(response);
   }
 }

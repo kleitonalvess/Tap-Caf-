@@ -20,6 +20,22 @@ type Unit struct {
 type Food struct {
 	ID     string `json:"id"`
 	Recipe string `json:"recipeId"`
+	// Servings left in this dish; each customer takes one.
+	Servings int `json:"servings,omitempty"`
+}
+
+// Payment is credited by persistence when a customer takes a serving; the room
+// broadcasts it at that moment, together with the owner's HUD update.
+type Payment struct {
+	ActorID          string `json:"actorId,omitempty"`
+	RecipeID         string `json:"recipeId"`
+	Coins            int64  `json:"coins"`
+	XP               int64  `json:"xp"`
+	Level            int    `json:"level"`
+	LevelUp          bool   `json:"levelUp,omitempty"`
+	LevelReward      int64  `json:"levelReward,omitempty"`
+	ServingsLeft     int    `json:"servingsLeft"`
+	PopularityTenths int    `json:"popularityTenths"`
 }
 type World struct {
 	RoomID   string          `json:"roomId"`
@@ -74,6 +90,8 @@ type Seed struct {
 	World World    `json:"world"`
 	NPCs  []Actor  `json:"npcs"`
 	Looks []string `json:"looks"`
+	// Owner popularity in tenths; it paces customer arrivals.
+	PopularityTenths int `json:"popularityTenths"`
 }
 type Sleep struct {
 	NPCs []Actor `json:"npcs"`
@@ -102,6 +120,7 @@ type Event struct {
 	Revision  int             `json:"revision,omitempty"`
 	Cooking   json.RawMessage `json:"cooking,omitempty"`
 	Foods     []Food          `json:"foods,omitempty"`
+	Payment   *Payment        `json:"payment,omitempty"`
 	RequestID string          `json:"requestId,omitempty"`
 	Message   string          `json:"message,omitempty"`
 }
