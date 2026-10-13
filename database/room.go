@@ -22,6 +22,7 @@ var errRoomPosition = errors.New("Posição inválida ou ocupada para este item.
 var errRoomOwned = errors.New("Esta unidade não pertence ao seu inventário.")
 var errRoomOperation = errors.New("Identificador de operação já utilizado em outro pedido.")
 var errRoomBusy = errors.New("Não é possível mover um fogão durante o preparo.")
+var errCounterBusy = errors.New("Não é possível mover um balcão com comida.")
 var requestKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{16,80}$`)
 
 type roomUnit struct {
@@ -100,7 +101,7 @@ func ensureRoom(app core.App, userID string) error {
 			}
 			return tx.Save(unit)
 		}
-		starters := [][4]int{{3070000, 6, 2, 3}, {3010000, 4, 1, 1}, {3000011, 0, 2, 0}, {3000011, 0, 6, 0},
+		starters := [][4]int{{3070000, 6, 2, 3}, {3080000, 7, 3, 0}, {3010000, 4, 1, 1}, {3000011, 0, 2, 0}, {3000011, 0, 6, 0},
 			{3040001, 2, 3, 0}, {3040001, 2, 5, 0}, {3040001, 5, 5, 0}, {3030010, 3, 3, 0}, {3030010, 3, 5, 0}, {3030010, 6, 5, 0},
 			{3200000, 2, 0, 1}, {3300000, 1, 7, 0}, {3100000, 5, 0, 1}, {3020003, 1, 1, 0}, {3020003, 7, 1, 0}, {3020003, 7, 7, 0}}
 		for _, starter := range starters {
@@ -251,6 +252,15 @@ func mutateRoom(app core.App, userID, action string, command roomCommand) (roomS
 				_, err := tx.FindFirstRecordByData("stove_cooking", "stove", stoveID)
 				if err == nil {
 					return errRoomBusy
+				}
+				if !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+			}
+			if item.Kind == "counter" {
+				_, err := tx.FindFirstRecordByFilter("room_food", "user={:user} && counter={:counter}", dbx.Params{"user": userID, "counter": unit.Id})
+				if err == nil {
+					return errCounterBusy
 				}
 				if !errors.Is(err, sql.ErrNoRows) {
 					return err
@@ -416,7 +426,7 @@ func registerRoomRoutes(e *core.ServeEvent) {
 					return r.NotFoundError(err.Error(), nil)
 				case errors.Is(err, errRoomPosition):
 					return r.BadRequestError(err.Error(), nil)
-				case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy):
+				case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy), errors.Is(err, errCounterBusy):
 					return apis.NewApiError(http.StatusConflict, err.Error(), nil)
 				default:
 					return r.InternalServerError("Não foi possível salvar esta operação.", err)

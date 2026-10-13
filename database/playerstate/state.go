@@ -73,9 +73,9 @@ type Progress struct {
 	PopularityTenths int
 }
 
-// Award credits a served customer: coins, XP, level-up rewards and popularity.
+// Grant credits coins and XP and applies level-ups with their coin rewards.
 // Levels never decrease, including values set from the dashboard.
-func Award(record *core.Record, coins, xp int64) Progress {
+func Grant(record *core.Record, coins, xp int64) Progress {
 	previous := max(1, record.GetInt("level"))
 	total := record.GetInt64("experience_current") + xp
 	level := min(gamerules.MaxLevel(), max(previous, gamerules.LevelForXP(total)))
@@ -85,7 +85,14 @@ func Award(record *core.Record, coins, xp int64) Progress {
 	record.Set("experience_current", total)
 	record.Set("experience_max", max(total, gamerules.NextLevelXP(level)))
 	return Progress{Coins: coins, XP: xp, Level: level, LevelUp: level > previous, LevelReward: reward,
-		PopularityTenths: ApplyVerdict(record, true)}
+		PopularityTenths: record.GetInt("satisfaction_current_tenths")}
+}
+
+// Award credits a served customer: Grant plus a satisfied verdict.
+func Award(record *core.Record, coins, xp int64) Progress {
+	progress := Grant(record, coins, xp)
+	progress.PopularityTenths = ApplyVerdict(record, true)
+	return progress
 }
 
 // ApplyVerdict moves the café popularity (stored as satisfaction tenths) for one customer.

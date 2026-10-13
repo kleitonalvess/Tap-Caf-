@@ -16,13 +16,17 @@ type economyStore struct {
 	payment   gamewire.Payment
 	consumed  []string
 	feedbacks []bool
+	slept     *gamewire.Sleep
 }
 
 func (s *economyStore) Load(context.Context, string) (gamewire.Seed, error) {
 	return gamewire.Seed{}, nil
 }
-func (s *economyStore) Active(context.Context, string, int) error           { return nil }
-func (s *economyStore) Sleep(context.Context, string, gamewire.Sleep) error { return nil }
+func (s *economyStore) Active(context.Context, string, int) error { return nil }
+func (s *economyStore) Sleep(_ context.Context, _ string, state gamewire.Sleep) error {
+	s.slept = &state
+	return nil
+}
 func (s *economyStore) Operate(context.Context, gamewire.Operation) (gamewire.Result, error) {
 	return gamewire.Result{}, nil
 }
@@ -137,9 +141,9 @@ func TestUnservedCustomerComplainsOnce(t *testing.T) {
 func TestArrivalIntervalFollowsPopularity(t *testing.T) {
 	r, _ := economyRoom(&economyStore{})
 	r.popularity = 50
-	slowest := r.arrivalInterval()
+	slowest := r.arrivalInterval(time.Now())
 	r.popularity = 1050
-	fastest := r.arrivalInterval()
+	fastest := r.arrivalInterval(time.Now())
 	// 5/min at the minimum (12s ± 25%) and 25/min at the maximum (2.4s ± 25%).
 	if slowest < 9*time.Second || slowest > 15*time.Second || fastest < 1800*time.Millisecond || fastest > 3*time.Second {
 		t.Fatalf("intervals: slowest=%v fastest=%v", slowest, fastest)

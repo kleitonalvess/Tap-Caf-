@@ -41,6 +41,11 @@
       "manifest": "starter_stove/item.json"
     },
     {
+      "id": 3080000,
+      "classname": "serving_counter",
+      "manifest": "serving_counter/item.json"
+    },
+    {
       "id": 3090000,
       "classname": "room_wall",
       "manifest": "room_wall/item.json"

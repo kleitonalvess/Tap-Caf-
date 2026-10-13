@@ -1,6 +1,8 @@
 {
-  "source": "ripped/game-config.xml.txt (referência modificada). Níveis, popularidade, frequência, gorjetas e funcionários vêm do arquivo; receitas são valores de design provisórios.",
+  "source": "ripped/game-config.xml.txt (referência modificada). Níveis, popularidade, frequência, gorjetas e funcionários vêm do arquivo. Receitas, fogão e paciência dos clientes são valores de design provisórios: o repositório não contém a lista original de receitas.",
   "popularity": { "min": 5, "max": 105, "satisfiedDelta": 0.1, "unsatisfiedDelta": 0.3 },
+  "customers": { "patienceSeconds": 40, "cookingArrivalFactor": 1.5 },
+  "stove": { "prepareSeconds": 2, "cleaningCoins": 0, "cleaningXp": 1, "seasonBonusPercent": 25, "seasonXp": 1 },
   "levels": [
     { "level": 1, "requiredXp": 0, "rewardCoins": 5000 },
     { "level": 2, "requiredXp": 7, "rewardCoins": 700 },
@@ -292,6 +294,15 @@
     { "employees": 7, "level": 47 }
   ],
   "recipes": [
-    { "id": "cake_1", "name": "Bolo", "level": 1, "costCoins": 5, "cookSeconds": 30, "servings": 4, "pricePerServing": 4, "xpPerServing": 1, "provisional": true }
+    { "id": "pao_de_queijo", "name": "Pão de Queijo", "level": 1, "costCoins": 3, "cookSeconds": 15, "servings": 3, "pricePerServing": 3, "xpPerServing": 1, "spoilSeconds": 120, "provisional": true },
+    { "id": "cake_1", "name": "Bolo", "level": 1, "costCoins": 5, "cookSeconds": 30, "servings": 4, "pricePerServing": 4, "xpPerServing": 1, "spoilSeconds": 120, "provisional": true },
+    { "id": "coxinha", "name": "Coxinha", "level": 2, "costCoins": 15, "cookSeconds": 120, "servings": 10, "pricePerServing": 4, "xpPerServing": 1, "spoilSeconds": 300, "provisional": true },
+    { "id": "brigadeiro", "name": "Brigadeiro", "level": 3, "costCoins": 25, "cookSeconds": 300, "servings": 15, "pricePerServing": 5, "xpPerServing": 1, "spoilSeconds": 600, "provisional": true },
+    { "id": "misto_quente", "name": "Misto-Quente", "level": 5, "costCoins": 40, "cookSeconds": 600, "servings": 18, "pricePerServing": 6, "xpPerServing": 2, "spoilSeconds": 900, "provisional": true },
+    { "id": "torta_de_frango", "name": "Torta de Frango", "level": 8, "costCoins": 80, "cookSeconds": 900, "servings": 24, "pricePerServing": 7, "xpPerServing": 2, "spoilSeconds": 1800, "provisional": true },
+    { "id": "lasanha", "name": "Lasanha", "level": 10, "costCoins": 120, "cookSeconds": 1800, "servings": 30, "pricePerServing": 8, "xpPerServing": 2, "spoilSeconds": 2700, "provisional": true },
+    { "id": "feijoada", "name": "Feijoada", "level": 12, "costCoins": 200, "cookSeconds": 3600, "servings": 40, "pricePerServing": 10, "xpPerServing": 3, "spoilSeconds": 3600, "provisional": true },
+    { "id": "pudim", "name": "Pudim de Leite", "level": 15, "costCoins": 300, "cookSeconds": 7200, "servings": 50, "pricePerServing": 12, "xpPerServing": 3, "spoilSeconds": 7200, "provisional": true },
+    { "id": "moqueca", "name": "Moqueca", "level": 20, "costCoins": 500, "cookSeconds": 14400, "servings": 70, "pricePerServing": 14, "xpPerServing": 4, "spoilSeconds": 14400, "provisional": true }
   ]
 }

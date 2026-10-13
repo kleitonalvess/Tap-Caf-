@@ -22,6 +22,8 @@ type Food struct {
 	Recipe string `json:"recipeId"`
 	// Servings left in this dish; each customer takes one.
 	Servings int `json:"servings,omitempty"`
+	// Inventory unit of the counter holding the dish; empty for older dishes.
+	CounterID string `json:"counterId,omitempty"`
 }
 
 // Payment is credited by persistence when a customer takes a serving; the room
@@ -58,6 +60,12 @@ type ActorAction struct {
 	StartedAt int64  `json:"startedAt"`
 	Duration  int64  `json:"duration"`
 }
+
+// Patience is how long a seated customer still waits for food.
+type Patience struct {
+	StartedAt int64 `json:"startedAt"`
+	Duration  int64 `json:"duration"`
+}
 type Emotion struct {
 	ID        string `json:"id"`
 	Kind      string `json:"kind"`
@@ -82,9 +90,11 @@ type Actor struct {
 	Action          *ActorAction `json:"action,omitempty"`
 	Emotion         *Emotion     `json:"emotion,omitempty"`
 	EmotionShown    bool         `json:"emotionShown,omitempty"`
+	Patience        *Patience    `json:"patience,omitempty"`
 	// Paths/timers are saved only on dormancy; they are never broadcast in hot updates.
-	Path   []Tile `json:"path,omitempty"`
-	Visits int    `json:"visits,omitempty"`
+	Path              []Tile `json:"path,omitempty"`
+	Visits            int    `json:"visits,omitempty"`
+	PatienceRemaining int64  `json:"patienceRemaining,omitempty"`
 }
 type Seed struct {
 	World World    `json:"world"`

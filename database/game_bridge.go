@@ -59,6 +59,12 @@ func (c *roomServiceClient) request(ctx context.Context, path string, body, out 
 	return nil
 }
 func proxyRoomOperation(r *core.RequestEvent, userID, action string, body any) error {
+	return proxyRoomOperationAs(r, userID, userID, action, body)
+}
+
+// proxyRoomOperationAs runs an operation in owner's room on behalf of user;
+// both services still check which actions a visitor may perform.
+func proxyRoomOperationAs(r *core.RequestEvent, owner, user, action string, body any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -66,9 +72,9 @@ func proxyRoomOperation(r *core.RequestEvent, userID, action string, body any) e
 	var result gamewire.Result
 	ctx, cancel := context.WithTimeout(r.Request.Context(), 12*time.Second)
 	defer cancel()
-	err = roomService(r.App).request(ctx, "operation", gamewire.Operation{Owner: userID, User: userID, Action: action, Body: data}, &result)
+	err = roomService(r.App).request(ctx, "operation", gamewire.Operation{Owner: owner, User: user, Action: action, Body: data}, &result)
 	if err != nil {
-		r.App.Logger().Warn("Falha ao comunicar uma operação do quarto", "action", action, "room", userID, "error", err)
+		r.App.Logger().Warn("Falha ao comunicar uma operação do quarto", "action", action, "room", owner, "error", err)
 		return apis.NewApiError(503, "O serviço do quarto está indisponível. Tente novamente.", nil)
 	}
 	return r.JSON(result.Status, json.RawMessage(result.Body))
@@ -94,7 +100,7 @@ func publicWorld(app core.App, owner string) (gamewire.World, error) {
 		return w, err
 	}
 	for _, food := range foods {
-		w.Foods = append(w.Foods, gamewire.Food{ID: food.Id, Recipe: food.GetString("recipe_id"), Servings: max(1, food.GetInt("servings"))})
+		w.Foods = append(w.Foods, gamewire.Food{ID: food.Id, Recipe: food.GetString("recipe_id"), Servings: max(1, food.GetInt("servings")), CounterID: food.GetString("counter")})
 	}
 	return w, nil
 }
@@ -103,7 +109,8 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 		data, _ := json.Marshal(map[string]string{"message": message})
 		return gamewire.Result{Status: status, Body: data}
 	}
-	if op.Owner == "" || op.Owner != op.User {
+	// Visitors may only season a friend's stove.
+	if op.Owner == "" || op.User == "" || op.Owner != op.User && op.Action != "cook_season" {
 		return fail(403, "Somente o dono pode alterar o quarto.")
 	}
 	var body any
@@ -115,7 +122,7 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 			return fail(400, "Pedido inválido.")
 		}
 		body, err = mutateRoom(app, op.Owner, op.Action, command)
-	case "cook_start", "cook_serve", "cook_cancel":
+	case "cook_start", "cook_serve", "cook_cancel", "cook_clean", "cook_season":
 		var command struct {
 			StoveID  string `json:"stoveId"`
 			RecipeID string `json:"recipeId"`
@@ -130,6 +137,10 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 			err = serveCooking(app, op.Owner, command.StoveID, types.NowDateTime())
 		case "cook_cancel":
 			err = cancelCooking(app, op.Owner, command.StoveID, types.NowDateTime())
+		case "cook_clean":
+			err = cleanStove(app, op.Owner, command.StoveID, types.NowDateTime())
+		case "cook_season":
+			err = seasonCooking(app, op.Owner, op.User, command.StoveID, types.NowDateTime())
 		}
 		if err == nil {
 			body, err = snapshotCooking(app, op.Owner, types.NowDateTime())
@@ -151,7 +162,10 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 			return fail(409, "Este preparo não pode mais ser cancelado.")
 		case errors.Is(err, errUnknownRecipe):
 			return fail(400, err.Error())
-		case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy), errors.Is(err, errRecipeLocked), errors.Is(err, errCookingCoins):
+		case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy),
+			errors.Is(err, errCounterBusy), errors.Is(err, errRecipeLocked), errors.Is(err, errCookingCoins), errors.Is(err, errStoveDirty),
+			errors.Is(err, errDishSpoiled), errors.Is(err, errNothingToClean), errors.Is(err, errCleaningCoins), errors.Is(err, errNoCounter),
+			errors.Is(err, errSeasonClosed), errors.Is(err, errAlreadySeasoned):
 			return fail(409, err.Error())
 		default:
 			return fail(500, "Não foi possível salvar a operação.")

@@ -6,11 +6,14 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
 	"coffe-mania/database/playerstate"
 	"coffe-mania/shared/gamerules"
+	"coffe-mania/shared/gamewire"
+	"coffe-mania/shared/roomcatalog"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -19,8 +22,8 @@ import (
 
 const starterStoveItemID = 3070000
 
-// Placing ingredients is the avatar animation before the recipe timer starts.
-const cookingPlacementDuration = 2 * time.Second
+// Fallback for jobs whose recipe left the catalogue.
+const defaultSpoilWindow = 2 * time.Minute
 
 var errStoveOccupied = errors.New("stove occupied")
 var errStoveNotOwned = errors.New("stove not owned")
@@ -29,6 +32,13 @@ var errCookingCannotCancel = errors.New("cooking cannot be canceled")
 var errUnknownRecipe = errors.New("Receita desconhecida.")
 var errRecipeLocked = errors.New("Receita bloqueada para o seu nível.")
 var errCookingCoins = errors.New("Moedas insuficientes para esta receita.")
+var errStoveDirty = errors.New("Limpe o fogão antes de cozinhar de novo.")
+var errDishSpoiled = errors.New("O prato estragou. Limpe o fogão.")
+var errNothingToClean = errors.New("Não há nada para limpar neste fogão.")
+var errCleaningCoins = errors.New("Moedas insuficientes para limpar o fogão.")
+var errNoCounter = errors.New("Nenhum balcão livre para este prato. Coloque ou libere um balcão.")
+var errSeasonClosed = errors.New("Só dá para temperar enquanto o prato está no fogo.")
+var errAlreadySeasoned = errors.New("Este prato já foi temperado.")
 
 type cookingView struct {
 	ID          string `json:"id"`
@@ -36,7 +46,11 @@ type cookingView struct {
 	PreparingAt string `json:"preparingAt"`
 	StartedAt   string `json:"startedAt"`
 	ReadyAt     string `json:"readyAt"`
+	SpoilsAt    string `json:"spoilsAt"`
 	Status      string `json:"status"`
+	// Servings the dish will yield, including the seasoning bonus.
+	Servings int  `json:"servings"`
+	Seasoned bool `json:"seasoned,omitempty"`
 }
 
 type stoveView struct {
@@ -50,6 +64,8 @@ type stoveView struct {
 type cookingSnapshot struct {
 	ServerNow string      `json:"serverNow"`
 	Stoves    []stoveView `json:"stoves"`
+	// Recipe the owner may cook for free right now (emergency help), if any.
+	EmergencyRecipeID string `json:"emergencyRecipeId,omitempty"`
 }
 
 func ensureStarterStove(app core.App, userID string) error {
@@ -69,6 +85,65 @@ func ensureStarterStove(app core.App, userID string) error {
 		stove.Load(map[string]any{"user": userID, "item_id": starterStoveItemID, "tx": 6, "ty": 2})
 		return txApp.Save(stove)
 	})
+}
+
+// jobState derives the phase from absolute times, so progress made while
+// nobody was in the café is already accounted for when it is read.
+func jobState(job *core.Record, now types.DateTime) (string, types.DateTime) {
+	ready := job.GetDateTime("ready_at")
+	spoils := job.GetDateTime("spoils_at")
+	if spoils.IsZero() {
+		window := defaultSpoilWindow
+		if recipe, ok := gamerules.RecipeByID(job.GetString("recipe_id")); ok {
+			window = recipe.SpoilDuration()
+		}
+		spoils = ready.Add(window)
+	}
+	switch {
+	case !now.Before(spoils):
+		return "spoiled", spoils
+	case !now.Before(ready):
+		return "ready", spoils
+	case !now.Before(job.GetDateTime("started_at")):
+		return "cooking", spoils
+	default:
+		return "preparing", spoils
+	}
+}
+
+func jobServings(job *core.Record) int {
+	servings := 1
+	if recipe, ok := gamerules.RecipeByID(job.GetString("recipe_id")); ok {
+		servings = recipe.Servings
+	}
+	return servings + job.GetInt("bonus_servings")
+}
+
+// emergencyRecipe reports the free batch: only when the owner cannot afford
+// the cheapest recipe and has nothing cooking, ready or on a counter.
+func emergencyRecipe(app core.App, userID string, now types.DateTime) (gamerules.Recipe, bool, error) {
+	state, err := app.FindFirstRecordByData(playerstate.Collection, "user", userID)
+	if err != nil {
+		return gamerules.Recipe{}, false, err
+	}
+	recipe, ok := gamerules.CheapestRecipe(state.GetInt("level"))
+	if !ok || state.GetInt64("gold") >= recipe.CostCoins {
+		return recipe, false, nil
+	}
+	jobs, err := app.FindRecordsByFilter("stove_cooking", "user={:user}", "", 0, 0, dbx.Params{"user": userID})
+	if err != nil {
+		return recipe, false, err
+	}
+	for _, job := range jobs {
+		if status, _ := jobState(job, now); status != "spoiled" {
+			return recipe, false, nil
+		}
+	}
+	foods, err := app.FindRecordsByFilter("room_food", "user={:user}", "", 1, 0, dbx.Params{"user": userID})
+	if err != nil {
+		return recipe, false, err
+	}
+	return recipe, len(foods) == 0, nil
 }
 
 func snapshotCooking(app core.App, userID string, now types.DateTime) (cookingSnapshot, error) {
@@ -91,12 +166,7 @@ func snapshotCooking(app core.App, userID string, now types.DateTime) (cookingSn
 			return result, err
 		}
 		if err == nil {
-			status := "preparing"
-			if !now.Before(job.GetDateTime("ready_at")) {
-				status = "ready"
-			} else if !now.Before(job.GetDateTime("started_at")) {
-				status = "cooking"
-			}
+			status, spoils := jobState(job, now)
 			preparingAt := job.GetDateTime("preparing_at")
 			if preparingAt.IsZero() {
 				preparingAt = job.GetDateTime("started_at")
@@ -105,12 +175,44 @@ func snapshotCooking(app core.App, userID string, now types.DateTime) (cookingSn
 				ID: job.Id, RecipeID: job.GetString("recipe_id"),
 				PreparingAt: preparingAt.String(),
 				StartedAt:   job.GetDateTime("started_at").String(),
-				ReadyAt:     job.GetDateTime("ready_at").String(), Status: status,
+				ReadyAt:     job.GetDateTime("ready_at").String(),
+				SpoilsAt:    spoils.String(), Status: status,
+				Servings: jobServings(job), Seasoned: job.GetString("seasoned_by") != "",
 			}
 		}
 		result.Stoves = append(result.Stoves, view)
 	}
+	if recipe, free, err := emergencyRecipe(app, userID, now); err != nil {
+		return result, err
+	} else if free {
+		result.EmergencyRecipeID = recipe.ID
+	}
 	return result, nil
+}
+
+// ownedStove returns the stove if it belongs to the owner and is placed (or was never stored).
+func ownedStove(app core.App, owner, stoveID string) (*core.Record, error) {
+	stove, err := app.FindRecordById("player_stoves", stoveID)
+	if err != nil || stove.GetString("user") != owner {
+		return nil, errStoveNotOwned
+	}
+	unit, err := app.FindFirstRecordByData("player_inventory", "stove_id", stove.Id)
+	if err == nil && !unit.GetBool("placed") {
+		return nil, errStoveNotOwned
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	return stove, nil
+}
+
+// stoveJob returns the stove's job, or `missing` when it has none.
+func stoveJob(app core.App, stoveID string, missing error) (*core.Record, error) {
+	job, err := app.FindFirstRecordByData("stove_cooking", "stove", stoveID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, missing
+	}
+	return job, err
 }
 
 // startCooking debits the recipe cost only after ownership and occupancy checks,
@@ -121,25 +223,19 @@ func startCooking(app core.App, userID, stoveID, recipeID string, now types.Date
 		return errUnknownRecipe
 	}
 	return app.RunInTransaction(func(txApp core.App) error {
-		stove, err := txApp.FindRecordById("player_stoves", stoveID)
-		if err != nil || stove.GetString("user") != userID {
-			return errStoveNotOwned
+		stove, err := ownedStove(txApp, userID, stoveID)
+		if err != nil {
+			return err
 		}
 		if stove.GetInt("item_id") != starterStoveItemID {
 			return errStoveNotOwned
 		}
-		unit, inventoryErr := txApp.FindFirstRecordByData("player_inventory", "stove_id", stove.Id)
-		if inventoryErr == nil && !unit.GetBool("placed") {
-			return errStoveNotOwned
-		}
-		if inventoryErr != nil && !errors.Is(inventoryErr, sql.ErrNoRows) {
-			return inventoryErr
-		}
-		_, err = txApp.FindFirstRecordByData("stove_cooking", "stove", stoveID)
-		if err == nil {
+		if job, err := txApp.FindFirstRecordByData("stove_cooking", "stove", stoveID); err == nil {
+			if status, _ := jobState(job, now); status == "spoiled" {
+				return errStoveDirty
+			}
 			return errStoveOccupied
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
+		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 		state, err := txApp.FindFirstRecordByData(playerstate.Collection, "user", userID)
@@ -149,11 +245,19 @@ func startCooking(app core.App, userID, stoveID, recipeID string, now types.Date
 		if state.GetInt("level") < recipe.Level {
 			return errRecipeLocked
 		}
-		if state.GetInt64("gold") < recipe.CostCoins {
+		cost := recipe.CostCoins
+		free, emergency, err := emergencyRecipe(txApp, userID, now)
+		if err != nil {
+			return err
+		}
+		if emergency && free.ID == recipe.ID {
+			cost = 0
+		}
+		if state.GetInt64("gold") < cost {
 			return errCookingCoins
 		}
-		if recipe.CostCoins > 0 {
-			state.Set("gold", state.GetInt64("gold")-recipe.CostCoins)
+		if cost > 0 {
+			state.Set("gold", state.GetInt64("gold")-cost)
 			if err = txApp.Save(state); err != nil {
 				return err
 			}
@@ -162,44 +266,85 @@ func startCooking(app core.App, userID, stoveID, recipeID string, now types.Date
 		if err != nil {
 			return err
 		}
+		started := now.Add(gamerules.PrepareDuration())
+		ready := started.Add(recipe.CookDuration())
 		job := core.NewRecord(collection)
 		job.Load(map[string]any{
 			"user": userID, "stove": stoveID, "recipe_id": recipe.ID,
-			"preparing_at": now,
-			"started_at":   now.Add(cookingPlacementDuration),
-			"ready_at":     now.Add(cookingPlacementDuration + recipe.CookDuration()),
+			"preparing_at": now, "started_at": started, "ready_at": ready,
+			"spoils_at": ready.Add(recipe.SpoilDuration()),
 		})
 		return txApp.Save(job)
 	})
 }
 
+// pickCounter prefers a counter already holding the same recipe, then an empty one.
+func pickCounter(app core.App, owner, recipeID string) (string, *core.Record, error) {
+	units, err := app.FindRecordsByFilter("player_inventory", "user={:user} && placed=true && layer='object'", "", 0, 0, dbx.Params{"user": owner})
+	if err != nil {
+		return "", nil, err
+	}
+	counters := []string{}
+	for _, unit := range units {
+		if item, ok := roomcatalog.ByID(unit.GetInt("item_id")); ok && item.Kind == "counter" {
+			counters = append(counters, unit.Id)
+		}
+	}
+	sort.Strings(counters)
+	foods, err := app.FindRecordsByFilter("room_food", "user={:owner}", "", 0, 0, dbx.Params{"owner": owner})
+	if err != nil {
+		return "", nil, err
+	}
+	onCounter := map[string]*core.Record{}
+	for _, food := range foods {
+		if counter := food.GetString("counter"); counter != "" {
+			onCounter[counter] = food
+		}
+	}
+	for _, counter := range counters {
+		if food := onCounter[counter]; food != nil && food.GetString("recipe_id") == recipeID {
+			return counter, food, nil
+		}
+	}
+	for _, counter := range counters {
+		if onCounter[counter] == nil {
+			return counter, nil, nil
+		}
+	}
+	return "", nil, errNoCounter
+}
+
+// serveCooking moves a ready dish from the stove to a counter.
 func serveCooking(app core.App, userID, stoveID string, now types.DateTime) error {
 	return app.RunInTransaction(func(txApp core.App) error {
-		stove, err := txApp.FindRecordById("player_stoves", stoveID)
-		if err != nil || stove.GetString("user") != userID {
-			return errStoveNotOwned
+		if _, err := ownedStove(txApp, userID, stoveID); err != nil {
+			return err
 		}
-		job, err := txApp.FindFirstRecordByData("stove_cooking", "stove", stoveID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return errDishNotReady
-		}
+		job, err := stoveJob(txApp, stoveID, errDishNotReady)
 		if err != nil {
 			return err
 		}
-		if job.GetString("user") != userID || now.Before(job.GetDateTime("ready_at")) {
+		switch status, _ := jobState(job, now); status {
+		case "spoiled":
+			return errDishSpoiled
+		case "preparing", "cooking":
 			return errDishNotReady
 		}
-		foods, err := txApp.FindCollectionByNameOrId("room_food")
+		recipeID := job.GetString("recipe_id")
+		counter, food, err := pickCounter(txApp, userID, recipeID)
 		if err != nil {
 			return err
 		}
-		// A recipe removed from the catalogue still leaves one serving to clear the stove.
-		servings := 1
-		if recipe, ok := gamerules.RecipeByID(job.GetString("recipe_id")); ok {
-			servings = recipe.Servings
+		if food != nil {
+			food.Set("servings", max(1, food.GetInt("servings"))+jobServings(job))
+		} else {
+			foods, err := txApp.FindCollectionByNameOrId("room_food")
+			if err != nil {
+				return err
+			}
+			food = core.NewRecord(foods)
+			food.Load(map[string]any{"user": userID, "recipe_id": recipeID, "job_id": job.Id, "servings": jobServings(job), "counter": counter})
 		}
-		food := core.NewRecord(foods)
-		food.Load(map[string]any{"user": userID, "recipe_id": job.GetString("recipe_id"), "job_id": job.Id, "servings": servings})
 		if err = txApp.Save(food); err != nil {
 			return err
 		}
@@ -209,25 +354,102 @@ func serveCooking(app core.App, userID, stoveID string, now types.DateTime) erro
 
 func cancelCooking(app core.App, userID, stoveID string, now types.DateTime) error {
 	return app.RunInTransaction(func(txApp core.App) error {
-		stove, err := txApp.FindRecordById("player_stoves", stoveID)
-		if err != nil || stove.GetString("user") != userID {
-			return errStoveNotOwned
+		if _, err := ownedStove(txApp, userID, stoveID); err != nil {
+			return err
 		}
-		job, err := txApp.FindFirstRecordByData("stove_cooking", "stove", stoveID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return errCookingCannotCancel
-		}
+		job, err := stoveJob(txApp, stoveID, errCookingCannotCancel)
 		if err != nil {
 			return err
 		}
-		if job.GetString("user") != userID || !now.Before(job.GetDateTime("ready_at")) {
+		if !now.Before(job.GetDateTime("ready_at")) {
 			return errCookingCannotCancel
 		}
 		return txApp.Delete(job)
 	})
 }
 
+// cleanStove throws a spoiled dish away; the stove can cook again.
+func cleanStove(app core.App, userID, stoveID string, now types.DateTime) error {
+	return app.RunInTransaction(func(txApp core.App) error {
+		if _, err := ownedStove(txApp, userID, stoveID); err != nil {
+			return err
+		}
+		job, err := stoveJob(txApp, stoveID, errNothingToClean)
+		if err != nil {
+			return err
+		}
+		if status, _ := jobState(job, now); status != "spoiled" {
+			return errNothingToClean
+		}
+		state, err := txApp.FindFirstRecordByData(playerstate.Collection, "user", userID)
+		if err != nil {
+			return err
+		}
+		rules := gamerules.Stove()
+		if state.GetInt64("gold") < rules.CleaningCoins {
+			return errCleaningCoins
+		}
+		playerstate.Grant(state, -rules.CleaningCoins, rules.CleaningXP)
+		if err = txApp.Save(state); err != nil {
+			return err
+		}
+		return txApp.Delete(job)
+	})
+}
+
+// seasonCooking adds the bonus servings once per batch. Visitors may season a
+// friend's stove; the seasoner earns the XP.
+func seasonCooking(app core.App, owner, seasoner, stoveID string, now types.DateTime) error {
+	return app.RunInTransaction(func(txApp core.App) error {
+		if _, err := ownedStove(txApp, owner, stoveID); err != nil {
+			return err
+		}
+		job, err := stoveJob(txApp, stoveID, errSeasonClosed)
+		if err != nil {
+			return err
+		}
+		if status, _ := jobState(job, now); status != "preparing" && status != "cooking" {
+			return errSeasonClosed
+		}
+		if job.GetString("seasoned_by") != "" {
+			return errAlreadySeasoned
+		}
+		base := 1
+		if recipe, ok := gamerules.RecipeByID(job.GetString("recipe_id")); ok {
+			base = recipe.Servings
+		}
+		job.Set("bonus_servings", gamerules.SeasonBonus(base))
+		job.Set("seasoned_by", seasoner)
+		if err = txApp.Save(job); err != nil {
+			return err
+		}
+		state, err := playerstate.GetOrCreate(txApp, seasoner)
+		if err != nil {
+			return err
+		}
+		playerstate.Grant(state, 0, gamerules.Stove().SeasonXP)
+		return txApp.Save(state)
+	})
+}
+
+// cookingActions maps each REST path to its room operation. Only seasoning
+// accepts a friend's room; everything else acts on the player's own café.
+var cookingActions = []struct {
+	path, action string
+	visitors     bool
+}{
+	{"start", "cook_start", false},
+	{"serve", "cook_serve", false},
+	{"cancel", "cook_cancel", false},
+	{"clean", "cook_clean", false},
+	{"season", "cook_season", true},
+}
+
 func registerCookingRoutes(e *core.ServeEvent) {
+	e.Router.GET("/api/coffe/rules", func(r *core.RequestEvent) error {
+		r.Response.Header().Set("Cache-Control", "no-cache")
+		return r.JSON(http.StatusOK, gamerules.Public())
+	})
 	g := e.Router.Group("/api/coffe/cooking")
 	g.BindFunc(func(r *core.RequestEvent) error {
 		r.Response.Header().Set("Cache-Control", "no-store")
@@ -252,142 +474,64 @@ func registerCookingRoutes(e *core.ServeEvent) {
 		if err != nil {
 			return r.InternalServerError("Não foi possível carregar o preparo.", err)
 		}
-		return r.JSON(http.StatusOK, snapshot)
-	})
-	g.POST("/start", func(r *core.RequestEvent) error {
-		user := sessionRecord(r)
-		if user == nil {
-			return r.UnauthorizedError("Entre para jogar.", nil)
-		}
-		if !strings.HasPrefix(r.Request.Header.Get("Content-Type"), "application/json") {
-			return r.BadRequestError("Envie JSON.", nil)
-		}
-		var body struct {
-			StoveID  string `json:"stoveId"`
-			RecipeID string `json:"recipeId"`
-		}
-		decoder := json.NewDecoder(r.Request.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&body); err != nil {
-			return r.BadRequestError("Pedido inválido.", nil)
-		}
-		if err := decoder.Decode(new(any)); err != io.EOF {
-			return r.BadRequestError("Pedido inválido.", nil)
-		}
-		if _, ok := gamerules.RecipeByID(body.RecipeID); body.StoveID == "" || !ok {
-			return r.BadRequestError("Fogão ou receita inválidos.", nil)
-		}
-		if roomService(r.App) != nil {
-			return proxyRoomOperation(r, user.Id, "cook_start", body)
-		}
-		if err := startCooking(r.App, user.Id, body.StoveID, body.RecipeID, types.NowDateTime()); err != nil {
-			switch {
-			case errors.Is(err, errStoveNotOwned):
-				return r.NotFoundError("Fogão indisponível.", nil)
-			case errors.Is(err, errStoveOccupied):
-				return apis.NewApiError(http.StatusConflict, "Fogão ocupado.", nil)
-			case errors.Is(err, errRecipeLocked), errors.Is(err, errCookingCoins):
-				return apis.NewApiError(http.StatusConflict, err.Error(), nil)
-			default:
-				return r.InternalServerError("Não foi possível iniciar o preparo.", err)
-			}
-		}
-		snapshot, err := snapshotCooking(r.App, user.Id, types.NowDateTime())
-		if err != nil {
-			return r.InternalServerError("Preparo iniciado, mas não foi possível atualizar os dados.", err)
-		}
-		return r.JSON(http.StatusCreated, snapshot)
-	}).Bind(apis.BodyLimit(1024)).BindFunc(func(r *core.RequestEvent) error {
-		// Cookie auth + mutation: require a browser same-origin Origin header.
-		if r.Request.Header.Get("Origin") == "" {
-			return r.ForbiddenError("Origem inválida.", nil)
-		}
-		return sameOrigin(r)
-	})
-	g.POST("/serve", func(r *core.RequestEvent) error {
-		user := sessionRecord(r)
-		if user == nil {
-			return r.UnauthorizedError("Entre para jogar.", nil)
-		}
-		if !strings.HasPrefix(r.Request.Header.Get("Content-Type"), "application/json") {
-			return r.BadRequestError("Envie JSON.", nil)
-		}
-		var body struct {
-			StoveID string `json:"stoveId"`
-		}
-		decoder := json.NewDecoder(r.Request.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&body); err != nil {
-			return r.BadRequestError("Pedido inválido.", nil)
-		}
-		if err := decoder.Decode(new(any)); err != io.EOF || body.StoveID == "" {
-			return r.BadRequestError("Fogão inválido.", nil)
-		}
-		if roomService(r.App) != nil {
-			return proxyRoomOperation(r, user.Id, "cook_serve", body)
-		}
-		if err := serveCooking(r.App, user.Id, body.StoveID, types.NowDateTime()); err != nil {
-			switch {
-			case errors.Is(err, errStoveNotOwned):
-				return r.NotFoundError("Fogão indisponível.", nil)
-			case errors.Is(err, errDishNotReady):
-				return apis.NewApiError(http.StatusConflict, "O prato ainda não está pronto.", nil)
-			default:
-				return r.InternalServerError("Não foi possível servir o prato.", err)
-			}
-		}
-		snapshot, err := snapshotCooking(r.App, user.Id, types.NowDateTime())
-		if err != nil {
-			return r.InternalServerError("Prato servido, mas não foi possível atualizar os dados.", err)
+		if owner != user.Id {
+			snapshot.EmergencyRecipeID = ""
 		}
 		return r.JSON(http.StatusOK, snapshot)
-	}).Bind(apis.BodyLimit(1024)).BindFunc(func(r *core.RequestEvent) error {
-		if r.Request.Header.Get("Origin") == "" {
-			return r.ForbiddenError("Origem inválida.", nil)
-		}
-		return sameOrigin(r)
 	})
-	g.POST("/cancel", func(r *core.RequestEvent) error {
-		user := sessionRecord(r)
-		if user == nil {
-			return r.UnauthorizedError("Entre para jogar.", nil)
-		}
-		if !strings.HasPrefix(r.Request.Header.Get("Content-Type"), "application/json") {
-			return r.BadRequestError("Envie JSON.", nil)
-		}
-		var body struct {
-			StoveID string `json:"stoveId"`
-		}
-		decoder := json.NewDecoder(r.Request.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&body); err != nil {
-			return r.BadRequestError("Pedido inválido.", nil)
-		}
-		if err := decoder.Decode(new(any)); err != io.EOF || body.StoveID == "" {
-			return r.BadRequestError("Fogão inválido.", nil)
-		}
-		if roomService(r.App) != nil {
-			return proxyRoomOperation(r, user.Id, "cook_cancel", body)
-		}
-		if err := cancelCooking(r.App, user.Id, body.StoveID, types.NowDateTime()); err != nil {
-			switch {
-			case errors.Is(err, errStoveNotOwned):
-				return r.NotFoundError("Fogão indisponível.", nil)
-			case errors.Is(err, errCookingCannotCancel):
-				return apis.NewApiError(http.StatusConflict, "Este preparo não pode mais ser cancelado.", nil)
-			default:
-				return r.InternalServerError("Não foi possível cancelar o preparo.", err)
+	for _, route := range cookingActions {
+		route := route
+		g.POST("/"+route.path, func(r *core.RequestEvent) error {
+			user := sessionRecord(r)
+			if user == nil {
+				return r.UnauthorizedError("Entre para jogar.", nil)
 			}
-		}
-		snapshot, err := snapshotCooking(r.App, user.Id, types.NowDateTime())
-		if err != nil {
-			return r.InternalServerError("Preparo cancelado, mas não foi possível atualizar os dados.", err)
-		}
-		return r.JSON(http.StatusOK, snapshot)
-	}).Bind(apis.BodyLimit(1024)).BindFunc(func(r *core.RequestEvent) error {
-		if r.Request.Header.Get("Origin") == "" {
-			return r.ForbiddenError("Origem inválida.", nil)
-		}
-		return sameOrigin(r)
-	})
+			if !strings.HasPrefix(r.Request.Header.Get("Content-Type"), "application/json") {
+				return r.BadRequestError("Envie JSON.", nil)
+			}
+			var body struct {
+				StoveID  string `json:"stoveId"`
+				RecipeID string `json:"recipeId,omitempty"`
+				RoomID   string `json:"roomId,omitempty"`
+			}
+			decoder := json.NewDecoder(r.Request.Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&body); err != nil {
+				return r.BadRequestError("Pedido inválido.", nil)
+			}
+			if err := decoder.Decode(new(any)); err != io.EOF || body.StoveID == "" {
+				return r.BadRequestError("Fogão inválido.", nil)
+			}
+			_, knownRecipe := gamerules.RecipeByID(body.RecipeID)
+			if route.action == "cook_start" && !knownRecipe || route.action != "cook_start" && body.RecipeID != "" {
+				return r.BadRequestError("Fogão ou receita inválidos.", nil)
+			}
+			owner := user.Id
+			if body.RoomID != "" && body.RoomID != user.Id {
+				if !route.visitors {
+					return r.ForbiddenError("Somente o dono pode alterar o quarto.", nil)
+				}
+				if _, err := r.App.FindRecordById("users", body.RoomID); err != nil {
+					return r.NotFoundError("Quarto não encontrado.", nil)
+				}
+				owner = body.RoomID
+			}
+			command := map[string]string{"stoveId": body.StoveID}
+			if body.RecipeID != "" {
+				command["recipeId"] = body.RecipeID
+			}
+			if roomService(r.App) != nil {
+				return proxyRoomOperationAs(r, owner, user.Id, route.action, command)
+			}
+			data, _ := json.Marshal(command)
+			result := persistenceOperation(r.App, gamewire.Operation{Owner: owner, User: user.Id, Action: route.action, Body: data})
+			return r.JSON(result.Status, json.RawMessage(result.Body))
+		}).Bind(apis.BodyLimit(1024)).BindFunc(func(r *core.RequestEvent) error {
+			// Cookie auth + mutation: require a browser same-origin Origin header.
+			if r.Request.Header.Get("Origin") == "" {
+				return r.ForbiddenError("Origem inválida.", nil)
+			}
+			return sameOrigin(r)
+		})
+	}
 }

@@ -1,6 +1,9 @@
 package gamerules
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestLevelForXPBoundaries(t *testing.T) {
 	cases := []struct {
@@ -82,5 +85,64 @@ func TestValidateRejectsBrokenData(t *testing.T) {
 	broken.Recipes[0].ID = "Bolo Inválido"
 	if validate(broken) == "" {
 		t.Fatal("invalid recipe id was accepted")
+	}
+}
+
+func TestCheapestRecipeRespectsLevel(t *testing.T) {
+	cheapest, ok := CheapestRecipe(1)
+	if !ok || cheapest.Level > 1 {
+		t.Fatalf("cheapest at level 1 = %+v", cheapest)
+	}
+	for _, recipe := range Recipes() {
+		if recipe.Level <= 1 && recipe.CostCoins < cheapest.CostCoins {
+			t.Fatalf("%s is cheaper than %s", recipe.ID, cheapest.ID)
+		}
+	}
+	if _, ok := CheapestRecipe(0); ok {
+		t.Fatal("a recipe was unlocked below level 1")
+	}
+}
+
+func TestRecipeBookIsProgressive(t *testing.T) {
+	recipes := Recipes()
+	if len(recipes) < 6 {
+		t.Fatalf("recipe book has %d recipes", len(recipes))
+	}
+	for i := 1; i < len(recipes); i++ {
+		if recipes[i].Level < recipes[i-1].Level {
+			t.Fatalf("%s unlocks before %s", recipes[i].ID, recipes[i-1].ID)
+		}
+	}
+	for _, recipe := range recipes {
+		if recipe.SpoilDuration() < 30*time.Second {
+			t.Fatalf("%s spoils too fast", recipe.ID)
+		}
+	}
+}
+
+func TestSeasonBonusRoundsUp(t *testing.T) {
+	// 25% in the reference rules.
+	for servings, want := range map[int]int{1: 1, 3: 1, 4: 1, 5: 2, 40: 10} {
+		if got := SeasonBonus(servings); got != want {
+			t.Errorf("SeasonBonus(%d) = %d, want %d", servings, got, want)
+		}
+	}
+}
+
+func TestCustomerPatienceCoversTheStarterRecipe(t *testing.T) {
+	cheapest, _ := CheapestRecipe(1)
+	if CustomerPatience() <= cheapest.CookDuration()+PrepareDuration() {
+		t.Fatalf("patience %v cannot wait for %s (%v)", CustomerPatience(), cheapest.ID, cheapest.CookDuration())
+	}
+	if CookingArrivalFactor() < 1 {
+		t.Fatal("cooking must not speed up arrivals")
+	}
+}
+
+func TestPublicRulesAreACopy(t *testing.T) {
+	public := Public()
+	public.Recipes[0].CostCoins = 999999
+	if rules.Recipes[0].CostCoins == 999999 {
+		t.Fatal("Public exposes the shared recipe slice")
 	}
 }

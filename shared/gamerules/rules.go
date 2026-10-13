@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"math"
 	"regexp"
+	"sort"
 	"time"
 )
 
@@ -30,8 +31,27 @@ type Recipe struct {
 	Servings        int    `json:"servings"`
 	PricePerServing int64  `json:"pricePerServing"`
 	XPPerServing    int64  `json:"xpPerServing"`
+	// A ready dish spoils on the stove after this long without being served.
+	SpoilSeconds int `json:"spoilSeconds"`
 	// Provisional marks design placeholders, not values recovered from the original game.
 	Provisional bool `json:"provisional,omitempty"`
+}
+
+// StoveRules cover the parts of the stove cycle shared by every recipe.
+type StoveRules struct {
+	PrepareSeconds int   `json:"prepareSeconds"`
+	CleaningCoins  int64 `json:"cleaningCoins"`
+	CleaningXP     int64 `json:"cleaningXp"`
+	// Seasoning during preparation adds this share of the recipe's servings (rounded up).
+	SeasonBonusPercent int   `json:"seasonBonusPercent"`
+	SeasonXP           int64 `json:"seasonXp"`
+}
+
+type CustomerRules struct {
+	// How long a seated customer waits for food before leaving unsatisfied.
+	PatienceSeconds int `json:"patienceSeconds"`
+	// Arrivals slow down by this factor while food is cooking and no counter has any.
+	CookingArrivalFactor float64 `json:"cookingArrivalFactor"`
 }
 
 // Frequency applies from Popularity upward. The reference file does not state
@@ -61,6 +81,8 @@ type PopularityRules struct {
 
 type Rules struct {
 	Popularity        PopularityRules `json:"popularity"`
+	Customers         CustomerRules   `json:"customers"`
+	Stove             StoveRules      `json:"stove"`
 	Levels            []Level         `json:"levels"`
 	CustomerFrequency []Frequency     `json:"customerFrequency"`
 	Tips              []Tip           `json:"tips"`
@@ -119,12 +141,22 @@ func validate(r Rules) string {
 			return "employee locks must be contiguous"
 		}
 	}
+	c := r.Customers
+	if c.PatienceSeconds < 5 || c.PatienceSeconds > 600 || c.CookingArrivalFactor < 1 || c.CookingArrivalFactor > 5 {
+		return "invalid customer rules"
+	}
+	s := r.Stove
+	if s.PrepareSeconds < 0 || s.PrepareSeconds > 60 || s.CleaningCoins < 0 || s.CleaningXP < 0 ||
+		s.SeasonBonusPercent < 0 || s.SeasonBonusPercent > 100 || s.SeasonXP < 0 {
+		return "invalid stove rules"
+	}
+	const week = 7 * 24 * 60 * 60
 	seen := map[string]bool{}
 	for _, recipe := range r.Recipes {
 		if !recipeIDPattern.MatchString(recipe.ID) || seen[recipe.ID] || recipe.Name == "" ||
 			recipe.Level < 1 || recipe.Level > len(r.Levels) || recipe.CostCoins < 0 ||
-			recipe.CookSeconds < 1 || recipe.CookSeconds > 7*24*60*60 || recipe.Servings < 1 || recipe.Servings > 100 ||
-			recipe.PricePerServing < 0 || recipe.XPPerServing < 0 {
+			recipe.CookSeconds < 1 || recipe.CookSeconds > week || recipe.Servings < 1 || recipe.Servings > 100 ||
+			recipe.PricePerServing < 0 || recipe.XPPerServing < 0 || recipe.SpoilSeconds < 30 || recipe.SpoilSeconds > week {
 			return "invalid recipe " + recipe.ID
 		}
 		seen[recipe.ID] = true
@@ -146,6 +178,64 @@ func RecipeByID(id string) (Recipe, bool) {
 
 func (r Recipe) CookDuration() time.Duration {
 	return time.Duration(r.CookSeconds) * time.Second
+}
+
+func (r Recipe) SpoilDuration() time.Duration {
+	return time.Duration(r.SpoilSeconds) * time.Second
+}
+
+// Recipes returns the catalogue in book order.
+func Recipes() []Recipe { return append([]Recipe{}, rules.Recipes...) }
+
+// CheapestRecipe is the recipe the emergency help gives away: the lowest cost
+// unlocked at this level, then the shortest, then the id for a stable answer.
+func CheapestRecipe(level int) (Recipe, bool) {
+	unlocked := []Recipe{}
+	for _, recipe := range rules.Recipes {
+		if recipe.Level <= level {
+			unlocked = append(unlocked, recipe)
+		}
+	}
+	if len(unlocked) == 0 {
+		return Recipe{}, false
+	}
+	sort.SliceStable(unlocked, func(i, j int) bool {
+		a, b := unlocked[i], unlocked[j]
+		if a.CostCoins != b.CostCoins {
+			return a.CostCoins < b.CostCoins
+		}
+		if a.CookSeconds != b.CookSeconds {
+			return a.CookSeconds < b.CookSeconds
+		}
+		return a.ID < b.ID
+	})
+	return unlocked[0], true
+}
+
+func Stove() StoveRules { return rules.Stove }
+
+func PrepareDuration() time.Duration { return time.Duration(rules.Stove.PrepareSeconds) * time.Second }
+
+// SeasonBonus is the extra servings a seasoned batch yields; at least one when enabled.
+func SeasonBonus(servings int) int {
+	if rules.Stove.SeasonBonusPercent == 0 {
+		return 0
+	}
+	return max(1, (servings*rules.Stove.SeasonBonusPercent+99)/100)
+}
+
+func CustomerPatience() time.Duration {
+	return time.Duration(rules.Customers.PatienceSeconds) * time.Second
+}
+
+func CookingArrivalFactor() float64 { return rules.Customers.CookingArrivalFactor }
+
+// Public is the whole rule set for clients; none of it is secret.
+func Public() Rules {
+	snapshot := rules
+	snapshot.Levels = append([]Level{}, rules.Levels...)
+	snapshot.Recipes = Recipes()
+	return snapshot
 }
 
 func MaxLevel() int { return len(rules.Levels) }

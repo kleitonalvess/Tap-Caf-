@@ -18,6 +18,7 @@ type cookingJob struct {
 	PreparingAt string `json:"preparingAt"`
 	StartedAt   string `json:"startedAt"`
 	ReadyAt     string `json:"readyAt"`
+	SpoilsAt    string `json:"spoilsAt"`
 }
 
 func (r *room) cookingJob(stoveID string) *cookingJob {
@@ -36,6 +37,24 @@ func (r *room) cookingJob(stoveID string) *cookingJob {
 		}
 	}
 	return nil
+}
+
+// cookingInProgress reports a batch still preparing or cooking (not yet ready).
+func (r *room) cookingInProgress(now time.Time) bool {
+	var snapshot struct {
+		Stoves []struct {
+			Cooking *cookingJob `json:"cooking"`
+		} `json:"stoves"`
+	}
+	if json.Unmarshal(r.world.Cooking, &snapshot) != nil {
+		return false
+	}
+	for _, stove := range snapshot.Stoves {
+		if stove.Cooking != nil && now.Before(jobTime(stove.Cooking.ReadyAt)) {
+			return true
+		}
+	}
+	return false
 }
 
 func jobTime(value string) time.Time {
@@ -99,6 +118,9 @@ func (r *room) startServingAction(a *entity, stoveID string, now time.Time) stri
 	job := r.cookingJob(stoveID)
 	if job == nil || jobTime(job.ReadyAt).IsZero() || now.Before(jobTime(job.ReadyAt)) {
 		return "O prato ainda não está pronto."
+	}
+	if spoils := jobTime(job.SpoilsAt); !spoils.IsZero() && !now.Before(spoils) {
+		return "O prato estragou. Limpe o fogão."
 	}
 	r.startStoveAction(a, stove, "serving", now, servingDuration)
 	return ""
