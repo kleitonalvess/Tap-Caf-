@@ -2,7 +2,9 @@ import type { CookingSnapshot } from './cooking';
 import type { RoomUnit } from './room-inventory';
 import type { Tile } from '../world/iso';
 
-export interface SharedFood { id: string; recipeId: string; servings?: number }
+export interface SharedFood { id: string; recipeId: string; servings?: number; counterId?: string }
+/** How long a seated customer still waits for food. */
+export interface SharedPatience { startedAt: number; duration: number }
 /** Credited by the server when the customer received the serving; the HUD refresh comes from the same save. */
 export interface SharedPayment {
   actorId?: string; recipeId: string; coins: number; xp: number; level: number;
@@ -15,7 +17,7 @@ export interface SharedActor {
   tx: number; ty: number; direction: number; outside: boolean; state: string;
   move?: { from: Tile; to: Tile; startedAt: number; duration: number };
   chairId?: string; tableId?: string; food?: SharedFood; actionRemaining?: number;
-  action?: SharedAction; emotion?: SharedEmotion;
+  action?: SharedAction; emotion?: SharedEmotion; patience?: SharedPatience;
 }
 export interface SharedWorld {
   roomId: string; revision: number; tilesX: number; tilesY: number;
@@ -89,7 +91,7 @@ export class RoomRealtime {
           this.serverAnchor = event.serverNow; this.localAnchor = performance.now();
           for (const state of event.actors ?? []) {
             const old = this.actors.get(state.id);
-            this.actors.set(state.id, { ...old, ...state, move: state.move, chairId: state.chairId, tableId: state.tableId, food: state.food, action: state.action, emotion: state.emotion });
+            this.actors.set(state.id, { ...old, ...state, move: state.move, chairId: state.chairId, tableId: state.tableId, food: state.food, action: state.action, emotion: state.emotion, patience: state.patience });
           }
           for (const id of event.removed ?? []) this.actors.delete(id);
           if (event.requestId) {

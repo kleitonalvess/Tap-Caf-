@@ -1,7 +1,7 @@
 import { SongPlayer, type SongDefinition } from './music';
 import { DEFAULT_AUDIO_PREFERENCES, sanitizeAudioPreferences, type AudioPreferences } from './preferences';
 import { parseSpriteManifest, type SoundEvent, type SpriteClip } from './sound-events';
-import { broom, buzzer, click, coin, createSynthKit, doorBell, levelUp, pageFlip, sizzle, type SynthKit } from './synth';
+import { broom, buzzer, click, coin, createSynthKit, doorBell, levelUp, pageFlip, season, sizzle, type SynthKit } from './synth';
 
 /** A music option: an original recording (`url`) or a procedural song. */
 export interface MusicTrack {
@@ -25,7 +25,7 @@ type Recipe = (kit: SynthKit, dest: AudioNode, t: number) => number;
 
 /** Synthesis covers every event that has no original sample. */
 const RECIPES: Readonly<Record<SoundEvent, Recipe>> = {
-  doorBell, cookStart: sizzle, coin, levelUp, broom, buzzer, bookPage: pageFlip, click,
+  doorBell, cookStart: sizzle, coin, levelUp, broom, buzzer, bookPage: pageFlip, click, season,
 };
 
 /** The same event within this window plays once (several customers paying together). */

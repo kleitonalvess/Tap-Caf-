@@ -242,3 +242,63 @@ func TestVisitorsCannotDoOtherCookingActions(t *testing.T) {
 		t.Fatalf("visitor started cooking: %d %s", result.Status, result.Body)
 	}
 }
+
+// rerunCounterMigration simulates a room created before counters existed and
+// applies the stove lifecycle migration again.
+func rerunCounterMigration(t *testing.T, app core.App, owner string) {
+	t.Helper()
+	deleteCounters(t, app, owner)
+	if _, err := app.DB().NewQuery("DELETE FROM _migrations WHERE file = '202610140001_stove_lifecycle.go'").Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.RunAllMigrations(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func deleteCounters(t *testing.T, app core.App, owner string) {
+	t.Helper()
+	counters, err := app.FindRecordsByFilter("player_inventory", "user={:user} && item_id=3080000", "", 0, 0, dbx.Params{"user": owner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, counter := range counters {
+		if err = app.Delete(counter); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestMigrationGivesOldRoomsACounter(t *testing.T) {
+	app, owner, _ := newKitchen(t)
+	rerunCounterMigration(t, app, owner)
+	counter, err := app.FindFirstRecordByFilter("player_inventory", "user={:user} && item_id=3080000", dbx.Params{"user": owner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !counter.GetBool("placed") || counter.GetInt("tx") != 7 || counter.GetInt("ty") != 3 {
+		t.Fatalf("counter placed=%v at %d,%d", counter.GetBool("placed"), counter.GetInt("tx"), counter.GetInt("ty"))
+	}
+}
+
+func TestMigrationStoresTheCounterWhenTheTileIsTaken(t *testing.T) {
+	app, owner, _ := newKitchen(t)
+	deleteCounters(t, app, owner)
+	chair, err := app.FindFirstRecordByFilter("player_inventory", "user={:user} && item_id=3040001", dbx.Params{"user": owner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chair.Set("tx", 7)
+	chair.Set("ty", 3)
+	if err = app.Save(chair); err != nil {
+		t.Fatal(err)
+	}
+	rerunCounterMigration(t, app, owner)
+	counter, err := app.FindFirstRecordByFilter("player_inventory", "user={:user} && item_id=3080000", dbx.Params{"user": owner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counter.GetBool("placed") {
+		t.Fatal("counter placed over an existing chair")
+	}
+}

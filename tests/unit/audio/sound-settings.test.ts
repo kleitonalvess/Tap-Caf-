@@ -36,6 +36,6 @@ describe('sprite manifest', () => {
   });
 
   it('lists every event the game plays', () => {
-    expect(SOUND_EVENTS).toEqual(['doorBell', 'cookStart', 'coin', 'levelUp', 'broom', 'buzzer', 'bookPage', 'click']);
+    expect(SOUND_EVENTS).toEqual(['doorBell', 'cookStart', 'coin', 'levelUp', 'broom', 'buzzer', 'bookPage', 'click', 'season']);
   });
 });

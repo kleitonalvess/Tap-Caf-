@@ -11,6 +11,7 @@ export type RoomItemKind =
   | 'table'
   | 'chair'
   | 'stove'
+  | 'counter'
   | 'bush'
   | 'panel'
   | 'letterbox'
@@ -82,6 +83,7 @@ export const ITEM_STYLES: Record<RoomItemKind, RoomItemStyle> = {
   table: { height: 46 * ROOM_ASSET_SCALE, topColor: 0xf6f1e4, leftColor: 0xd8cfb8, rightColor: 0xc2b79c, blocks: true, inset: 0.86 },
   chair: { height: 34 * ROOM_ASSET_SCALE, topColor: 0xb9754a, leftColor: 0x9c5f3a, rightColor: 0x82502f, blocks: true, inset: 0.6 },
   stove: { height: 58 * ROOM_ASSET_SCALE, topColor: 0x9aa3ad, leftColor: 0x7c848d, rightColor: 0x656c74, blocks: true, inset: 0.9 },
+  counter: { height: 26 * ROOM_ASSET_SCALE, topColor: 0xf3ead8, leftColor: 0xa0703f, rightColor: 0x7c5331, blocks: true, inset: 0.9 },
   bush: { height: 40 * ROOM_ASSET_SCALE, topColor: 0x5fae3f, leftColor: 0x4a8c31, rightColor: 0x3d7428, blocks: true, inset: 0.7 },
   panel: { height: 90 * ROOM_ASSET_SCALE, topColor: 0xefc84a, leftColor: 0xd0aa36, rightColor: 0xb0902c, blocks: true, inset: 0.7 },
   letterbox: { height: 52 * ROOM_ASSET_SCALE, topColor: 0xc9503f, leftColor: 0xa93f31, rightColor: 0x8c3326, blocks: true, inset: 0.5 },

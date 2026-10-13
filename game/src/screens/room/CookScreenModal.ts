@@ -3,6 +3,8 @@ import { Container, Graphics, Rectangle, Sprite, Text, TextStyle, type Texture }
 import type { SoundPlayer } from '../../audio/sound-events';
 import { FONT_FAMILY } from '../../core/fonts';
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../core/stage';
+import { formatDuration, recipeAvailability, recipePages, type CookingContext, type RecipeAvailability, type RecipeRule } from '../../game/game-rules';
+import type { RecipeArtLibrary } from '../../game/recipe-art';
 
 export interface CookScreenTextures {
   cookScreen: Texture;
@@ -21,6 +23,13 @@ export interface CookRecipeEvent {
   name: string;
   stage1: Texture;
   stage2: Texture;
+}
+
+/** Everything the book shows; refreshed by the room before each opening. */
+export interface CookBook {
+  recipes: readonly RecipeRule[];
+  context: CookingContext;
+  art: RecipeArtLibrary;
 }
 
 export interface CookScreenModalOptions {
@@ -44,6 +53,16 @@ const OPEN_DURATION_MS = 260;
 const CLOSE_DURATION_MS = 200;
 const OVERLAY_MAX_ALPHA = 0.65;
 
+// Layout measured on cook_screen.png (1672 × 941).
+const PANEL = { x: 236, y: 236 };
+const CARD = { w: 370, h: 185, padX: 22, padY: 15, gapX: 21, gapY: 21, radius: 14 };
+const TABS = [260, 460, 660, 856].map((x) => new Rectangle(x, 118, 170, 52));
+const DETAILS = { x: 1092, y: 216, w: 348, cx: 1266 };
+
+const INK = 0x5a3915;
+const GOOD = 0x2f7d32;
+const BAD = 0xb3261e;
+
 const easeOutBack = (t: number): number => {
   const c1 = 1.70158;
   const c3 = c1 + 1;
@@ -53,29 +72,79 @@ const easeOutBack = (t: number): number => {
 const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
 const easeInCubic = (t: number): number => t * t * t;
 
+function text(value: string, size: number, fill: number, weight: '400' | '600' | '700' = '600', stroke?: number): Text {
+  return new Text({
+    text: value,
+    style: new TextStyle({
+      fontFamily: [FONT_FAMILY, 'sans-serif'], fontSize: size, fontWeight: weight, fill, padding: 4,
+      ...(stroke !== undefined ? { stroke: { color: stroke, width: 4, join: 'round' as const } } : {}),
+    }),
+  });
+}
+
+function fitWidth(label: Text, width: number): Text {
+  label.scale.set(1);
+  if (label.width > width) label.scale.set(width / label.width);
+  return label;
+}
+
+/** Small vector icons drawn around (0,0), about 24 px tall. */
+function icon(kind: 'clock' | 'coin' | 'plate' | 'lock'): Graphics {
+  const g = new Graphics();
+  switch (kind) {
+    case 'clock':
+      g.circle(0, 0, 11).fill(0xffffff).stroke({ color: INK, width: 3 });
+      g.moveTo(0, -6).lineTo(0, 0).lineTo(5, 3).stroke({ color: INK, width: 2.5, cap: 'round' });
+      break;
+    case 'coin':
+      g.circle(0, 0, 11).fill(0xf5c518).stroke({ color: 0xa8740c, width: 3 });
+      g.circle(0, 0, 5).stroke({ color: 0xa8740c, width: 2 });
+      break;
+    case 'plate':
+      g.ellipse(0, 2, 13, 7).fill(0xffffff).stroke({ color: INK, width: 2.5 });
+      g.ellipse(0, -3, 7, 5).fill(0xe2a24b);
+      break;
+    case 'lock':
+      g.arc(0, -4, 9, Math.PI, 0).stroke({ color: 0xfff3dc, width: 8 }).arc(0, -4, 9, Math.PI, 0).stroke({ color: INK, width: 5 });
+      g.roundRect(-14, -4, 28, 22, 4).fill(INK).stroke({ color: 0xfff3dc, width: 2 });
+      break;
+  }
+  g.eventMode = 'none';
+  return g;
+}
+
 /**
- * Modal do Livro de Receitas aberto ao clicar no fogão.
- *
- * Exibe o fundo escurecido e a janela cook_screen com 6 cards em 2 colunas x 3 linhas,
- * com animação de zoom in ao abrir e zoom out ao fechar.
+ * Recipe book opened from an empty stove: tabs are pages of six recipes in
+ * unlock order, the right panel details the selected recipe.
  */
 export class CookScreenModal {
   readonly view = new Container();
 
   private readonly backdrop = new Graphics();
   private readonly window = new Container();
-  private readonly cards: Container[] = [];
-  private readonly cardItems: CardItem[] = [];
+  private readonly cardsLayer = new Container();
+  private readonly tabsLayer = new Container();
+  private readonly details = new Container();
   private readonly closeButton = new Container();
+  private cardItems: CardItem[] = [];
 
   private state: ModalState = 'closed';
   private animTimer = 0;
   private readonly onCloseCallback?: () => void;
+  private readonly onCookRecipe?: (recipe: CookRecipeEvent) => void;
   private readonly audio?: SoundPlayer;
+  private readonly cardTexture: Texture;
+  private book?: CookBook;
+  private page = 0;
+  private selectedId?: string;
+  /** Recipe the player tapped since the book opened; a preselected card never cooks on one tap. */
+  private tappedId?: string;
 
   constructor(options: CookScreenModalOptions) {
     this.onCloseCallback = options.onClose;
+    this.onCookRecipe = options.onCookRecipe;
     this.audio = options.audio;
+    this.cardTexture = options.textures.foodCard;
     this.view.label = 'cook-screen-modal';
     this.view.visible = false;
 
@@ -92,133 +161,279 @@ export class CookScreenModal {
     this.window.sortableChildren = true;
     this.window.position.set(STAGE_WIDTH / 2, STAGE_HEIGHT / 2);
     this.window.pivot.set(836, 470.5);
+    // The window swallows taps so only the backdrop closes the book.
+    this.window.eventMode = 'static';
+    this.window.on('pointertap', (event) => event.stopPropagation());
 
     const bg = new Sprite(options.textures.cookScreen);
     bg.label = 'cook-modal-bg';
     bg.zIndex = 0;
     this.window.addChild(bg);
-
-    // Área detectada em cook_screen.png: x=[236, 1041], y=[236, 863] (805 x 627)
-    // Dimensões de inside_food_card.png: 1440 x 720 (proporção 2:1)
-    const cardTexture = options.textures.foodCard;
-
-    const panelX = 236;
-    const panelY = 236;
-    const padX = 22;
-    const padY = 15;
-    const gapX = 21;
-    const gapY = 21;
-    const cardW = 370;
-    const cardH = 185;
-    const cornerRadius = 14;
-
-    for (let row = 0; row < 3; row++) {
-      for (let col = 0; col < 2; col++) {
-        const cardIndex = row * 2 + col;
-        const card = new Container();
-        card.label = `cook-card-${cardIndex + 1}`;
-        card.position.set(
-          panelX + padX + col * (cardW + gapX),
-          panelY + padY + row * (cardH + gapY),
-        );
-        card.eventMode = 'static';
-        card.cursor = 'pointer';
-        card.zIndex = 1;
-
-        const inner = new Container();
-        inner.label = `cook-card-inner-${cardIndex + 1}`;
-        inner.position.set(cardW / 2, cardH / 2);
-        inner.pivot.set(cardW / 2, cardH / 2);
-
-        const sprite = new Sprite(cardTexture);
-        sprite.label = `cook-card-sprite-${cardIndex + 1}`;
-        sprite.width = cardW;
-        sprite.height = cardH;
-
-        const mask = new Graphics();
-        mask.label = `cook-card-mask-${cardIndex + 1}`;
-        mask.roundRect(0, 0, cardW, cardH, cornerRadius).fill(0xffffff);
-
-        inner.mask = mask;
-        inner.addChild(mask, sprite);
-
-        if (cardIndex === 0) {
-          // Título centralizado na barra escura superior (y=23, entre os arabescos laterais)
-          const title = new Text({
-            text: 'bolo beta',
-            style: new TextStyle({
-              fontFamily: [FONT_FAMILY, 'sans-serif'],
-              fontSize: 18,
-              fontWeight: '600',
-              fill: 0xfffcf5,
-              stroke: { color: 0x5a3915, width: 3, join: 'round' },
-              padding: 4,
-            }),
-          });
-          title.label = 'cook-card-title-1';
-          title.anchor.set(0.5, 0.5);
-          title.position.set(cardW / 2, 23);
-          inner.addChild(title);
-
-          if (options.textures.cakeStage2) {
-            const cakeSprite = new Sprite(options.textures.cakeStage2);
-            cakeSprite.label = 'cook-card-cake-preview';
-            cakeSprite.anchor.set(0.5, 0.5);
-            cakeSprite.width = 110;
-            cakeSprite.height = 110;
-            cakeSprite.position.set(75, 114);
-            inner.addChild(cakeSprite);
-          }
-
-          card.on('pointertap', (e) => {
-            e.stopPropagation();
-            this.close();
-            if (options.textures.cakeStage1 && options.textures.cakeStage2) {
-              options.onCookRecipe?.({
-                id: 'cake_1',
-                name: 'bolo beta',
-                stage1: options.textures.cakeStage1,
-                stage2: options.textures.cakeStage2,
-              });
-            }
-          });
-        }
-
-        card.addChild(inner);
-
-        const cardItem: CardItem = {
-          container: card,
-          inner,
-          sprite,
-          currentScale: 1.0,
-          targetScale: 1.0,
-        };
-
-        card.on('pointerover', () => {
-          cardItem.targetScale = 1.04;
-          sprite.tint = 0xfff5ea;
-          card.zIndex = 10;
-        });
-        card.on('pointerout', () => {
-          cardItem.targetScale = 1.0;
-          sprite.tint = 0xffffff;
-          card.zIndex = 1;
-        });
-
-        this.cards.push(card);
-        this.cardItems.push(cardItem);
-        this.window.addChild(card);
-      }
-    }
+    this.cardsLayer.zIndex = 1;
+    this.cardsLayer.sortableChildren = true;
+    this.tabsLayer.zIndex = 2;
+    this.details.zIndex = 2;
+    this.details.label = 'cook-details';
+    this.window.addChild(this.cardsLayer, this.tabsLayer, this.details);
 
     this.setupCloseButton(options.textures.closeButton);
     this.window.addChild(this.closeButton);
-
     this.view.addChild(this.window);
 
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', this.onKeyDown);
     }
+  }
+
+  get isOpen(): boolean {
+    return this.state !== 'closed';
+  }
+
+  /** Replaces the recipes and the player's situation; keeps the page when possible. */
+  setBook(book: CookBook): void {
+    this.book = book;
+    const pages = recipePages(book.recipes);
+    this.page = Math.min(this.page, Math.max(0, pages.length - 1));
+    if (!this.selectedId || !book.recipes.some((recipe) => recipe.id === this.selectedId)) {
+      const firstUseful = pages[this.page]?.recipes.find((recipe) => recipeAvailability(recipe, book.context) !== 'locked');
+      this.selectedId = (firstUseful ?? book.recipes[0])?.id;
+    }
+    this.render();
+  }
+
+  open(): void {
+    if (this.state === 'open' || this.state === 'opening') return;
+    this.audio?.play('bookPage');
+    this.tappedId = undefined;
+    this.state = 'opening';
+    this.animTimer = 0;
+    this.view.visible = true;
+    this.backdrop.alpha = 0;
+    this.window.alpha = 0;
+    this.window.scale.set(0.7);
+  }
+
+  close(): void {
+    if (this.state === 'closed' || this.state === 'closing') return;
+    this.state = 'closing';
+    this.animTimer = 0;
+    this.onCloseCallback?.();
+  }
+
+  private render(): void {
+    const book = this.book;
+    if (!book) return;
+    const pages = recipePages(book.recipes);
+    this.renderTabs(pages.map((page) => page.label));
+    this.renderCards(pages[this.page]?.recipes ?? [], book);
+    this.renderDetails(book);
+  }
+
+  private renderTabs(labels: readonly string[]): void {
+    this.tabsLayer.removeChildren().forEach((child) => child.destroy({ children: true }));
+    labels.forEach((caption, index) => {
+      const area = TABS[index];
+      const tab = new Container();
+      tab.label = `cook-tab-${index + 1}`;
+      tab.position.set(area.x, area.y);
+      tab.eventMode = 'static';
+      tab.cursor = 'pointer';
+      tab.hitArea = new Rectangle(0, 0, area.width, area.height);
+      const selected = index === this.page;
+      const face = new Graphics().roundRect(4, 4, area.width - 8, area.height - 8, 14)
+        .fill({ color: selected ? 0xfff3d6 : 0xffffff, alpha: selected ? 0.95 : 0.25 });
+      if (selected) face.roundRect(4, 4, area.width - 8, area.height - 8, 14).stroke({ color: INK, width: 3 });
+      face.eventMode = 'none';
+      const label = fitWidth(text(caption, 22, INK, selected ? '700' : '600'), area.width - 20);
+      label.anchor.set(0.5);
+      label.position.set(area.width / 2, area.height / 2);
+      label.eventMode = 'none';
+      tab.addChild(face, label);
+      tab.on('pointertap', (event) => {
+        event.stopPropagation();
+        if (this.page === index) return;
+        this.page = index;
+        this.audio?.play('bookPage');
+        const book = this.book!;
+        const recipes = recipePages(book.recipes)[index].recipes;
+        this.selectedId = (recipes.find((recipe) => recipeAvailability(recipe, book.context) !== 'locked') ?? recipes[0]).id;
+        this.render();
+      });
+      this.tabsLayer.addChild(tab);
+    });
+  }
+
+  private renderCards(recipes: readonly RecipeRule[], book: CookBook): void {
+    this.cardsLayer.removeChildren().forEach((child) => child.destroy({ children: true }));
+    this.cardItems = [];
+    recipes.forEach((recipe, index) => {
+      const row = Math.floor(index / 2);
+      const col = index % 2;
+      const availability = recipeAvailability(recipe, book.context);
+      const card = new Container();
+      card.label = `cook-card-${recipe.id}`;
+      card.position.set(PANEL.x + CARD.padX + col * (CARD.w + CARD.gapX), PANEL.y + CARD.padY + row * (CARD.h + CARD.gapY));
+      card.eventMode = 'static';
+      card.cursor = 'pointer';
+      card.hitArea = new Rectangle(0, 0, CARD.w, CARD.h);
+      card.zIndex = 1;
+
+      const inner = new Container();
+      inner.position.set(CARD.w / 2, CARD.h / 2);
+      inner.pivot.set(CARD.w / 2, CARD.h / 2);
+      const sprite = new Sprite(this.cardTexture);
+      sprite.width = CARD.w;
+      sprite.height = CARD.h;
+      const mask = new Graphics().roundRect(0, 0, CARD.w, CARD.h, CARD.radius).fill(0xffffff);
+      inner.mask = mask;
+      inner.addChild(mask, sprite);
+
+      const title = fitWidth(text(recipe.name, 20, 0xfffcf5, '600', INK), CARD.w - 120);
+      title.anchor.set(0.5);
+      title.position.set(CARD.w / 2, 23);
+      const dish = new Sprite(book.art.get(recipe.id).stage2);
+      dish.anchor.set(0.5);
+      dish.width = 110;
+      dish.height = 110;
+      dish.position.set(75, 114);
+      inner.addChild(title, dish);
+
+      // A locked card shows only its time; the lock and level take the other rows.
+      const rows: Array<[Graphics, Text]> = availability === 'locked'
+        ? [[icon('clock'), text(formatDuration(recipe.cookSeconds), 22, INK)]]
+        : [
+            [icon('clock'), text(formatDuration(recipe.cookSeconds), 22, INK)],
+            [icon('coin'), availability === 'free' ? text('Grátis', 22, GOOD, '700')
+              : text(String(recipe.costCoins), 22, availability === 'unaffordable' ? BAD : INK)],
+            [icon('plate'), text(`${recipe.servings} porções`, 22, INK)],
+          ];
+      rows.forEach(([glyph, value], line) => {
+        const y = 72 + line * 36;
+        glyph.position.set(160, y);
+        value.anchor.set(0, 0.5);
+        value.position.set(180, y);
+        fitWidth(value, CARD.w - 196);
+        inner.addChild(glyph, value);
+      });
+
+      if (availability === 'free') {
+        const ribbon = new Graphics().roundRect(CARD.w - 112, 46, 104, 30, 8).fill(GOOD);
+        const ribbonText = text('GRÁTIS', 18, 0xffffff, '700');
+        ribbonText.anchor.set(0.5);
+        ribbonText.position.set(CARD.w - 60, 61);
+        inner.addChild(ribbon, ribbonText);
+      }
+      if (availability === 'locked') {
+        dish.tint = 0x777777;
+        const shade = new Graphics().roundRect(0, 0, CARD.w, CARD.h, CARD.radius).fill({ color: 0x2b1a0c, alpha: 0.45 });
+        const lock = icon('lock');
+        lock.position.set(160, 126);
+        const level = fitWidth(text(`Nível ${recipe.level}`, 24, 0xffffff, '700', INK), CARD.w - 196);
+        level.anchor.set(0, 0.5);
+        level.position.set(180, 126);
+        inner.addChild(shade, lock, level);
+      }
+      if (recipe.id === this.selectedId) {
+        inner.addChild(new Graphics().roundRect(2, 2, CARD.w - 4, CARD.h - 4, CARD.radius).stroke({ color: 0xff8f1f, width: 5 }));
+      }
+
+      card.addChild(inner);
+      const item: CardItem = { container: card, inner, sprite, currentScale: 1, targetScale: 1 };
+      card.on('pointerover', () => { item.targetScale = 1.04; sprite.tint = 0xfff5ea; card.zIndex = 10; });
+      card.on('pointerout', () => { item.targetScale = 1; sprite.tint = 0xffffff; card.zIndex = 1; });
+      card.on('pointertap', (event) => {
+        event.stopPropagation();
+        // A second tap on the selected recipe cooks it, like the original single click.
+        if (this.tappedId === recipe.id) { this.cook(recipe); return; }
+        this.selectedId = recipe.id;
+        this.tappedId = recipe.id;
+        this.audio?.play('click');
+        this.render();
+      });
+      this.cardItems.push(item);
+      this.cardsLayer.addChild(card);
+    });
+  }
+
+  private renderDetails(book: CookBook): void {
+    this.details.removeChildren().forEach((child) => child.destroy({ children: true }));
+    const recipe = book.recipes.find((candidate) => candidate.id === this.selectedId);
+    if (!recipe) return;
+    const availability = recipeAvailability(recipe, book.context);
+    const name = fitWidth(text(recipe.name, 34, INK, '700'), DETAILS.w - 40);
+    name.anchor.set(0.5);
+    name.position.set(DETAILS.cx, 268);
+    const dish = new Sprite(book.art.get(recipe.id).stage2);
+    dish.anchor.set(0.5);
+    dish.width = 170;
+    dish.height = 170;
+    dish.position.set(DETAILS.cx, 385);
+    if (availability === 'locked') dish.tint = 0x888888;
+    this.details.addChild(name, dish);
+
+    const rows: Array<[string, string]> = [
+      ['Preparo', formatDuration(recipe.cookSeconds)],
+      ['Custo', availability === 'free' ? 'Grátis' : `${recipe.costCoins} moedas`],
+      ['Rende', `${recipe.servings} porções`],
+      ['Venda', `${recipe.pricePerServing} por porção`],
+      ['Experiência', `${recipe.xpPerServing} por porção`],
+      ['Estraga após', formatDuration(recipe.spoilSeconds)],
+    ];
+    rows.forEach(([label, value], index) => {
+      const y = 492 + index * 42;
+      const left = text(label, 22, INK, '400');
+      left.anchor.set(0, 0.5);
+      left.position.set(DETAILS.x + 22, y);
+      const right = fitWidth(text(value, 22, INK, '600'), 190);
+      right.anchor.set(1, 0.5);
+      right.position.set(DETAILS.x + DETAILS.w - 22, y);
+      this.details.addChild(left, right);
+    });
+
+    const statuses: Record<RecipeAvailability, [string, number]> = {
+      locked: [`Bloqueada até o nível ${recipe.level}`, BAD],
+      free: ['Grátis (Ajuda de Emergência)', GOOD],
+      unaffordable: ['Moedas insuficientes', BAD],
+      available: ['Temperar no fogo rende mais porções', INK],
+    };
+    const [status, color] = statuses[availability];
+    const quiet = availability === 'available';
+    const statusText = fitWidth(text(status, quiet ? 18 : 21, color, quiet ? '400' : '700'), DETAILS.w - 30);
+    statusText.anchor.set(0.5);
+    statusText.position.set(DETAILS.cx, 752);
+    this.details.addChild(statusText);
+
+    const enabled = availability === 'available' || availability === 'free';
+    const button = new Container();
+    button.label = 'cook-button';
+    button.position.set(DETAILS.cx, 822);
+    button.pivot.set(140, 32);
+    button.eventMode = enabled ? 'static' : 'none';
+    button.cursor = enabled ? 'pointer' : 'default';
+    const face = new Graphics()
+      .roundRect(0, 0, 280, 64, 18).fill(enabled ? 0x2f7d32 : 0x9e9e9e)
+      .roundRect(4, 4, 272, 52, 14).fill(enabled ? 0x4caf50 : 0xbdbdbd);
+    const caption = text('Cozinhar', 30, 0xffffff, '700', enabled ? 0x1b5e20 : 0x616161);
+    caption.anchor.set(0.5);
+    caption.position.set(140, 30);
+    button.addChild(face, caption);
+    button.on('pointerover', () => button.scale.set(1.04));
+    button.on('pointerout', () => button.scale.set(1));
+    button.on('pointertap', (event) => { event.stopPropagation(); this.cook(recipe); });
+    this.details.addChild(button);
+  }
+
+  private cook(recipe: RecipeRule): void {
+    const book = this.book;
+    if (!book) return;
+    const availability = recipeAvailability(recipe, book.context);
+    if (availability === 'locked' || availability === 'unaffordable') {
+      this.audio?.play('buzzer', 0.6);
+      return;
+    }
+    const art = book.art.get(recipe.id);
+    this.close();
+    this.onCookRecipe?.({ id: recipe.id, name: recipe.name, stage1: art.stage1, stage2: art.stage2 });
   }
 
   private setupCloseButton(closeButtonTexture?: Texture): void {
@@ -236,27 +451,16 @@ export class CookScreenModal {
       sprite.width = 50;
       sprite.height = 52;
       this.closeButton.addChild(sprite);
-
-      this.closeButton.on('pointerover', () => {
-        this.closeButton.scale.set(1.1);
-      });
-      this.closeButton.on('pointerout', () => {
-        this.closeButton.scale.set(1.0);
-      });
+      this.closeButton.on('pointerover', () => { this.closeButton.scale.set(1.1); });
+      this.closeButton.on('pointerout', () => { this.closeButton.scale.set(1.0); });
     } else {
       const bg = new Graphics();
       bg.circle(0, 0, 20).fill({ color: 0xcc3333 }).stroke({ color: 0xffffff, width: 3 });
       bg.moveTo(-7, -7).lineTo(7, 7).stroke({ color: 0xffffff, width: 3, cap: 'round' });
       bg.moveTo(7, -7).lineTo(-7, 7).stroke({ color: 0xffffff, width: 3, cap: 'round' });
-
       this.closeButton.addChild(bg);
-
-      this.closeButton.on('pointerover', () => {
-        this.closeButton.scale.set(1.12);
-      });
-      this.closeButton.on('pointerout', () => {
-        this.closeButton.scale.set(1.0);
-      });
+      this.closeButton.on('pointerover', () => { this.closeButton.scale.set(1.12); });
+      this.closeButton.on('pointerout', () => { this.closeButton.scale.set(1.0); });
     }
 
     this.closeButton.on('pointertap', (e) => {
@@ -271,33 +475,7 @@ export class CookScreenModal {
     }
   };
 
-  get isOpen(): boolean {
-    return this.state !== 'closed';
-  }
-
-  open(): void {
-    if (this.state === 'open' || this.state === 'opening') return;
-
-    this.audio?.play('bookPage');
-
-    this.state = 'opening';
-    this.animTimer = 0;
-    this.view.visible = true;
-    this.backdrop.alpha = 0;
-    this.window.alpha = 0;
-    this.window.scale.set(0.7);
-  }
-
-  close(): void {
-    if (this.state === 'closed' || this.state === 'closing') return;
-
-    this.state = 'closing';
-    this.animTimer = 0;
-    this.onCloseCallback?.();
-  }
-
   update(deltaMs: number): void {
-
     for (const item of this.cardItems) {
       if (Math.abs(item.currentScale - item.targetScale) > 0.0005) {
         const factor = 1 - Math.exp(-deltaMs / 70);

@@ -1,5 +1,6 @@
 import { Assets, Texture } from 'pixi.js';
 import { IndoorArt, type ArtProvider, type IndoorArtFrame, type IndoorArtEntry } from './indoor-art';
+import { placeholderItemArt } from './placeholder-art';
 import type { PlayerState } from './player-state';
 import type { RoomItem, RoomItemKind } from '../world/RoomModel';
 
@@ -18,6 +19,8 @@ export interface RoomSnapshot {
 export interface ItemManifest extends RoomCatalogItem {
   itemHeight: number; parts: (IndoorArtFrame & { rotation?: number })[];
   wallpaperRotation?: 0 | 1; door?: IndoorArtEntry['door'];
+  /** Registered before its PNG exists; the client draws a stand-in. */
+  placeholder?: boolean;
 }
 
 /** Parts without a rotation belong to the same assembled pose. */
@@ -57,6 +60,16 @@ export async function loadRoomItemArt(snapshot: RoomSnapshot, legacy?: ArtProvid
   const entries: Record<string, IndoorArtEntry> = { ...legacy?.art.entries };
   const textures = new Map<string, Texture>();
   await Promise.all(manifests.map(async (manifest) => {
+    if (manifest.parts.length === 0 && manifest.placeholder) {
+      const file = `placeholder:${manifest.classname}`;
+      const drawn = placeholderItemArt(manifest.kind, manifest.itemHeight, file);
+      if (!drawn) return;
+      textures.set(file, drawn.texture);
+      entries[manifest.classname] = {
+        characterId: manifest.id, frames: [drawn.frame], sizeX: manifest.sizeX, sizeY: manifest.sizeY, itemHeight: manifest.itemHeight,
+      };
+      return;
+    }
     const parts = manifest.parts.map((part) => ({ ...part, file: new URL(`${manifest.classname}/${part.file}`, root).href }));
     for (const frame of parts) {
       const texture = await Assets.load<Texture>(frame.file);

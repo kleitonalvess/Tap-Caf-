@@ -38,6 +38,7 @@ import { resolveSession } from './game/session';
 import { loadPlayerState } from './game/player-state';
 import { loadNpcAppearancePolicy } from './game/npc-appearance';
 import { CookingClient } from './game/cooking';
+import { loadGameRules } from './game/game-rules';
 import { subscribePlayerState } from './game/player-state-realtime';
 import { RoomRealtime } from './game/room-realtime';
 import { loadBitterMode, saveBitterMode } from './game/zoom-preferences';
@@ -123,7 +124,11 @@ async function boot(): Promise<void> {
     const roomSnapshot = await roomClient.refresh();
 
     // Catálogo fornece comportamento e pegada; manifesto fornece geometria visual.
-    const [playerState, cookingSnapshot, art, actionBarTexture, actionBarButtons, actionBarIcons, npcEmotionTextures, topBarsTextures, cookTextures, wardrobeTextures, storeBarTexture, storeBarIcons, npcAppearancePolicy, placeholderAvatar, storeTopButtonTexture, storeToolbarTextures] = await Promise.all([
+    const [gameRules, playerState, cookingSnapshot, art, actionBarTexture, actionBarButtons, actionBarIcons, npcEmotionTextures, topBarsTextures, cookTextures, wardrobeTextures, storeBarTexture, storeBarIcons, npcAppearancePolicy, placeholderAvatar, storeTopButtonTexture, storeToolbarTextures] = await Promise.all([
+      loadGameRules().catch((error) => {
+        console.warn('[regras] indisponíveis; o livro de receitas fica fechado', error);
+        return undefined;
+      }),
       loadPlayerState(),
       cookingClient.refresh(),
       loadIndoorArt().catch((error) => {
@@ -226,6 +231,7 @@ async function boot(): Promise<void> {
         fullscreen.setWardrobeOpen(open);
       },
       audio,
+      ...(gameRules ? { rules: gameRules } : {}),
       audioControl: {
         tracks: musicTracks.map(({ id, name, detail }) => ({ id, name, detail })),
         getPreferences: () => ({ ...soundPreferences }),

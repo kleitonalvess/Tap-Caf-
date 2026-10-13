@@ -433,3 +433,27 @@ export function pageFlip(kit: SynthKit, dest: AudioNode, t: number): number {
   source.stop(t + 0.22);
   return 0.22;
 }
+
+/** Seasoning: two shaker flicks followed by a short rising sparkle. */
+export function season(kit: SynthKit, dest: AudioNode, t: number): number {
+  for (const offset of [0, 0.11]) {
+    const source = noiseSource(kit);
+    const high = filter(kit, 'bandpass', 6500, 1.2);
+    const amp = gainNode(kit);
+    strike(amp.gain, t + offset, 0.28, 0.006, 0.07);
+    source.connect(high).connect(amp).connect(dest);
+    source.start(t + offset, 0.4 + offset);
+    source.stop(t + offset + 0.1);
+  }
+  [84, 88, 91, 96].forEach((midi, index) => {
+    const at = t + 0.24 + index * 0.05;
+    const tone = oscillator(kit, 'sine', midiToHz(midi));
+    const amp = gainNode(kit);
+    strike(amp.gain, at, 0.08, 0.002, 0.3);
+    tone.connect(amp).connect(dest);
+    send(kit, amp, 0.5);
+    tone.start(at);
+    tone.stop(at + 0.35);
+  });
+  return 0.7;
+}

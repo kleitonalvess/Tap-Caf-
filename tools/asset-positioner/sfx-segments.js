@@ -2,7 +2,7 @@
 'use strict';
 (() => {
   // Mesmos eventos de game/src/audio/sound-events.ts; um teste compara as duas listas.
-  const EVENTS = Object.freeze(['doorBell', 'cookStart', 'coin', 'levelUp', 'broom', 'buzzer', 'bookPage', 'click']);
+  const EVENTS = Object.freeze(['doorBell', 'cookStart', 'coin', 'levelUp', 'broom', 'buzzer', 'bookPage', 'click', 'season']);
   const FILE_PATTERN = /^[A-Za-z0-9_.-]+\.(mp3|ogg|opus|wav|m4a)$/;
   const round = (seconds) => Math.round(seconds * 1000) / 1000;
 

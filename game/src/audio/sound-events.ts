@@ -1,5 +1,5 @@
 /** Game sounds the engine knows how to play, from an original sample or by synthesis. */
-export const SOUND_EVENTS = ['doorBell', 'cookStart', 'coin', 'levelUp', 'broom', 'buzzer', 'bookPage', 'click'] as const;
+export const SOUND_EVENTS = ['doorBell', 'cookStart', 'coin', 'levelUp', 'broom', 'buzzer', 'bookPage', 'click', 'season'] as const;
 export type SoundEvent = typeof SOUND_EVENTS[number];
 
 /** What screens need from the audio engine; null-object friendly for isolated tests. */

@@ -1,11 +1,18 @@
 /** O servidor define posse, ocupação e relógio; o cliente só apresenta o progresso. */
+export type StoveStatus = 'preparing' | 'cooking' | 'ready' | 'spoiled';
+
 export interface StoveCooking {
   id: string;
   recipeId: string;
   preparingAt: string;
   startedAt: string;
   readyAt: string;
-  status: 'preparing' | 'cooking' | 'ready';
+  spoilsAt?: string;
+  /** Status when the snapshot was taken; use stoveStatus() for the current one. */
+  status: StoveStatus;
+  /** Servings the batch yields, seasoning included. */
+  servings?: number;
+  seasoned?: boolean;
 }
 
 export interface OwnedStove {
@@ -19,12 +26,31 @@ export interface OwnedStove {
 export interface CookingSnapshot {
   serverNow: string;
   stoves: OwnedStove[];
+  /** Recipe the owner may cook for free right now (emergency help). */
+  emergencyRecipeId?: string;
 }
 
 const endpoint = '/api/coffe/cooking';
 
 export function cookingTime(value: string): number {
   return Date.parse(value.replace(' ', 'T'));
+}
+
+/** Current phase from the job's absolute times, on the server clock. */
+export function stoveStatus(job: StoveCooking, serverNowMs: number): StoveStatus {
+  const spoils = cookingTime(job.spoilsAt ?? '');
+  if (Number.isFinite(spoils) && serverNowMs >= spoils) return 'spoiled';
+  if (serverNowMs >= cookingTime(job.readyAt)) return 'ready';
+  if (serverNowMs >= cookingTime(job.startedAt)) return 'cooking';
+  return 'preparing';
+}
+
+/** Fraction of the spoil window already used by a ready dish (0 fresh, 1 spoiled). */
+export function staleness(job: StoveCooking, serverNowMs: number): number {
+  const ready = cookingTime(job.readyAt);
+  const spoils = cookingTime(job.spoilsAt ?? '');
+  if (!Number.isFinite(ready) || !Number.isFinite(spoils) || spoils <= ready) return 0;
+  return Math.max(0, Math.min(1, (serverNowMs - ready) / (spoils - ready)));
 }
 
 export class CookingClient {
@@ -110,6 +136,27 @@ export class CookingClient {
       body: JSON.stringify({ stoveId }),
     });
     if (response.status === 409) throw await this.conflict(response, 'Este preparo não pode mais ser cancelado.');
+    return this.read(response);
+  }
+
+  async clean(stoveId: string): Promise<CookingSnapshot> {
+    const response = await this.request('/clean', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stoveId }),
+    });
+    if (response.status === 409) throw await this.conflict(response, 'Não há nada para limpar.');
+    return this.read(response);
+  }
+
+  /** Owners and visitors may season; the room id selects whose stove. */
+  async season(stoveId: string): Promise<CookingSnapshot> {
+    const response = await this.request('/season', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(this.roomId ? { stoveId, roomId: this.roomId } : { stoveId }),
+    });
+    if (response.status === 409 || response.status === 403) throw await this.conflict(response, 'Não foi possível temperar.');
     return this.read(response);
   }
 }

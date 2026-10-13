@@ -24,8 +24,8 @@ AGENTS.md (importado acima) é a fonte das regras de trabalho, comandos, portas,
 | Preferências (volumes, mudo, faixa, zoom bitter) | `localStorage`, por jogador | — |
 
 - Estado de jogo não vai para `localStorage`: o cliente não é confiável e o café é compartilhado com visitantes em tempo real.
-- Progresso offline sai de instantes absolutos gravados no banco (`preparing_at`, `started_at`, `ready_at`); o snapshot calcula o estado a partir de `now`. Novos timers (estragar, limpar, contratar) seguem o mesmo padrão: gravar o instante, nunca decrementar por tick.
-- Sem humanos, o quarto aguarda 30 s, salva os NPCs (`ActionRemaining`) e dorme; ao acordar, desloca os relógios pela pausa.
+- Progresso offline sai de instantes absolutos gravados no banco (`preparing_at`, `started_at`, `ready_at`, `spoils_at`); o snapshot calcula o estado a partir de `now`. Novos timers (sujeira, contratar) seguem o mesmo padrão: gravar o instante, nunca decrementar por tick.
+- Sem humanos, o quarto aguarda 30 s, salva os NPCs (`ActionRemaining`, `PatienceRemaining`) e dorme; ao acordar, desloca os relógios pela pausa.
 - Grava-se no banco por transação de jogo (comprar, cozinhar, tirar porção, veredito de cliente), nunca por passo ou quadro.
 
 ## Loop de tempo
@@ -39,9 +39,9 @@ AGENTS.md (importado acima) é a fonte das regras de trabalho, comandos, portas,
 - Fonte única: `shared/gamerules/rules.json`, embutido no Go e validado no `init` (panic se inválido, como `roomcatalog`).
 - Extraídos de `ripped/game-config.xml.txt` (arquivo modificado, valores a confirmar): níveis 1–260 (`requiredXp`, `rewardCoins`), popularidade (mín. 5, máx. 105, +0,1 por cliente satisfeito, −0,3 por insatisfeito), `clientFrequency`, gorjetas e limite de funcionários por nível.
 - Interpretação não confirmada: `clientFrequency` é tratado como clientes por minuto. As entradas `<level low frequency>` do arquivo ainda não são usadas.
-- Receitas têm valores de design provisórios (`"provisional": true`); não apresentá-los como dados do jogo original.
+- Receitas têm valores de design provisórios (`"provisional": true`): o repositório não contém a lista original (o config só cita códigos de prato 900103–900105). Não apresentá-los como dados do jogo original. O mesmo vale para `stove` e `customers` (o `waitingFoodTime` do config é 999, adulterado).
 - Unidades: popularidade em décimos (`satisfaction_current_tenths`, faixa 50–1050); XP total em `experience_current` e requisito do próximo nível em `experience_max`; moedas = `gold` (2ª barra do HUD); Grana = `cash` (1ª barra, moeda premium).
-- Nova receita: entrada em `rules.json`, arte em `game/public/assets/foods/<id>/` (`stage_1.png`, `stage_2.png`) e, até a Sprint 3, a carta no `CookScreenModal`. Rode `go test ./shared/gamerules/`.
+- Nova receita: entrada em `rules.json` e `go test ./shared/gamerules/`. O cliente lê o catálogo de `GET /api/coffe/rules`; o livro, os fogões, o balcão e as mesas se ajustam sozinhos. Sem PNG, `recipe-art.ts` desenha uma ilustração em canvas; para trocar pela arte real, coloque `stage_1.png`/`stage_2.png` em `game/public/assets/foods/<id>/` e registre as texturas no mapa `images` do `RoomScreen` (hoje só `cake_1`).
 
 ## Ciclo econômico (Sprint 1)
 
@@ -51,7 +51,7 @@ AGENTS.md (importado acima) é a fonte das regras de trabalho, comandos, portas,
 4. Cliente que sai sem veredito positivo (sem cadeira ou sem comida) chama `/feedback` uma única vez (flag persistida `emotionShown`) e reduz a popularidade.
 5. A popularidade define o intervalo entre chegadas (`arrivalInterval`, ±25%); `MaxNPCs` limita quantos clientes ficam dentro.
 
-Eventos do protocolo: `welcome`, `actors`, `world`, `food`, `payment`, `ack`, `error`. Todo broadcast incrementa `seq`; o cliente reconecta ao detectar lacuna. Campos de dormência (`path`, `visits`) não são transmitidos.
+Eventos do protocolo: `welcome`, `actors`, `world`, `food` (sempre a lista completa; ausente = vazia), `payment`, `ack`, `error`. Todo broadcast incrementa `seq`; o cliente reconecta ao detectar lacuna. Campos de dormência (`path`, `visits`) não são transmitidos.
 
 ## Áudio (Sprint 2)
 
@@ -62,7 +62,17 @@ Eventos do protocolo: `welcome`, `actors`, `world`, `food`, `payment`, `ack`, `e
 - Música adaptativa: `setIntensity(0–1)` vem de quantos clientes estão dentro (2 = início do pico, 3 = máximo). As faixas procedurais aceleram até 7% e ganham percussão; as gravações não mudam.
 - Níveis calibrados em −20,5 LUFS para as músicas (referência: `music_1.opus`) e −22,5 a −25 LUFS para efeitos (referência: `book_1`, `start_cooking`). Mudanças na síntese devem ser remedidas renderizando com `OfflineAudioContext` no Chromium e `ffmpeg -af ebur128`.
 - HUD (`ui/AudioHudControl.ts`, canto superior esquerdo): mudo, seletor de faixa e volumes; tecla **M**. O mudo preserva os volumes; mexer num volume desfaz o mudo sem zerar o outro canal (também nas Configurações).
-- Ganchos no `RoomScreen`: sininho (cliente passa de fora para dentro), chiado (início do preparo), moeda (evento `payment`), fanfarra (level-up do dono), buzzer (emoção `dissatisfied`), livro (modal de receitas). A vassoura existe e será ligada na Sprint 5.
+- Ganchos no `RoomScreen`: sininho (cliente passa de fora para dentro), chiado (início do preparo), moeda (evento `payment`), fanfarra (level-up do dono), buzzer (emoção `dissatisfied`, prato estragado, receita indisponível), livro (modal de receitas), tempero (`season`) e vassoura (limpar fogão).
+
+## Cozinha e clientes (Sprints 3–4)
+
+- **Fogão** (`database/cooking.go`, estado derivado de timestamps em `jobState`): vazio → `preparing` (2 s) → `cooking` → `ready` → `spoiled` em `spoils_at` (= pronto + `spoilSeconds` da receita; jobs antigos sem o campo usam essa mesma conta). Estragado não serve: só `cook_clean`, que dá `cleaningXp` e cobra `cleaningCoins` (hoje 0).
+- **Temperar** (`cook_season`): uma vez por lote, durante `preparing`/`cooking`, soma `seasonBonusPercent` das porções (arredonda para cima, mínimo 1) e dá `seasonXp` a quem temperou. É a única ação permitida a visitantes, que precisam estar dentro do café; o `GET` da cozinha esconde deles a ajuda de emergência.
+- **Ajuda de emergência:** a receita liberada mais barata sai com custo 0 só quando as moedas não pagam essa receita **e** não há preparo vivo (preparando, cozinhando ou pronto) nem comida no balcão. A condição é recalculada dentro da transação de `cook_start`; o cliente apenas exibe "Grátis (Ajuda de Emergência)".
+- **Balcão** (`serving_counter`, id 3080000, `kind: counter`, placeholder sem PNG): servir escolhe no servidor um balcão com a mesma receita (soma porções) ou um vazio. Sem balcão livre, o servir falha com 409. Balcão com comida não pode ser movido nem guardado. A migração `202610140001` dá um balcão às salas antigas em (7,3), guardado no inventário se o tile estiver ocupado.
+- **Clientes** (`game-server/gameruntime/customers.go`): entrar → reservar cadeira com mesa → sentado aguardando (paciência `patienceSeconds` = 40 s, transmitida em `actor.patience`) → pegar porção do balcão → comer → pagar → sair. Sem comida no prazo: emoção brava, `/feedback` e −0,3 de popularidade. A lotação acompanha as cadeiras com mesa (`diningChairs`); com o balcão vazio e um prato no fogo, o intervalo de chegada é multiplicado por `cookingArrivalFactor` (1,5).
+- **Cliente:** livro de receitas lido de `rules` (abas por faixa de nível, bloqueio por nível, custo em vermelho quando falta moeda; dois toques no mesmo cartão ou o botão cozinham, e o cartão pré-selecionado nunca cozinha com um toque), menu contextual do fogão (`StoveActionMenu`), fumaça e balão de pronto com urgência (`StoveEffects`), prato e contador ×N no balcão (`CounterDish`), balão de paciência (`PatienceMeter`) e prato da receita certa na mesa.
+- **Arte provisória:** `placeholder-art.ts` desenha itens com `"placeholder": true` e `parts: []` no mesmo enquadramento do Asset Studio (origem do tile, 160×80). Ao exportar o PNG real, preencha `parts`, remova `placeholder` e rode `npm run assets:room`.
 
 ## GDD resumido
 
@@ -72,16 +82,15 @@ Eventos do protocolo: `welcome`, `actors`, `world`, `food`, `payment`, `ack`, `e
 | --- | --- | --- |
 | Economia: custo, porções, pagamento, níveis 1–260, popularidade | Implementado | 1 |
 | Áudio Web Audio (amostras + síntese, trilha adaptativa, controle no HUD) | Implementado | 2 |
-| Fogão completo (bônus, estragado, limpeza) e balcão | Planejado; hoje preparando → cozinhando → pronto → servir | 3 |
-| Máquina de estados de clientes com prazos e reclamações | Parcial: entrar, sentar, comer, sair e emoções existem | 4 |
+| Fogão completo (bônus, estragado, limpeza), balcão e livro de receitas por catálogo | Implementado (valores provisórios, arte placeholder) | 3 |
+| Máquina de estados de clientes com paciência, lotação por cadeiras e reclamações | Implementado (fluxo de autosserviço no balcão) | 4 |
 | Sujeira e limpeza | Planejado | 5 |
 | Funcionários | Planejado | 6 |
 | Construção, loja por categoria, expansão do café | Parcial: grade, arrastar, girar, guardar e comprar existem | 7 |
 | Juice e modal de nível | Parcial: moedas/XP flutuantes e aviso de nível | 8 |
 
-- **Fogão (alvo):** vazio → preparando (2 s) → cozinhando (barra) → bônus opcional (temperar/mexer) → pronto → estragado após uma janela por timestamp → limpeza. O config cita `stoveCleaningCoinCost` e `stoveCleaningXPGain`, com valores adulterados.
-- **Cliente (alvo):** entrando → procurando cadeira → sentado aguardando comida → comendo → pagando → saindo. Sem cadeira, sem comida no prazo ou com café sujo: balão bravo, sai sem pagar e reduz a popularidade. O config tem `waitingChairTime`, `waitingDiningSetTime`, `waitingFoodTime`, `eatingTime` e `dishPickupTime` (valores adulterados).
-- **Decisão em aberto (Sprint 4):** autosserviço no balcão ou entrega na mesa por garçom. Os campos `waitingFoodTime` e `dishPickupTime` sugerem entrega na mesa, mas isso não está confirmado.
+- **Fogão e cliente:** ver "Cozinha e clientes". O config cita `stoveCleaningCoinCost`, `stoveCleaningXPGain`, `waitingChairTime`, `waitingFoodTime`, `eatingTime` e `dishPickupTime`, todos com valores adulterados.
+- **Fluxo decidido:** o cliente pega a porção do balcão sentado (autosserviço). Garçons (Sprint 6) levarão o prato do balcão à mesa; os campos `dishPickupTime` do config apontam para essa entrega.
 - **Sujeira:** surge após N refeições por mesa ou comida estragada; bloqueia a mesa ou reduz a popularidade até a limpeza.
 - **Funcionários:** limite por nível segundo `employeeLocks` (1 no nível 1, 2 no 7 … 7 no 47); tarefas de servir e limpar; ficam no quarto como NPC `staff`.
 - **Áudio:** ver a seção "Áudio (Sprint 2)".
@@ -90,8 +99,8 @@ Eventos do protocolo: `welcome`, `actors`, `world`, `food`, `payment`, `ack`, `e
 
 1. **Regras compartilhadas e ciclo econômico** (concluída): `gamerules`, custo e porções, pagamento, níveis, popularidade, spawn por popularidade, moedas/XP flutuantes e aviso de nível.
 2. **AudioEngine** (concluída): mixer Web Audio, sons originais com síntese de reserva, duas trilhas procedurais adaptativas, controle no HUD, Recortador de SFX e primeira suíte Vitest. Pendente do responsável: ouvir e rotular os trechos de `compiled_sfx.mp3`. A urgência de "comida prestes a queimar" entra com o estado estragado (Sprint 3).
-3. **Fogão e balcão:** estados bônus/estragado/limpeza com timestamps, `CookScreenModal` alimentado pelo catálogo (custo, porções, tempo, bloqueio por nível), rota pública das regras e balcão (`kind: counter`, que depende de arte; placeholder procedural até lá).
-4. **Clientes:** extrair a máquina de estados de `runtime.go`, prazos de espera, balões de reclamação, limite por cadeiras e a decisão de fluxo.
+3. **Fogão e balcão** (concluída): tempero, estragado e limpeza por timestamp, ajuda de emergência, balcão com mescla de porções, livro de receitas por catálogo, rota `GET /api/coffe/rules` e arte placeholder substituível.
+4. **Clientes** (concluída): `customers.go`, paciência de 40 s persistida na dormência, lotação por cadeiras com mesa, chegada mais lenta com prato no fogo e balcão vazio, balão de paciência.
 5. **Sujeira e limpeza:** entidades persistidas por evento, ação de limpar e penalidade de popularidade.
 6. **Funcionários:** contratação com limite por nível, agenda de tarefas e persistência.
 7. **Construção e expansão:** categorias da loja, decoração com bônus de popularidade e compra de área (`tiles_x`/`tiles_y`, até 40). O conteúdo depende dos PNGs processados no Asset Studio.
@@ -99,14 +108,15 @@ Eventos do protocolo: `welcome`, `actors`, `world`, `food`, `payment`, `ack`, `e
 
 ## Débitos técnicos
 
-- `RoomScreen.ts` (~2,4 mil linhas) e `runtime.go` (~1,4 mil linhas): extrair controladores (cozimento, atores ao vivo, clientes) ao alterar essas áreas, não em refatorações isoladas.
-- `cake_1` ainda está fixo no cliente (`CookScreenModal`, `acceptCookingSnapshot`) até a Sprint 3.
+- `RoomScreen.ts` (~2,7 mil linhas) e `runtime.go` (~1,2 mil linhas): extrair controladores (cozimento, atores ao vivo) ao alterar essas áreas, não em refatorações isoladas. A máquina de estados dos clientes já saiu para `customers.go`.
+- Só `cake_1` tem PNG; as outras nove receitas e o balcão usam arte desenhada em canvas até o processamento no Asset Studio.
 - Moedas creditadas ao entregar a porção: um quarto que dorme ou cai depois disso não perde pagamento. Para pagar só no fim da refeição, é preciso um recibo idempotente persistido com o NPC.
-- Paciência dos clientes: sentado sem comida, o cliente desiste em cerca de 6 s (3 checagens de 2 s). Em um preparo de 30 s, o teste ao vivo registrou 6 reclamações (−1,8 de popularidade) antes do primeiro prato. Ajustar com prazos de espera na Sprint 4.
+- Popularidade em café sem comida: com 40 s de paciência, clientes que chegam sem nada no fogo nem no balcão saem bravos. No E2E, 5 min com o fogão parado ou com prato pronto não servido derrubaram a popularidade de 80 para 75. Avaliar se a chegada deve pausar também quando nada está no fogo.
+- Falha intermitente não reproduzida: em uma execução, `cook_start` voltou sem chegar à persistência (sem `game-internal/operation` no log). As candidatas são as validações do servidor ("Aproxime seu personagem do fogão" e "Aguarde o preparo"), herdadas da versão inicial. Duas repetições passaram.
 - Lockfile: o npm 10.9 falha com `edgesOut` ao adicionar dependências com peers opcionais, e o npm 11.6 remove os campos `libc` do lockfile. Para alterar dependências, use npm ≥ 11.20 (o projeto exige Node 24, que traz o npm 11).
-- Risco de travamento econômico: se o jogador gastar todas as moedas sem pratos prontos, não consegue cozinhar. Definir a mitigação na Sprint 3 (receita inicial gratuita ou piso de moedas).
 
 ## Verificação
 
 - Go: `go vet ./...` e `go test ./shared/... ./database/ ./game-server/...` (use `-race` em `gameruntime`). Testes de persistência usam banco temporário e as migrações reais.
-- Cliente: `npm run typecheck` e `npm test` (Vitest: música, preferências, manifesto de sprites e detecção do Recortador).
+- Cliente: `npm run typecheck` e `npm test` (Vitest: música, preferências, manifesto de sprites, detecção do Recortador, disponibilidade e páginas do livro, estados do fogão e paciência).
+- E2E manual: binários compilados do código atual, banco novo em diretório temporário, portas próprias (ex.: 18090/18091/15173) e Chromium com `--use-gl=swiftshader`. Para testar a ajuda de emergência, crie um superusuário no banco temporário e ajuste `gold` em `player_state`. Encerre o servidor do jogo (SIGINT) antes do PocketBase para o salvamento final.

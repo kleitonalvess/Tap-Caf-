@@ -5,6 +5,7 @@
   const LABELS = {
     doorBell: 'Sininho da porta', cookStart: 'Ingredientes no fogão', coin: 'Moeda', levelUp: 'Subiu de nível',
     broom: 'Vassoura', buzzer: 'Cliente insatisfeito', bookPage: 'Livro de receitas', click: 'Clique de interface',
+    season: 'Temperar prato',
   };
   const STORAGE_PREFIX = 'coffe-sfx-slicer.v1:';
   const $ = (id) => document.getElementById(id);
