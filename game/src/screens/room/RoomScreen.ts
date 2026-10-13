@@ -13,12 +13,13 @@ import {
 } from 'pixi.js';
 
 import { FONT_FAMILY } from '../../core/fonts';
-import { playRandomSfx } from '../../audio/sfx';
+import type { SoundPlayer } from '../../audio/sound-events';
+import { AudioHudControl, type AudioHudControlOptions } from '../../ui/AudioHudControl';
 import type { Screen } from '../../core/screen-manager';
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../core/stage';
 import { Actor } from '../../world/Actor';
 import { CLIP } from '../../avatar/clips';
-import { SFX_START_COOKING_URL, type ActionBarButtonTextures, type ActionBarIconTexture, type NpcEmotionTextures, type StoreToolbarTextures } from '../../game/asset-manifest';
+import { type ActionBarButtonTextures, type ActionBarIconTexture, type NpcEmotionTextures, type StoreToolbarTextures } from '../../game/asset-manifest';
 import { ActionBarMood } from './ActionBarMood';
 import { createActionBarBetaSlots } from './ActionBarBetaSlots';
 import { MAIN_ACTION_BAR_SCALE, StoreActionBar } from './StoreActionBar';
@@ -222,6 +223,10 @@ export interface RoomScreenOptions {
   cookingSnapshot?: CookingSnapshot;
   wardrobeTextures?: WardrobeScreenTextures;
   onWardrobeVisibilityChange?: (open: boolean) => void;
+  /** Sound effects and the rush-hour intensity of procedural music. */
+  audio?: SoundPlayer & { setIntensity(value: number): void };
+  /** Top-left mute, track and volume control. */
+  audioControl?: AudioHudControlOptions;
 }
 
 /** Cena isométrica com câmera e HUD independente do zoom. O mundo contém piso, destaques e objetos ordenados por RoomDepthSorter. A hitbox troca de tile na metade do passo; os sprites continuam interpolados. */
@@ -246,6 +251,9 @@ export class RoomScreen implements Screen {
   readonly topBars?: TopBars;
   private readonly floatingRewards: FloatingRewards;
   private readonly levelUpToast = new LevelUpToast();
+  private readonly audio?: SoundPlayer & { setIntensity(value: number): void };
+  private readonly audioControl?: AudioHudControl;
+  private rushIntensity = -1;
 
   private readonly cameraLayer = new Container();
   /** Cidade/estrada atrás do quarto, movida e ampliada pela mesma câmera. */
@@ -503,6 +511,11 @@ export class RoomScreen implements Screen {
     });
     this.floatingRewards = new FloatingRewards(this.world, { coin: rewardIcon(1), xp: rewardIcon(2) });
     this.view.addChild(this.levelUpToast.view);
+    this.audio = options.audio;
+    if (options.audioControl) {
+      this.audioControl = new AudioHudControl(options.audioControl);
+      this.view.addChild(this.audioControl.view);
+    }
 
     if (options.actionBarTexture) {
       this.actionBarLayer.label = 'room-action-bar-layer';
@@ -702,6 +715,7 @@ export class RoomScreen implements Screen {
       this.cookModal = new CookScreenModal({
         textures: options.cookTextures,
         onCookRecipe: (recipe) => this.startCooking(recipe),
+        ...(options.audio ? { audio: options.audio } : {}),
       });
       this.view.addChild(this.cookModal.view);
     }
@@ -770,6 +784,7 @@ export class RoomScreen implements Screen {
       const state = this.realtime.actors.get(update.id); if (!state) continue;
       let entry = this.liveActors.get(state.id);
       const previousAction = entry?.state.action;
+      const previous = entry?.state;
       if (!entry) {
         const own = state.id === this.realtime.selfId;
         const actor = own ? this.player : new Actor(state.id);
@@ -787,7 +802,13 @@ export class RoomScreen implements Screen {
       if (event.type !== 'welcome' && state.action?.kind === 'cooking' &&
           previousAction?.startedAt !== state.action.startedAt &&
           this.realtime.serverNowMs() < state.action.startedAt + state.action.duration) {
-        playRandomSfx([SFX_START_COOKING_URL]);
+        this.audio?.play('cookStart');
+      }
+      if (event.type !== 'welcome' && previous && state.kind !== 'human') {
+        // Only an arriving customer goes from outside to inside (leaving is the reverse),
+        // and the server may finish entering in the same tick, so the state is not checked.
+        if (previous.outside && !state.outside) this.audio?.play('doorBell');
+        if (state.emotion?.kind === 'dissatisfied' && state.emotion.id !== previous.emotion?.id) this.audio?.play('buzzer', 0.8);
       }
     }
     if (event.type === 'payment' && event.payment) this.showPayment(event.payment);
@@ -819,7 +840,11 @@ export class RoomScreen implements Screen {
       const view = entry.view.view;
       this.floatingRewards.spawn(view.x, view.y, view.zIndex, payment.coins, payment.xp);
     }
-    if (payment.levelUp && this.roomSnapshot?.canEdit !== false) this.levelUpToast.show(payment.level, payment.levelReward ?? 0);
+    this.audio?.play('coin');
+    if (payment.levelUp && this.roomSnapshot?.canEdit !== false) {
+      this.levelUpToast.show(payment.level, payment.levelReward ?? 0);
+      this.audio?.play('levelUp');
+    }
   }
 
   private acceptSharedWorld(world: SharedWorld): void {
@@ -1218,7 +1243,7 @@ export class RoomScreen implements Screen {
     if (process.progress) {
       process.progress.view.visible = true;
       process.progress.setProgress(process.elapsedMs / process.durationMs);
-      if (!this.realtime) playRandomSfx([SFX_START_COOKING_URL]);
+      if (!this.realtime) this.audio?.play('cookStart');
     }
     this.target.clear();
     const deltaX = tileToScreenX(process.stove.tx, process.stove.ty) - this.player.x;
@@ -2349,6 +2374,8 @@ export class RoomScreen implements Screen {
     this.outsideNpcManager?.update(deltaMs);
     this.floatingRewards.update(deltaMs, !this.storeBar?.isOpen);
     this.levelUpToast.update(deltaMs);
+    this.audioControl?.update();
+    this.updateRushIntensity();
     if (this.doorViews.length) {
       const actors = this.actors;
       for (const door of this.doorViews) door.update(deltaMs, actors);
@@ -2361,6 +2388,17 @@ export class RoomScreen implements Screen {
     for (const npc of this.outsideNpcManager?.npcs ?? []) npc.emotion?.sync(npc.view.view);
 
     if (this.hud) this.updateHud();
+  }
+
+  /** Two customers inside start the rush; three (the room cap) is full intensity. */
+  private updateRushIntensity(): void {
+    if (!this.audio || !this.realtime) return;
+    let inside = 0;
+    for (const { state } of this.liveActors.values()) if (state.kind === 'npc' && !state.outside) inside++;
+    const intensity = Math.max(0, Math.min(1, (inside - 1) / 2));
+    if (intensity === this.rushIntensity) return;
+    this.rushIntensity = intensity;
+    this.audio.setIntensity(intensity);
   }
 
   private advanceActorView(view: ActorRenderer, deltaMs: number): void {
@@ -2395,6 +2433,7 @@ export class RoomScreen implements Screen {
   setStageScale(scale: number): void {
     this.wardrobeModal?.setStageScale(scale);
     this.settingsModal?.setStageScale(scale);
+    this.audioControl?.setStageScale(scale);
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
     this.outerScale = scale * dpr;
@@ -2431,6 +2470,7 @@ export class RoomScreen implements Screen {
     this.liveEmotions.forEach(({ effect }) => effect.destroy()); this.liveEmotions.clear();
     this.floatingRewards.destroy();
     this.levelUpToast.destroy();
+    this.audioControl?.destroy();
     this.roomStore?.destroy();
     this.destroyed = true;
     this.closeStoveActions();

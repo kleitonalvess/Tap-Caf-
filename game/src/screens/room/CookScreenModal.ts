@@ -1,9 +1,8 @@
 import { Container, Graphics, Rectangle, Sprite, Text, TextStyle, type Texture } from 'pixi.js';
 
-import { playRandomSfx } from '../../audio/sfx';
+import type { SoundPlayer } from '../../audio/sound-events';
 import { FONT_FAMILY } from '../../core/fonts';
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../core/stage';
-import { SFX_BOOK_URLS } from '../../game/asset-manifest';
 
 export interface CookScreenTextures {
   cookScreen: Texture;
@@ -28,7 +27,7 @@ export interface CookScreenModalOptions {
   textures: CookScreenTextures;
   onClose?: () => void;
   onCookRecipe?: (recipe: CookRecipeEvent) => void;
-  sfxUrls?: readonly string[];
+  audio?: SoundPlayer;
 }
 
 type ModalState = 'closed' | 'opening' | 'open' | 'closing';
@@ -72,11 +71,11 @@ export class CookScreenModal {
   private state: ModalState = 'closed';
   private animTimer = 0;
   private readonly onCloseCallback?: () => void;
-  private readonly sfxUrls?: readonly string[];
+  private readonly audio?: SoundPlayer;
 
   constructor(options: CookScreenModalOptions) {
     this.onCloseCallback = options.onClose;
-    this.sfxUrls = options.sfxUrls ?? SFX_BOOK_URLS;
+    this.audio = options.audio;
     this.view.label = 'cook-screen-modal';
     this.view.visible = false;
 
@@ -279,9 +278,7 @@ export class CookScreenModal {
   open(): void {
     if (this.state === 'open' || this.state === 'opening') return;
 
-    if (this.sfxUrls && this.sfxUrls.length > 0) {
-      playRandomSfx(this.sfxUrls);
-    }
+    this.audio?.play('bookPage');
 
     this.state = 'opening';
     this.animTimer = 0;

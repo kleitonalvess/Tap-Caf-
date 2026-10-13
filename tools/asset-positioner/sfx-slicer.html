@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recortador de SFX — Coffe Mania 0.0.4.19</title>
+  <meta name="color-scheme" content="dark">
+  <link rel="stylesheet" href="desktop.css">
+  <style>
+    body { overflow: auto; }
+    .slicer { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: calc(100dvh - 40px - 30px); }
+    .slicer aside { background: var(--panel); border-right: 1px solid var(--line); }
+    .slicer-main { min-width: 0; padding: 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+    .wave { width: 100%; display: block; background: var(--workspace); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+    #overview { height: 120px; }
+    #detail { height: 150px; cursor: default; }
+    .detail-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+    .detail-bar label { margin: 0; width: 130px; }
+    .detail-bar .spacer { flex: 1; }
+    .nudge { display: flex; gap: 4px; }
+    .nudge button { min-height: 28px; padding: 4px 7px; font-size: 11px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+    th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--shell); }
+    tr { cursor: pointer; }
+    tr.selected td { background: #3a3326; }
+    tr.labelled td:first-child { box-shadow: inset 3px 0 var(--accent); }
+    td select, td input { margin: 0 !important; min-height: 26px !important; }
+    td input { width: 70px !important; }
+    .list { max-height: 46dvh; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+    .status { height: 30px; display: flex; align-items: center; padding: 0 14px; border-top: 1px solid #141518; color: var(--muted); font-size: 12px; }
+    .status.error { color: #f0a1a1; }
+    .muted { color: var(--muted); font-size: 11px; }
+    .app-titlebar a { color: var(--accent); text-decoration: none; font-size: 12px; }
+    kbd { padding: 0 4px; border: 1px solid #555; border-radius: 3px; font-size: 11px; }
+    @media (max-width: 760px) { .slicer { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="app-titlebar">
+    <div class="app-brand"><strong>Recortador de SFX</strong><span class="brand-project">Coffe Mania</span></div>
+    <a href="index.html">← Asset Studio</a>
+  </header>
+  <div class="slicer">
+    <aside>
+      <details class="panel-group" open>
+        <summary>1. Áudio</summary>
+        <div class="panel-body">
+          <button id="openAudio" class="primary full-width">Abrir áudio…</button>
+          <input id="audioFile" type="file" accept="audio/*,.mp3,.opus,.ogg,.wav" hidden>
+          <p id="audioInfo" class="muted">Abra <code>ripped/compiled_sfx.mp3</code>. O arquivo é processado no navegador e não é enviado.</p>
+        </div>
+      </details>
+      <details class="panel-group" open>
+        <summary>2. Detecção</summary>
+        <div class="panel-body">
+          <label>Limiar de silêncio (dBFS) <input id="threshold" type="number" step="1" min="-90" max="-10" value="-50"></label>
+          <label>Silêncio mínimo entre sons (ms) <input id="minSilence" type="number" step="10" min="0" max="2000" value="120"></label>
+          <label>Duração mínima do som (ms) <input id="minSound" type="number" step="5" min="0" max="2000" value="30"></label>
+          <label>Margem antes e depois (ms) <input id="pad" type="number" step="5" min="0" max="500" value="15"></label>
+          <button id="detect" class="full-width" disabled>Detectar trechos</button>
+          <p class="muted">Detectar de novo substitui a lista e os rótulos. Ajuste trechos isolados no painel ao lado.</p>
+        </div>
+      </details>
+      <details class="panel-group" open>
+        <summary>3. Manifesto</summary>
+        <div class="panel-body">
+          <button id="exportManifest" class="primary full-width" disabled>Exportar sfx-sprites.json</button>
+          <button id="importManifest" class="full-width">Importar manifesto…</button>
+          <input id="manifestFile" type="file" accept="application/json,.json" hidden>
+          <p class="muted">Copie o JSON exportado e o arquivo de áudio para <code>game/public/assets/sfx/</code>. Eventos sem trecho continuam sintetizados pelo jogo; vários trechos no mesmo evento são sorteados.</p>
+          <p class="muted">Atalhos: <kbd>Espaço</kbd> toca, <kbd>↑</kbd>/<kbd>↓</kbd> navegam, <kbd>Delete</kbd> remove.</p>
+        </div>
+      </details>
+    </aside>
+    <main class="slicer-main">
+      <canvas id="overview" class="wave" aria-label="Forma de onda completa; clique para escolher um trecho"></canvas>
+      <div class="detail-bar">
+        <label>Início (s) <input id="segStart" type="number" step="0.005" min="0" disabled></label>
+        <div class="nudge"><button data-nudge="start:-0.01" disabled>−10 ms</button><button data-nudge="start:0.01" disabled>+10 ms</button></div>
+        <label>Fim (s) <input id="segEnd" type="number" step="0.005" min="0" disabled></label>
+        <div class="nudge"><button data-nudge="end:-0.01" disabled>−10 ms</button><button data-nudge="end:0.01" disabled>+10 ms</button></div>
+        <span class="spacer"></span>
+        <button id="playSegment" disabled>▶ Tocar</button>
+        <button id="mergeNext" disabled>Unir ao próximo</button>
+        <button id="removeSegment" disabled>Remover</button>
+      </div>
+      <canvas id="detail" class="wave" aria-label="Trecho selecionado ampliado"></canvas>
+      <div class="list">
+        <table>
+          <thead><tr><th>#</th><th>Início</th><th>Duração</th><th></th><th>Evento do jogo</th><th>Volume</th></tr></thead>
+          <tbody id="segments"></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+  <footer id="status" class="status">Abra um arquivo de áudio para começar.</footer>
+  <script src="sfx-segments.js"></script>
+  <script src="sfx-slicer.js"></script>
+</body>
+</html>

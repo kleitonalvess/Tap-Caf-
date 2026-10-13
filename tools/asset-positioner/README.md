@@ -132,3 +132,14 @@ Copie o PNG para `game/public/assets/items/<classname>/` e transfira `file`, `wi
 - **Enquadrar**: mostra a área exportável e a imagem inteira.
 
 Limites de proteção: exportação de até 8192 px por lado e 16 milhões de pixels. A altura automática aceita até 4096 px; o recorte manual permite áreas diferentes.
+
+## Recortador de SFX
+
+`sfx-slicer.html` (link **Recortador de SFX** no topo do Studio) separa os efeitos originais de `ripped/compiled_sfx.mp3`, que reúne cerca de 60 sons em um único arquivo.
+
+1. Clique em **Abrir áudio…** e escolha `ripped/compiled_sfx.mp3`. A detecção usa limiar de silêncio, silêncio mínimo entre sons, duração mínima e margem; ajuste e clique em **Detectar trechos** se um som vier partido ou grudado no vizinho.
+2. Ouça cada trecho (**▶** ou <kbd>Espaço</kbd>; <kbd>↑</kbd>/<kbd>↓</kbd> navegam). Ajuste início e fim, una trechos de um mesmo som ou remova ruídos.
+3. Escolha o **evento do jogo** de cada trecho útil: sininho da porta, ingredientes no fogão, moeda, subiu de nível, vassoura, cliente insatisfeito, livro de receitas ou clique. Vários trechos no mesmo evento são sorteados a cada reprodução. O volume vai de 0,1 a 2.
+4. **Exportar sfx-sprites.json** e copie o JSON e o áudio para `game/public/assets/sfx/`. O jogo prefere esses trechos; eventos sem trecho usam as amostras individuais existentes ou a síntese procedural.
+
+Os rótulos ficam salvos neste navegador para o mesmo arquivo; **Importar manifesto…** retoma um JSON exportado. O manifesto versionado começa vazio, então o jogo não baixa o MP3 até haver trechos rotulados.

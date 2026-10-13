@@ -102,6 +102,10 @@ export const UI_EMOTION_BUNDLE_URL = new URL('assets/ui/emotion_bundle_1.png', n
 
 /** Música de fundo padrão (BGM). */
 export const BGM_URL = new URL('assets/songs/music_1.opus', new URL(base, document.baseURI)).href;
+/** Gravação incluída na distribuição sem referência no código anterior; oferecida como faixa alternativa. */
+export const BGM_ALT_URL = new URL('assets/songs/default_song.mp3', new URL(base, document.baseURI)).href;
+/** Recortes de ripped/compiled_sfx.mp3 gerados por tools/sfx-slicer. */
+export const SFX_SPRITES_URL = new URL('assets/sfx/sfx-sprites.json', new URL(base, document.baseURI)).href;
 
 /** Efeitos sonoros ao abrir o livro de receitas (book_1 e book_2). */
 export const SFX_BOOK_URLS = [

@@ -14,7 +14,7 @@ const START_HEIGHT = 270;
 const RISE = 110;
 const DURATION_MS = 1600;
 const FADE_START = 0.6;
-const ICON_SIZE = 40;
+const ICON_SIZE = 52;
 
 const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
 
@@ -29,9 +29,9 @@ function rewardRow(text: string, fill: number, stroke: number, icon?: Texture): 
   const label = new Text({
     text,
     style: new TextStyle({
-      fontFamily: [FONT_FAMILY, 'sans-serif'], fontSize: 34,
+      fontFamily: [FONT_FAMILY, 'sans-serif'], fontSize: 44,
       fontWeight: String(FONT_WEIGHT) as TextStyle['fontWeight'],
-      fill, stroke: { color: stroke, width: 7, join: 'round' }, padding: 6,
+      fill, stroke: { color: stroke, width: 8, join: 'round' }, padding: 6,
     }),
   });
   label.anchor.set(0, 0.5);
@@ -65,7 +65,7 @@ export class FloatingRewards {
       const row = rewardRow(`+${coins}`, 0xffd23f, 0x824310, this.icons.coin);
       row.y = rowY;
       view.addChild(row);
-      rowY += 44;
+      rowY += 56;
     }
     if (xp > 0) {
       const row = rewardRow(`+${xp} XP`, 0xffffff, 0x092c65, this.icons.xp);

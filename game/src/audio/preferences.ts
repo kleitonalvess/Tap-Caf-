@@ -2,16 +2,23 @@
 export interface AudioPreferences {
   musicPercent: number;
   effectsPercent: number;
+  /** Silencia tudo sem perder os volumes escolhidos. */
   muted: boolean;
+  /** Identificador da faixa musical; faixas desconhecidas voltam à padrão. */
+  track: string;
 }
+
+export const DEFAULT_MUSIC_TRACK = 'original';
 
 export const DEFAULT_AUDIO_PREFERENCES: Readonly<AudioPreferences> = {
   musicPercent: 40,
   effectsPercent: 50,
   muted: false,
+  track: DEFAULT_MUSIC_TRACK,
 };
 
 const STORAGE_PREFIX = 'coffe-mania.audio.v1.';
+const TRACK_PATTERN = /^[a-z0-9_-]{1,32}$/;
 
 export const audioPreferencesKey = (playerId: string): string =>
   `${STORAGE_PREFIX}${encodeURIComponent(playerId)}`;
@@ -28,6 +35,7 @@ export function sanitizeAudioPreferences(raw: unknown): AudioPreferences {
     effectsPercent: typeof source.effectsPercent === 'number' && Number.isFinite(source.effectsPercent)
       ? clampPercent(source.effectsPercent) : DEFAULT_AUDIO_PREFERENCES.effectsPercent,
     muted: typeof source.muted === 'boolean' ? source.muted : DEFAULT_AUDIO_PREFERENCES.muted,
+    track: typeof source.track === 'string' && TRACK_PATTERN.test(source.track) ? source.track : DEFAULT_AUDIO_PREFERENCES.track,
   };
 }
 

@@ -34,7 +34,7 @@ O zoom de visualização do editor não altera a resolução exportada. A grade 
 
 ## Suites de testes recomendadas
 
-O repositório de trabalho possui suites em tests/unit/, tests/unit/dom/, tests/tools/, tests/e2e/ e testes Go em backend/**/*_test.go. Elas servem de modelo para a cobertura abaixo. **Essas suites ainda não foram copiadas para esta distribuição.** O pacote atual oferece npm run typecheck, validação de catálogo e inicialização dev; não possui scripts npm test ou test:e2e. Antes de portar ou criar as suites, ajuste imports, fixtures e caminhos à organização database/, game-server/, shared/ e game/. Não anuncie cobertura apenas porque go test terminou sem encontrar arquivos de teste.
+O repositório de trabalho possui suites em tests/unit/, tests/unit/dom/, tests/tools/, tests/e2e/ e testes Go em backend/**/*_test.go. Elas servem de modelo para a cobertura abaixo. **As suites do projeto original ainda não foram copiadas para esta distribuição.** O pacote oferece npm run typecheck, validação de catálogo, inicialização dev e `npm test` (Vitest 4.1.11, com as suites novas em tests/unit/ e tests/tools/); não possui test:e2e. Os testes Go ficam em `*_test.go` de shared/, database/ e game-server/. Antes de portar ou criar as suites, ajuste imports, fixtures e caminhos à organização database/, game-server/, shared/ e game/. Não anuncie cobertura apenas porque go test terminou sem encontrar arquivos de teste.
 
 | Suite | Ferramentas recomendadas | Cobertura e quando usar |
 | --- | --- | --- |

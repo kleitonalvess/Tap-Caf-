@@ -289,13 +289,9 @@ export class SettingsModal {
 
   private setVolume(channel: VolumeChannel, value: number): void {
     const current = this.preferences;
-    // Editing a legacy global mute must not unexpectedly unmute the other channel.
-    const next = sanitizeAudioPreferences({
-      musicPercent: current.muted ? 0 : current.musicPercent,
-      effectsPercent: current.muted ? 0 : current.effectsPercent,
-      [channel]: value,
-      muted: false,
-    });
+    // Mute is a separate HUD toggle that keeps both volumes; choosing a volume
+    // here is a request to hear it, so it unmutes without touching the other one.
+    const next = sanitizeAudioPreferences({ ...current, [channel]: value, muted: false });
     if (next.musicPercent === current.musicPercent && next.effectsPercent === current.effectsPercent && next.muted === current.muted) return;
     this.preferences = next;
     this.refreshSliders();
@@ -304,7 +300,8 @@ export class SettingsModal {
 
   private refreshSliders(): void {
     for (const slider of this.sliders) {
-      const value = this.preferences.muted ? 0 : this.preferences[slider.channel];
+      const value = this.preferences[slider.channel];
+      slider.track.alpha = this.preferences.muted ? 0.45 : 1;
       slider.track.clear().roundRect(0, -10, TRACK_WIDTH, 20, 10).fill(0x704721)
         .roundRect(3, -7, TRACK_WIDTH - 6, 14, 7).fill(0xf5eee3);
       const width = (TRACK_WIDTH - 6) * value / 100;

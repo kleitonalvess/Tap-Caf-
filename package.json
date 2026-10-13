@@ -19,6 +19,10 @@
     "typecheck": "npm run typecheck --workspace game",
     "build": "npm run build --workspace game",
     "assets:room": "node scripts/sync-room-catalog.mjs",
-    "tools": "node scripts/serve-tools.mjs"
+    "tools": "node scripts/serve-tools.mjs",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "4.1.11"
   }
 }
