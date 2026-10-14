@@ -12,6 +12,10 @@ export interface RecipeRule {
   provisional?: boolean;
 }
 
+/** One café expansion: the new side, the level that allows paying with coins, and its prices. */
+export interface ExpansionStep { tiles: number; level: number; coins: number; cash: number; xp: number }
+export interface ExpansionRules { startTiles: number; rewardCoins: number; steps: ExpansionStep[] }
+
 export interface GameRules {
   recipes: RecipeRule[];
   stove: { prepareSeconds: number; cleaningCoins: number; cleaningXp: number; seasonBonusPercent: number; seasonXp: number };
@@ -19,6 +23,11 @@ export interface GameRules {
   levels?: { level: number; requiredXp: number; rewardCoins: number }[];
   /** How many employees a café keeps from each level (game-config amountLocks). */
   employeeLocks?: { employees: number; level: number }[];
+  expansions?: ExpansionRules;
+  /** Self-service pickup time and the waiter's tip (provisional design values). */
+  service?: { selfPickupMs: number; waiterTipPercent: number; waiterTipMin: number };
+  /** hireCoins: one-time fee of each employee slot, the first at index 0. */
+  staff?: { hireCoins: number[] };
 }
 
 export async function loadGameRules(signal?: AbortSignal): Promise<GameRules> {
@@ -80,7 +89,11 @@ export interface LevelUnlocks {
   recipes: RecipeRule[];
   slotsBefore: number;
   slotsAfter: number;
+  /** Expansions that may now be paid with coins (the café is still smaller). */
+  expansions: ExpansionStep[];
 }
+
+type UnlockRules = Pick<GameRules, 'recipes' | 'employeeLocks' | 'expansions'>;
 
 export function employeeSlots(rules: Pick<GameRules, 'employeeLocks'>, level: number): number {
   let slots = 0;
@@ -88,24 +101,32 @@ export function employeeSlots(rules: Pick<GameRules, 'employeeLocks'>, level: nu
   return slots;
 }
 
-/** What opened between two levels (exclusive → inclusive): several at once on big XP jumps. */
-export function levelUnlocks(rules: Pick<GameRules, 'recipes' | 'employeeLocks'>, fromLevel: number, toLevel: number): LevelUnlocks {
+/**
+ * What opened between two levels (exclusive → inclusive): several at once on big XP jumps.
+ * Expansions the café already has (bought earlier with cash) are left out.
+ */
+export function levelUnlocks(rules: UnlockRules, fromLevel: number, toLevel: number, roomTiles = 0): LevelUnlocks {
   return {
     recipes: rules.recipes.filter((recipe) => recipe.level > fromLevel && recipe.level <= toLevel)
       .sort((a, b) => a.level - b.level || a.costCoins - b.costCoins),
     slotsBefore: employeeSlots(rules, fromLevel),
     slotsAfter: employeeSlots(rules, toLevel),
+    expansions: (rules.expansions?.steps ?? []).filter((step) => step.level > fromLevel && step.level <= toLevel && step.tiles > roomTiles),
   };
 }
 
-/** The next goals after a level: the nearest locked recipe(s) and the next staff slot. */
-export function nextUnlocks(rules: Pick<GameRules, 'recipes' | 'employeeLocks'>, level: number): { recipeLevel?: number; recipes: RecipeRule[]; slotLevel?: number } {
+export interface NextUnlocks { recipeLevel?: number; recipes: RecipeRule[]; slotLevel?: number; expansion?: ExpansionStep }
+
+/** The next goals after a level: the nearest locked recipe(s), the next staff slot and coin expansion. */
+export function nextUnlocks(rules: UnlockRules, level: number, roomTiles = 0): NextUnlocks {
   const upcoming = rules.recipes.filter((recipe) => recipe.level > level);
   const recipeLevel = upcoming.length ? Math.min(...upcoming.map((recipe) => recipe.level)) : undefined;
   const slotLevel = (rules.employeeLocks ?? []).find((lock) => lock.level > level)?.level;
+  const expansion = (rules.expansions?.steps ?? []).find((step) => step.level > level && step.tiles > roomTiles);
   return {
     recipes: recipeLevel === undefined ? [] : upcoming.filter((recipe) => recipe.level === recipeLevel),
     ...(recipeLevel !== undefined ? { recipeLevel } : {}),
     ...(slotLevel !== undefined ? { slotLevel } : {}),
+    ...(expansion ? { expansion } : {}),
   };
 }

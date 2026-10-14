@@ -15,6 +15,7 @@ type economyStore struct {
 	mu        sync.Mutex
 	payment   gamewire.Payment
 	consumed  []string
+	waiter    []bool
 	feedbacks []bool
 	cleaned   []string
 	slept     *gamewire.Sleep
@@ -31,11 +32,17 @@ func (s *economyStore) Sleep(_ context.Context, _ string, state gamewire.Sleep) 
 func (s *economyStore) Operate(context.Context, gamewire.Operation) (gamewire.Result, error) {
 	return gamewire.Result{}, nil
 }
-func (s *economyStore) Consume(_ context.Context, _ string, food, _ string) (gamewire.Payment, error) {
+func (s *economyStore) Consume(_ context.Context, _ string, food, _ string, waiter bool) (gamewire.Payment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.consumed = append(s.consumed, food)
-	return s.payment, nil
+	s.waiter = append(s.waiter, waiter)
+	payment := s.payment
+	if waiter {
+		payment.Tip = 1
+		payment.Coins++
+	}
+	return payment, nil
 }
 func (s *economyStore) Clean(_ context.Context, _ string, table string) error {
 	s.mu.Lock()
@@ -100,6 +107,8 @@ func TestSeatedCustomerTakesOneServingAndPaysOnce(t *testing.T) {
 		return payments
 	}
 	r.advanceNPC(customer, now)
+	pickup := now.Add(gamerules.SelfPickup())
+	r.advanceNPC(customer, pickup)
 	if customer.State != "eating" || len(store.consumed) != 1 || r.world.Foods[0].Servings != 3 || r.popularity != 801 {
 		t.Fatalf("after serving: state=%s consumed=%v foods=%+v popularity=%d", customer.State, store.consumed, r.world.Foods, r.popularity)
 	}
@@ -107,7 +116,7 @@ func TestSeatedCustomerTakesOneServingAndPaysOnce(t *testing.T) {
 		t.Fatalf("payments when served = %d, want 1", got)
 	}
 
-	r.advanceNPC(customer, now.Add(8*time.Second))
+	r.advanceNPC(customer, pickup.Add(8*time.Second))
 	if got := countPayments(); got != 0 || customer.Emotion == nil || customer.Emotion.Kind != "satisfied" {
 		t.Fatalf("after eating: payments=%d emotion=%+v", got, customer.Emotion)
 	}
@@ -155,5 +164,37 @@ func TestArrivalIntervalFollowsPopularity(t *testing.T) {
 	// 5/min at the minimum (12s ± 25%) and 25/min at the maximum (2.4s ± 25%).
 	if slowest < 9*time.Second || slowest > 15*time.Second || fastest < 1800*time.Millisecond || fastest > 3*time.Second {
 		t.Fatalf("intervals: slowest=%v fastest=%v", slowest, fastest)
+	}
+}
+
+func TestExpansionGrowsTheGridLive(t *testing.T) {
+	r, peer := economyRoom(&economyStore{})
+	if r.grid.walkable(Tile{X: 9, Y: 9}) {
+		t.Fatal("8x8 room walks on (9,9)")
+	}
+	grown := r.world
+	grown.TilesX, grown.TilesY, grown.Revision = 10, 10, 2
+	grown.Units = append(append([]gamewire.Unit{}, r.world.Units...), gamewire.Unit{ID: "floor-9-9", ItemID: 3050000, Placed: true, X: 9, Y: 9})
+	r.updateWorld(grown)
+	if r.grid.width != 10 || r.grid.height != 10 || !r.grid.walkable(Tile{X: 9, Y: 9}) {
+		t.Fatalf("grid = %dx%d", r.grid.width, r.grid.height)
+	}
+	// Furniture kept its footprint in the rebuilt grid.
+	if r.grid.walkable(Tile{X: 3, Y: 3}) {
+		t.Fatal("the table tile became walkable")
+	}
+	sized := false
+	for _, event := range events(peer) {
+		if event.Type == "world" && event.TilesX == 10 && event.TilesY == 10 && event.Revision == 2 {
+			sized = true
+		}
+	}
+	if !sized {
+		t.Fatal("the new size was not broadcast")
+	}
+	a := &entity{Actor: gamewire.Actor{ID: "npc:walker", Kind: "npc", X: 2, Y: 2}}
+	r.actors[a.ID] = a
+	if !r.route(a, Tile{X: 9, Y: 9}, time.Now()) {
+		t.Fatal("no path to a new tile")
 	}
 }

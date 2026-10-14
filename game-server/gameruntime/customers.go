@@ -217,24 +217,23 @@ func (r *room) advanceNPC(a *entity, now time.Time) bool {
 			a.due = now.Add(time.Second)
 			return false
 		}
+		// Fetching a serving: the meal starts when the dish reaches the table.
+		if a.fetch != nil {
+			if now.Before(a.fetchAt) {
+				a.due = a.fetchAt
+				return false
+			}
+			r.finishFetch(a, now)
+			return false
+		}
 		// Customers saved before patience existed get the full wait now.
 		if a.patienceUntil.IsZero() {
 			a.restorePatience(now.Add(gamerules.CustomerPatience()))
 		}
 		// Without waiters on duty customers help themselves at the counter.
 		if food, ok := r.availableFood(); ok && a.TableID != "" && !r.waitersOnDuty() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			payment, err := r.manager.store.Consume(ctx, r.id, food.ID, a.TableID)
-			cancel()
-			if err == nil {
-				r.startMeal(a, food, payment, now)
-				return false
-			}
-			if errors.Is(err, ErrFoodGone) {
-				// Drop the stale entry, so the next customer tries the following dish.
-				r.takeServing(food.ID, 0)
-				r.broadcast(gamewire.Event{Type: "food", Foods: r.world.Foods}, "")
-			}
+			r.startFetch(a, food, now)
+			return false
 		}
 		if !now.Before(a.patienceUntil) {
 			// Out of patience: stands up and complains on the way out (exitNPC).
@@ -251,6 +250,66 @@ func (r *room) advanceNPC(a *entity, now time.Time) bool {
 		r.exitNPC(a, now)
 	}
 	return false
+}
+
+// startFetch reserves a serving for a customer who fetches it. Self-service
+// takes selfPickupMs and earns no tip, so a waiter stays the better service;
+// the wait is paused meanwhile, as when a waiter is on the way.
+func (r *room) startFetch(a *entity, food gamewire.Food, now time.Time) {
+	r.reserved[food.ID]++
+	a.fetch = &food
+	a.fetchAt = now.Add(gamerules.SelfPickup())
+	if !a.patienceUntil.IsZero() {
+		a.pausedPatience = max(0, a.patienceUntil.Sub(now))
+		a.clearPatience()
+	}
+	a.Action = &gamewire.ActorAction{Kind: "fetching", StartedAt: now.UnixMilli(), Duration: gamerules.SelfPickup().Milliseconds()}
+	a.due = a.fetchAt
+	r.broadcast(gamewire.Event{Type: "actors", Actors: []gamewire.Actor{r.status(a, false)}}, "")
+}
+
+// finishFetch credits the fetched serving. If it is gone, the customer goes
+// back to waiting where the wait was paused (never less than 5 s).
+func (r *room) finishFetch(a *entity, now time.Time) {
+	food := *a.fetch
+	a.fetch = nil
+	a.Action = nil
+	r.release(food.ID)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	payment, err := r.manager.store.Consume(ctx, r.id, food.ID, a.TableID, false)
+	cancel()
+	if err == nil {
+		a.pausedPatience = 0
+		r.startMeal(a, food, payment, now)
+		return
+	}
+	if errors.Is(err, ErrFoodGone) {
+		// Drop the stale entry, so the next customer tries the following dish.
+		r.takeServing(food.ID, 0)
+		r.broadcast(gamewire.Event{Type: "food", Foods: r.world.Foods}, "")
+	} else {
+		log.Printf("self-service failed: room=%s error=%v", r.id, err)
+	}
+	a.restorePatience(now.Add(max(5*time.Second, a.pausedPatience)))
+	a.pausedPatience = 0
+	a.due = now.Add(time.Second)
+	r.broadcast(gamewire.Event{Type: "actors", Actors: []gamewire.Actor{r.status(a, false)}}, "")
+}
+
+// dropFetches runs before the room sleeps, like dropAllJobs: the serving goes
+// back to the counter and the customer is saved with the paused wait.
+func (r *room) dropFetches(now time.Time) {
+	for _, a := range r.actors {
+		if a.fetch == nil {
+			continue
+		}
+		r.release(a.fetch.ID)
+		a.fetch = nil
+		a.Action = nil
+		a.restorePatience(now.Add(max(5*time.Second, a.pausedPatience)))
+		a.pausedPatience = 0
+		a.due = now.Add(time.Second)
+	}
 }
 
 // startMeal mirrors a credited serving: the counter loses it, the table gets the

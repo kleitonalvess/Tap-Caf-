@@ -1,11 +1,24 @@
 {
-  "source": "ripped/game-config.xml.txt (referência modificada). Níveis, popularidade, frequência, gorjetas e funcionários vêm do arquivo. Receitas, fogão, mesas, funcionários (perfis, custo e tempos) e paciência dos clientes são valores de design provisórios: o repositório não contém a lista original de receitas nem dados de sujeira (o config só nomeia dishPickupTime, adulterado).",
+  "source": "ripped/game-config.xml.txt (referência modificada). Níveis, popularidade, frequência, gorjetas (tabela por nível, sem uso) e vagas de funcionários vêm do arquivo. Preços e níveis das expansões e o custo por vaga de funcionário foram definidos pelo responsável pelo projeto (o config só traz em <expansions><newsFeed> o prêmio de 250 moedas por cliques de amigos na publicação, aqui pago ao concluir cada expansão). Receitas, fogão, mesas, perfis e tempos dos funcionários, XP das expansões, atraso do autosserviço, gorjeta do garçom e paciência dos clientes são valores de design provisórios: o repositório não contém a lista original de receitas nem dados de sujeira (o config só nomeia dishPickupTime, adulterado).",
   "popularity": { "min": 5, "max": 105, "satisfiedDelta": 0.1, "unsatisfiedDelta": 0.3 },
   "customers": { "patienceSeconds": 40, "cookingArrivalFactor": 1.5 },
   "stove": { "prepareSeconds": 2, "cleaningCoins": 0, "cleaningXp": 1, "seasonBonusPercent": 25, "seasonXp": 1 },
   "tables": { "cleaningSeconds": 2, "cleaningXp": 0 },
+  "service": { "selfPickupMs": 3500, "waiterTipPercent": 10, "waiterTipMin": 1 },
+  "expansions": {
+    "startTiles": 8,
+    "rewardCoins": 250,
+    "steps": [
+      { "tiles": 10, "level": 5, "coins": 2000, "cash": 10, "xp": 20 },
+      { "tiles": 12, "level": 10, "coins": 6000, "cash": 20, "xp": 50 },
+      { "tiles": 14, "level": 15, "coins": 15000, "cash": 35, "xp": 80 },
+      { "tiles": 16, "level": 22, "coins": 35000, "cash": 50, "xp": 140 },
+      { "tiles": 18, "level": 30, "coins": 75000, "cash": 75, "xp": 240 },
+      { "tiles": 20, "level": 40, "coins": 150000, "cash": 100, "xp": 440 }
+    ]
+  },
   "staff": {
-    "hireCoins": 0,
+    "hireCoins": [0, 300, 800, 2000, 5000, 10000, 20000],
     "pickupSeconds": 1,
     "busSeconds": 2,
     "profiles": [

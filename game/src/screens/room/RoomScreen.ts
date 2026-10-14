@@ -43,7 +43,10 @@ import { doorOpeningTile } from '../../world/doorGeometry';
 import { StoveActionMenu, type StoveAction } from './StoveActionMenu';
 import { StoveEffects } from './StoveEffects';
 import { CounterDish } from './CounterDish';
-import { PatienceMeter, patienceLeft } from './PatienceMeter';
+import { PatienceMeter, fetchProgress, patienceLeft } from './PatienceMeter';
+import { ExpansionModal } from './ExpansionModal';
+import { ExpansionGlow, newFloorTiles } from './ExpansionGlow';
+import { ExpansionClient, sizeLabel, type ExpansionResult } from '../../game/expansion';
 import { RecipeArtLibrary } from '../../game/recipe-art';
 import type { GameRules } from '../../game/game-rules';
 import {
@@ -273,6 +276,8 @@ export class RoomScreen implements Screen {
   readonly settingsModal?: SettingsModal;
   private staffModal?: StaffModal;
   private levelUpModal?: LevelUpModal;
+  private expansionModal?: ExpansionModal;
+  private readonly expansionGlows: ExpansionGlow[] = [];
   /** Last level celebrated; a level-up shows what opened since then. */
   private knownLevel = 1;
   /** Dishes on the waiters' trays, by actor id. */
@@ -563,7 +568,7 @@ export class RoomScreen implements Screen {
       this.view.addChild(this.topBars.view);
     }
     // Same coin and XP icons as the top bars, cut from their shared atlas.
-    const rewardIcon = (index: 1 | 2) => options.topBarsTextures && new Texture({
+    const rewardIcon = (index: 0 | 1 | 2) => options.topBarsTextures && new Texture({
       source: options.topBarsTextures.icons.source,
       frame: new Rectangle(TOP_BAR_ICON_FRAMES[index].x, TOP_BAR_ICON_FRAMES[index].y, TOP_BAR_ICON_FRAMES[index].width, TOP_BAR_ICON_FRAMES[index].height),
     });
@@ -754,6 +759,7 @@ export class RoomScreen implements Screen {
             if (this.roomStore!.beginEntryDrag(entry, event)) { this.drag = null; this.dragCancelledTap = true; }
           },
           onDragEnd: (event) => this.onDragEnd(event),
+          ...(options.roomSnapshot?.canEdit !== false && this.rules?.expansions ? { onExpand: () => this.openExpansion() } : {}),
         } : undefined,
         options.storeTopButtonTexture,
         options.actionBarIcons?.find(({ name }) => name === 'house')?.texture,
@@ -825,9 +831,28 @@ export class RoomScreen implements Screen {
         client: new StaffClient(),
         locks: options.rules?.employeeLocks ?? [],
         portrait: (staffId) => this.staffPortrait(staffId),
+        gold: () => this.roomSnapshot?.playerState?.gold ?? 0,
         ...(options.audio ? { audio: options.audio } : {}),
       });
       this.view.addChild(this.staffModal.view);
+    }
+    if (options.roomSnapshot && options.roomSnapshot.canEdit !== false && this.rules?.expansions) {
+      const coin = rewardIcon(1);
+      const cash = rewardIcon(0);
+      const xp = rewardIcon(2);
+      this.expansionModal = new ExpansionModal({
+        rules: this.rules.expansions,
+        client: new ExpansionClient(),
+        tiles: () => Math.max(this.model.tilesX, this.model.tilesY),
+        wallet: () => {
+          const state = this.roomSnapshot?.playerState;
+          return { level: state?.level ?? 1, gold: state?.gold ?? 0, cash: state?.cash ?? 0 };
+        },
+        onExpanded: (result) => this.celebrateExpansion(result),
+        icons: { ...(coin ? { coin } : {}), ...(cash ? { cash } : {}), ...(xp ? { xp } : {}) },
+        ...(options.audio ? { audio: options.audio } : {}),
+      });
+      this.view.addChild(this.expansionModal.view);
     }
     if (options.roomSnapshot && options.roomSnapshot.canEdit !== false && this.rules) {
       this.levelUpModal = new LevelUpModal({
@@ -835,6 +860,7 @@ export class RoomScreen implements Screen {
         ...(options.audio ? { audio: options.audio } : {}),
         onRecipes: () => this.openRecipeBook(),
         onStaff: () => this.openStaffScreen(),
+        onExpand: () => this.openExpansion(),
       });
       this.view.addChild(this.levelUpModal.view);
     }
@@ -902,7 +928,11 @@ export class RoomScreen implements Screen {
       for (const unit of event.units ?? []) {
         if (this.roomSnapshot.canEdit !== false || unit.placed) units.set(unit.unitId, unit); else units.delete(unit.unitId);
       }
-      if ((event.units?.length ?? 0) > 0) this.applyRoomSnapshot({ ...this.roomSnapshot, revision: event.revision, inventory: [...units.values()] }, false);
+      // An expansion also carries the new size; the new floor and walls come as units.
+      const tilesX = event.tilesX ?? this.roomSnapshot.tilesX, tilesY = event.tilesY ?? this.roomSnapshot.tilesY;
+      if ((event.units?.length ?? 0) > 0 || tilesX !== this.roomSnapshot.tilesX || tilesY !== this.roomSnapshot.tilesY) {
+        this.applyRoomSnapshot({ ...this.roomSnapshot, revision: event.revision, tilesX, tilesY, inventory: [...units.values()] }, false);
+      }
     }
     if (event.cooking) this.acceptSharedCooking(event.cooking);
     if (event.type === 'error') {
@@ -922,7 +952,7 @@ export class RoomScreen implements Screen {
     const entry = payment.actorId ? this.liveActors.get(payment.actorId) : undefined;
     if (entry) {
       const view = entry.view.view;
-      this.floatingRewards.spawn(view.x, view.y, view.zIndex, payment.coins, payment.xp);
+      this.floatingRewards.spawn(view.x, view.y, view.zIndex, payment.coins, payment.xp, payment.tip ?? 0);
     }
     this.audio?.play('coin');
     if (payment.levelUp && this.roomSnapshot?.canEdit !== false) this.celebrateLevel(payment.level, payment.levelReward);
@@ -944,14 +974,16 @@ export class RoomScreen implements Screen {
       return;
     }
     this.closeStoveActions();
-    this.levelUpModal.show({ level, rewardCoins: reward, unlocks: levelUnlocks(this.rules, from, level), next: nextUnlocks(this.rules, level) });
+    const tiles = Math.max(this.model.tilesX, this.model.tilesY);
+    this.levelUpModal.show({ level, rewardCoins: reward, unlocks: levelUnlocks(this.rules, from, level, tiles), next: nextUnlocks(this.rules, level, tiles) });
   }
 
   private acceptSharedWorld(world: SharedWorld): void {
     if (!this.roomSnapshot) return;
     const units = new Map(this.roomSnapshot.inventory.map((unit) => [unit.unitId, { ...unit, placed: false }]));
     for (const unit of world.units) units.set(unit.unitId, unit);
-    this.applyRoomSnapshot({ ...this.roomSnapshot, revision: world.revision, inventory: [...units.values()].filter((unit) => this.roomSnapshot!.canEdit !== false || unit.placed) }, false);
+    this.applyRoomSnapshot({ ...this.roomSnapshot, revision: world.revision, tilesX: world.tilesX || this.roomSnapshot.tilesX, tilesY: world.tilesY || this.roomSnapshot.tilesY,
+      inventory: [...units.values()].filter((unit) => this.roomSnapshot!.canEdit !== false || unit.placed) }, false);
     if (world.cooking) this.acceptSharedCooking(world.cooking);
   }
 
@@ -1286,12 +1318,14 @@ export class RoomScreen implements Screen {
 
   private updatePatience(id: string, state: SharedActor, actorView: Container, now: number): void {
     let meter = this.patienceMeters.get(id);
-    if (!state.patience || state.state !== 'seated') {
+    const fetching = state.state === 'seated' && state.action?.kind === 'fetching' ? state.action : undefined;
+    if (!fetching && (!state.patience || state.state !== 'seated')) {
       if (meter) { meter.destroy(); this.patienceMeters.delete(id); }
       return;
     }
     if (!meter) { meter = new PatienceMeter(); this.patienceMeters.set(id, meter); this.world.addChild(meter.view); }
-    meter.update(patienceLeft(state.patience, now), actorView, now, state.browsing === true || this.kitchenIdle(now));
+    if (fetching) meter.updateFetch(fetchProgress(fetching, now), actorView);
+    else if (state.patience) meter.update(patienceLeft(state.patience, now), actorView, now, state.browsing === true || this.kitchenIdle(now));
     meter.view.renderable = !this.storeBar?.isOpen;
   }
 
@@ -1981,6 +2015,18 @@ export class RoomScreen implements Screen {
       return Object.assign(previous, item);
     });
     this.closeStoveActions();
+    // Expansion: the same model takes the new bounds, so walking, the store and
+    // the NPCs use them right away; the new tiles light up for everyone inside.
+    const oldX = this.model.tilesX, oldY = this.model.tilesY;
+    if (snapshot.tilesX !== oldX || snapshot.tilesY !== oldY) {
+      this.model.resize(snapshot.tilesX, snapshot.tilesY);
+      drawTestGrid(this.testGrid, this.model);
+      if (snapshot.tilesX >= oldX && snapshot.tilesY >= oldY) {
+        const glow = new ExpansionGlow(newFloorTiles(oldX, oldY, snapshot.tilesX, snapshot.tilesY), FLOOR_DRAW_PRIORITY + 2);
+        this.world.addChild(glow.view);
+        this.expansionGlows.push(glow);
+      }
+    }
     this.doorViews.splice(0).forEach((door) => door.destroy());
     for (const views of this.itemViews.values()) for (const view of views) if (!view.destroyed) view.destroy({ children: true });
     this.itemViews.clear(); this.stoveViews.clear(); this.floorUnitViews.clear();
@@ -2004,7 +2050,39 @@ export class RoomScreen implements Screen {
   }
 
   private get isModalOpen(): boolean {
-    return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen || this.staffModal?.isOpen || this.levelUpModal?.isOpen);
+    return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen || this.staffModal?.isOpen ||
+      this.levelUpModal?.isOpen || this.expansionModal?.isOpen);
+  }
+
+  /** Expansão do Café (owner only): from the store header or the level-up shortcut. */
+  openExpansion(): void {
+    if (!this.expansionModal || this.isModalOpen) return;
+    // The store closes so the room is in view when it grows.
+    if (this.storeBar?.isOpen) this.storeBar.close();
+    this.drag = null;
+    this.pinch = null;
+    this.touchPoints.clear();
+    this.hovered = null;
+    this.highlight.clear();
+    this.closeStoveActions();
+    if (this.cookCallout) this.cookCallout.view.visible = false;
+    this.expansionModal.open();
+  }
+
+  /**
+   * The café grew: the room applies the new snapshot (the world event may have
+   * done it already), the HUD takes the new wallet and the owner celebrates.
+   */
+  private celebrateExpansion(result: ExpansionResult): void {
+    if (this.destroyed) return;
+    this.applyRoomSnapshot(result.room);
+    this.audio?.play('levelUp');
+    const reward = [`${sizeLabel(result.tiles)}`];
+    if (result.rewardCoins > 0) reward.push(`+${result.rewardCoins} moedas`);
+    if (result.xp > 0) reward.push(`+${result.xp} XP`);
+    this.levelUpToast.showMessage('Café ampliado!', reward.join(' · '));
+    const view = this.playerView.view;
+    this.floatingRewards.spawn(view.x, view.y, view.zIndex, result.rewardCoins, result.xp);
   }
 
   /** Funcionários: slots by level, hire, switch role and dismiss (owner only). */
@@ -2820,6 +2898,12 @@ export class RoomScreen implements Screen {
     this.floatingRewards.update(deltaMs, !this.storeBar?.isOpen);
     this.levelUpToast.update(deltaMs);
     this.levelUpModal?.update(deltaMs);
+    for (let i = this.expansionGlows.length - 1; i >= 0; i--) {
+      const glow = this.expansionGlows[i]!;
+      glow.update(deltaMs);
+      glow.view.renderable = !this.storeBar?.isOpen;
+      if (glow.done) { glow.destroy(); this.expansionGlows.splice(i, 1); }
+    }
     this.audioControl?.update();
     this.updateRushIntensity();
     if (this.doorViews.length) {
@@ -2882,6 +2966,7 @@ export class RoomScreen implements Screen {
     this.settingsModal?.setStageScale(scale);
     this.staffModal?.setStageScale(scale);
     this.levelUpModal?.setStageScale(scale);
+    this.expansionModal?.setStageScale(scale);
     this.audioControl?.setStageScale(scale);
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
@@ -2939,6 +3024,8 @@ export class RoomScreen implements Screen {
     this.settingsModal?.destroy();
     this.staffModal?.destroy();
     this.levelUpModal?.destroy();
+    this.expansionModal?.destroy();
+    this.expansionGlows.splice(0).forEach((glow) => glow.destroy());
     this.trayDishes.forEach((dish) => { if (!dish.destroyed) dish.destroy(); }); this.trayDishes.clear();
     this.outsideNpcManager?.destroy();
     this.npcAvatarSource?.destroy();

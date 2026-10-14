@@ -182,6 +182,15 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 		if err == nil {
 			body, err = snapshotStaff(app, op.Owner)
 		}
+	case "room_expand":
+		var command struct {
+			Tiles int    `json:"tiles"`
+			Pay   string `json:"pay"`
+		}
+		if json.Unmarshal(op.Body, &command) != nil || command.Tiles < 1 {
+			return fail(400, "Pedido inválido.")
+		}
+		body, err = expandRoom(app, op.Owner, command.Tiles, command.Pay)
 	default:
 		return fail(400, "Operação desconhecida.")
 	}
@@ -191,9 +200,11 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 			return fail(404, "Item indisponível.")
 		case errors.Is(err, errStaffMissing):
 			return fail(404, err.Error())
-		case errors.Is(err, errStaffProfile), errors.Is(err, errStaffRole):
+		case errors.Is(err, errStaffProfile), errors.Is(err, errStaffRole), errors.Is(err, errExpansionPay):
 			return fail(400, err.Error())
-		case errors.Is(err, errStaffSlots), errors.Is(err, errStaffHired), errors.Is(err, errStaffCoins):
+		case errors.Is(err, errStaffSlots), errors.Is(err, errStaffHired), errors.Is(err, errStaffCoins),
+			errors.Is(err, errExpansionMax), errors.Is(err, errExpansionStep), errors.Is(err, errExpansionLevel),
+			errors.Is(err, errExpansionCoins), errors.Is(err, errExpansionCash):
 			return fail(409, err.Error())
 		case errors.Is(err, errRoomPosition):
 			return fail(400, err.Error())
@@ -407,11 +418,13 @@ func registerGameBridge(e *core.ServeEvent) error {
 		var body struct {
 			FoodID  string `json:"foodId"`
 			TableID string `json:"tableId"`
+			// The room confirms a waiter handed the dish over: the customer tips.
+			Waiter bool `json:"waiter"`
 		}
 		if r.BindBody(&body) != nil || body.FoodID == "" {
 			return r.BadRequestError("Inválido.", nil)
 		}
-		payment, err := serveCustomer(r.App, r.Request.PathValue("owner"), body.FoodID, body.TableID)
+		payment, err := serveCustomerBy(r.App, r.Request.PathValue("owner"), body.FoodID, body.TableID, body.Waiter)
 		if errors.Is(err, errFoodGone) {
 			return r.NotFoundError("Prato indisponível.", nil)
 		}

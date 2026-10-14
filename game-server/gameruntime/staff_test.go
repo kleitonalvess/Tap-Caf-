@@ -50,6 +50,8 @@ func contains(list []string, value string) bool {
 func TestWaiterCarriesTheDishToTheSeatedCustomer(t *testing.T) {
 	store := &economyStore{payment: gamewire.Payment{RecipeID: "cake_1", Coins: 4, XP: 1, ServingsLeft: 3, PopularityTenths: 801}}
 	r, now := staffRoom(store, "waiter")
+	peer := &Peer{ID: "watcher", Out: make(chan []byte, 4096), Kick: func() {}}
+	r.peers["watcher"] = peer
 	customer := seatedCustomer(r, now)
 	customer.Kind = "npc"
 	r.tick(now.Add(1100 * time.Millisecond))
@@ -57,8 +59,18 @@ func TestWaiterCarriesTheDishToTheSeatedCustomer(t *testing.T) {
 		t.Fatalf("delivery not assigned: servedBy=%q patience=%+v reserved=%v", customer.servedBy, customer.Patience, r.reserved)
 	}
 	_, states := run(r, now.Add(1200*time.Millisecond), 40*time.Second, func() bool { return customer.State == "eating" })
-	if customer.State != "eating" || len(store.consumed) != 1 {
-		t.Fatalf("customer=%s consumed=%v states=%v", customer.State, store.consumed, states)
+	if customer.State != "eating" || len(store.consumed) != 1 || !store.waiter[0] {
+		t.Fatalf("customer=%s consumed=%v waiter=%v states=%v", customer.State, store.consumed, store.waiter, states)
+	}
+	// The hand-over pays the tip with the meal, over the customer's head.
+	tipped := false
+	for _, event := range events(peer) {
+		if event.Type == "payment" && event.Payment != nil && event.Payment.Tip == 1 && event.Payment.ActorID == customer.ID {
+			tipped = true
+		}
+	}
+	if !tipped {
+		t.Fatal("the tip was not broadcast")
 	}
 	if !contains(states, "picking") || !contains(states, "carrying") {
 		t.Fatalf("waiter states = %v", states)
@@ -135,5 +147,27 @@ func TestRoleChangeIsBroadcastWithIdentity(t *testing.T) {
 	r.syncStaff(now)
 	if a := r.actors["staff:a"]; a == nil || a.Role != "cleaner" || a.job != nil {
 		t.Fatalf("role change = %+v", a)
+	}
+}
+
+func TestIdleStaffLeavesTheDoorway(t *testing.T) {
+	r, now := staffRoom(&economyStore{}, "waiter", "cleaner")
+	r.world.Foods = nil
+	door := Tile{X: 4, Y: 1}
+	if a := r.actors["staff:a"]; a.X != door.X || a.Y != door.Y {
+		t.Fatalf("staff appear at the door: %d,%d", a.X, a.Y)
+	}
+	run(r, now.Add(time.Second), 20*time.Second, func() bool { return false })
+	for _, id := range []string{"staff:a", "staff:b"} {
+		a := r.actors[id]
+		if a.Move != nil || abs(a.X-door.X)+abs(a.Y-door.Y) <= 1 {
+			t.Fatalf("%s idles in the doorway at %d,%d (move=%v)", id, a.X, a.Y, a.Move)
+		}
+	}
+	// A customer outside the door can come in.
+	customer := &entity{Actor: gamewire.Actor{ID: "npc:in", Kind: "npc", X: 4, Y: 0, Outside: true, State: "entering"}}
+	r.actors[customer.ID] = customer
+	if !r.route(customer, Tile{X: 4, Y: 3}, now.Add(22*time.Second)) {
+		t.Fatal("the doorway is still blocked")
 	}
 }

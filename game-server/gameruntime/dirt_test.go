@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"coffe-mania/shared/gamerules"
 	"coffe-mania/shared/gamewire"
 )
 
@@ -15,6 +16,7 @@ func TestMealLeavesItsPlateOnTheTable(t *testing.T) {
 	customer := seatedCustomer(r, now)
 	customer.Kind = "npc"
 	r.advanceNPC(customer, now.Add(time.Second))
+	r.advanceNPC(customer, now.Add(time.Second+gamerules.SelfPickup()))
 	dirt := r.dirtOn("table")
 	if customer.State != "eating" || dirt == nil || dirt.Plates != 1 {
 		t.Fatalf("state=%s dirt=%+v", customer.State, r.world.Dirt)

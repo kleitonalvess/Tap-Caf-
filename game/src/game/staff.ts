@@ -9,15 +9,28 @@ export interface StaffSnapshot {
   level: number;
   slots: number;
   nextSlotLevel?: number;
+  /** What the next hire costs: the fee of a slot never filled before, 0 for a paid one. */
   hireCoins: number;
+  /** Slots already paid for; filling one of them again is free. */
+  paidSlots?: number;
+  /** One-time fee of each slot, the first at index 0. */
+  slotFees?: number[];
   staff: StaffMember[];
   profiles: StaffProfile[];
 }
 
+/** fee: what filling the slot would cost (0 when free or already paid). */
 export type StaffSlot =
   | { kind: 'staff'; member: StaffMember }
-  | { kind: 'free' }
-  | { kind: 'locked'; level: number };
+  | { kind: 'free'; fee: number }
+  | { kind: 'locked'; level: number; fee: number };
+
+/** One-time fee of a 0-based slot, 0 once it was paid. */
+export function slotFee(snapshot: StaffSnapshot, index: number): number {
+  if (index < Math.max(snapshot.paidSlots ?? 0, snapshot.staff.length)) return 0;
+  const fees = snapshot.slotFees ?? [];
+  return fees.length ? fees[Math.min(index, fees.length - 1)]! : 0;
+}
 
 /** One entry per employee lock: hired staff first, then free slots, then the locked ones with their level. */
 export function staffSlots(snapshot: StaffSnapshot, locks: readonly { employees: number; level: number }[]): StaffSlot[] {
@@ -26,8 +39,8 @@ export function staffSlots(snapshot: StaffSnapshot, locks: readonly { employees:
   for (let index = 0; index < total; index++) {
     const member = snapshot.staff[index];
     if (member) slots.push({ kind: 'staff', member });
-    else if (index < snapshot.slots) slots.push({ kind: 'free' });
-    else slots.push({ kind: 'locked', level: locks.find((lock) => lock.employees === index + 1)?.level ?? snapshot.nextSlotLevel ?? 0 });
+    else if (index < snapshot.slots) slots.push({ kind: 'free', fee: slotFee(snapshot, index) });
+    else slots.push({ kind: 'locked', level: locks.find((lock) => lock.employees === index + 1)?.level ?? snapshot.nextSlotLevel ?? 0, fee: slotFee(snapshot, index) });
   }
   return slots;
 }

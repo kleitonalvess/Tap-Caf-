@@ -15,6 +15,12 @@ var errFoodGone = errors.New("Prato indisponível.")
 // serveCustomer takes one serving and credits the owner in one transaction, so a
 // customer can never eat without paying or pay for a serving that was not taken.
 func serveCustomer(app core.App, owner, foodID, tableID string) (gamewire.Payment, error) {
+	return serveCustomerBy(app, owner, foodID, tableID, false)
+}
+
+// serveCustomerBy credits one serving; a waiter's delivery adds the customer's
+// tip to the coins (Payment.Coins is the total, Payment.Tip its share).
+func serveCustomerBy(app core.App, owner, foodID, tableID string, waiter bool) (gamewire.Payment, error) {
 	var payment gamewire.Payment
 	err := app.RunInTransaction(func(tx core.App) error {
 		food, err := tx.FindRecordById("room_food", foodID)
@@ -41,7 +47,11 @@ func serveCustomer(app core.App, owner, foodID, tableID string) (gamewire.Paymen
 		}
 		// An unknown recipe still feeds the customer; it just pays nothing.
 		recipe, _ := gamerules.RecipeByID(food.GetString("recipe_id"))
-		progress := playerstate.Award(state, recipe.PricePerServing, recipe.XPPerServing)
+		var tip int64
+		if waiter {
+			tip = gamerules.WaiterTip(recipe.PricePerServing)
+		}
+		progress := playerstate.Award(state, recipe.PricePerServing+tip, recipe.XPPerServing)
 		if err = tx.Save(state); err != nil {
 			return err
 		}
@@ -49,7 +59,7 @@ func serveCustomer(app core.App, owner, foodID, tableID string) (gamewire.Paymen
 			return err
 		}
 		payment = gamewire.Payment{
-			RecipeID: food.GetString("recipe_id"), Coins: progress.Coins, XP: progress.XP,
+			RecipeID: food.GetString("recipe_id"), Coins: progress.Coins, Tip: tip, XP: progress.XP,
 			Level: progress.Level, LevelUp: progress.LevelUp, LevelReward: progress.LevelReward,
 			ServingsLeft: left, PopularityTenths: progress.PopularityTenths,
 		}

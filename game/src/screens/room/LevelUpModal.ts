@@ -3,22 +3,24 @@ import { Container, Graphics, Rectangle, Sprite, Text, TextStyle } from 'pixi.js
 import type { SoundPlayer } from '../../audio/sound-events';
 import { FONT_FAMILY } from '../../core/font-tokens';
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../core/stage';
-import type { LevelUnlocks, RecipeRule } from '../../game/game-rules';
+import type { ExpansionStep, LevelUnlocks, NextUnlocks, RecipeRule } from '../../game/game-rules';
+import { sizeLabel } from '../../game/expansion';
 import type { RecipeArtLibrary } from '../../game/recipe-art';
 
 export interface LevelUpModalOptions {
   art: RecipeArtLibrary;
   audio?: SoundPlayer;
-  /** Contextual shortcuts: the recipe book and the staff window. */
+  /** Contextual shortcuts: the recipe book, the staff window and the expansion window. */
   onRecipes?: () => void;
   onStaff?: () => void;
+  onExpand?: () => void;
 }
 
 export interface LevelUpContent {
   level: number;
   rewardCoins: number;
   unlocks: LevelUnlocks;
-  next: { recipeLevel?: number; recipes: RecipeRule[]; slotLevel?: number };
+  next: NextUnlocks;
 }
 
 const PANEL_WIDTH = 1120;
@@ -164,6 +166,23 @@ export class LevelUpModal {
     return card;
   }
 
+  /** The floor grows from the current diamond (solid) to the new one (dashed edge). */
+  private expansionCard(step: ExpansionStep): Container {
+    const card = new Container();
+    card.label = `level-up-expansion-${step.tiles}`;
+    card.addChild(new Graphics().roundRect(0, 0, CARD.w, CARD.h, 20).fill(0xffffff).stroke({ color: 0x7b4fc9, width: 4 }));
+    const cx = CARD.w / 2;
+    const diamond = (g: Graphics, top: number, half: number) => g.moveTo(cx, top).lineTo(cx + half, top + half / 2).lineTo(cx, top + half).lineTo(cx - half, top + half / 2).closePath();
+    const art = new Graphics();
+    diamond(art, 26, 84).fill(0xe9defa).stroke({ color: 0x7b4fc9, width: 3 });
+    diamond(art, 26, 60).fill(0xc9a46b).stroke({ color: 0x8a5a2b, width: 3 });
+    art.moveTo(cx + 60, 56).lineTo(cx + 78, 65).moveTo(cx - 60, 56).lineTo(cx - 78, 65).stroke({ color: 0x7b4fc9, width: 4, cap: 'round' });
+    art.eventMode = 'none';
+    card.addChild(art, this.text('Expansão', CARD.w / 2, 140, 26), this.text(sizeLabel(step.tiles), CARD.w / 2, 176, 34, 0x7b4fc9),
+      this.text(`${step.coins.toLocaleString('pt-BR')} moedas`, CARD.w / 2, 220, 20, 0x8a5a2b, '600'));
+    return card;
+  }
+
   private render(content: LevelUpContent): void {
     for (const child of this.content.removeChildren()) child.destroy({ children: true });
     this.texts.length = 0;
@@ -179,8 +198,11 @@ export class LevelUpModal {
       this.content.addChild(chip);
     }
 
-    const cards: Container[] = content.unlocks.recipes.map((recipe) => this.recipeCard(recipe));
-    if (content.unlocks.slotsAfter > content.unlocks.slotsBefore) cards.push(this.slotCard(content.unlocks.slotsAfter));
+    // Slot and expansion first: past four cards the recipes are the ones counted
+    // in "e mais N", and the book is one tap away ("Ver receitas").
+    const cards: Container[] = content.unlocks.expansions.map((step) => this.expansionCard(step));
+    if (content.unlocks.slotsAfter > content.unlocks.slotsBefore) cards.unshift(this.slotCard(content.unlocks.slotsAfter));
+    cards.push(...content.unlocks.recipes.map((recipe) => this.recipeCard(recipe)));
     if (cards.length > 0) {
       this.content.addChild(this.text('Desbloqueado agora', PANEL_WIDTH / 2, 318, 30, DARK_BROWN));
       const shown = cards.slice(0, MAX_CARDS);
@@ -197,7 +219,12 @@ export class LevelUpModal {
       goals.push(`${content.next.recipes.map((recipe) => recipe.name).join(', ')} no nível ${content.next.recipeLevel}`);
     }
     if (content.next.slotLevel !== undefined) goals.push(`nova vaga no nível ${content.next.slotLevel}`);
-    if (goals.length) this.content.addChild(this.text(`Próximo: ${goals.join(' · ')}`, PANEL_WIDTH / 2, cards.length ? 636 : 460, 24, 0x8a5a2b, '600'));
+    if (content.next.expansion) goals.push(`expansão ${sizeLabel(content.next.expansion.tiles)} no nível ${content.next.expansion.level}`);
+    if (goals.length) {
+      const line = this.text(`Próximo: ${goals.join(' · ')}`, PANEL_WIDTH / 2, cards.length ? 636 : 460, 24, 0x8a5a2b, '600');
+      if (line.width > PANEL_WIDTH - 80) line.scale.set((PANEL_WIDTH - 80) / line.width);
+      this.content.addChild(line);
+    }
 
     const buttons: Array<[string, number, string, () => void]> = [];
     if (content.unlocks.recipes.length && this.options.onRecipes) {
@@ -206,8 +233,11 @@ export class LevelUpModal {
     if (content.unlocks.slotsAfter > content.unlocks.slotsBefore && this.options.onStaff) {
       buttons.push(['Contratar', 0x2f80c8, 'level-up-staff', () => { this.close(); this.options.onStaff?.(); }]);
     }
+    if (content.unlocks.expansions.length && this.options.onExpand) {
+      buttons.push(['Expandir', 0x7b4fc9, 'level-up-expand', () => { this.close(); this.options.onExpand?.(); }]);
+    }
     buttons.push(['Continuar', 0x3f9a4a, 'level-up-continue', () => this.close()]);
-    const width = 260;
+    const width = buttons.length >= 4 ? 230 : 260;
     const start = (PANEL_WIDTH - (buttons.length * width + (buttons.length - 1) * 24)) / 2;
     buttons.forEach(([caption, color, label, onTap], index) => this.content.addChild(this.button(caption, start + index * (width + 24), width, color, label, onTap)));
   }

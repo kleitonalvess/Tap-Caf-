@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { staleness, stoveStatus, type StoveCooking } from '../../game/src/game/cooking';
 import { formatDuration, recipeAvailability, recipePages, type RecipeRule } from '../../game/src/game/game-rules';
-import { patienceColor, patienceLeft } from '../../game/src/screens/room/PatienceMeter';
+import { fetchProgress, patienceColor, patienceLeft } from '../../game/src/screens/room/PatienceMeter';
 
 const recipe = (id: string, level: number, costCoins: number): RecipeRule => ({
   id, name: id, level, costCoins, cookSeconds: 30, servings: 4, pricePerServing: 4, xpPerServing: 1, spoilSeconds: 120,
@@ -88,5 +88,15 @@ describe('customer patience', () => {
   it('turns calm when nothing in the café can be served', () => {
     expect(patienceColor(0.1, true)).toBe(patienceColor(0.9, true));
     expect(patienceColor(0.1, true)).not.toBe(patienceColor(0.1));
+  });
+});
+
+describe('self-service fetch', () => {
+  it('fills the bubble while the customer fetches the dish', () => {
+    const action = { startedAt: 1000, duration: 3500 };
+    expect(fetchProgress(action, 1000)).toBe(0);
+    expect(fetchProgress(action, 2750)).toBeCloseTo(0.5);
+    expect(fetchProgress(action, 9000)).toBe(1);
+    expect(fetchProgress({ startedAt: 0, duration: 0 }, 5)).toBe(1);
   });
 });

@@ -24,6 +24,15 @@ func setLevel(t *testing.T, app core.App, owner string, level int) {
 	}
 }
 
+func gold(t *testing.T, app core.App, owner string) int64 {
+	t.Helper()
+	state, err := playerstate.GetOrCreate(app, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return state.GetInt64("gold")
+}
+
 func TestHiringRespectsTheLevelSlots(t *testing.T) {
 	app, owner, _ := newKitchen(t)
 	if err := hireStaff(app, owner, "vostu", ""); err != nil {
@@ -42,6 +51,7 @@ func TestHiringRespectsTheLevelSlots(t *testing.T) {
 	if err := hireStaff(app, owner, "nobody", ""); !errors.Is(err, errStaffProfile) {
 		t.Fatalf("unknown profile: %v", err)
 	}
+	setGold(t, app, owner, 1000)
 	if err := hireStaff(app, owner, "dona_cida", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -132,5 +142,43 @@ func TestStaffCleaningGivesNoReward(t *testing.T) {
 	after, _ := playerstate.GetOrCreate(app, owner)
 	if after.GetInt64("experience_current") != before.GetInt64("experience_current") {
 		t.Fatal("staff cleaning changed the owner's XP")
+	}
+}
+
+func TestEachSlotChargesItsFeeOnce(t *testing.T) {
+	app, owner, _ := newKitchen(t)
+	setLevel(t, app, owner, 15)
+	setGold(t, app, owner, 299)
+	snapshot, err := snapshotStaff(app, owner)
+	if err != nil || snapshot.HireCoins != 0 || snapshot.PaidSlots != 0 || len(snapshot.SlotFees) != 7 {
+		t.Fatalf("before hiring: %+v (%v)", snapshot, err)
+	}
+	// The first slot is free.
+	if err := hireStaff(app, owner, "vostu", ""); err != nil || gold(t, app, owner) != 299 {
+		t.Fatalf("first hire: %v gold=%d", err, gold(t, app, owner))
+	}
+	if snapshot, _ = snapshotStaff(app, owner); snapshot.HireCoins != 300 || snapshot.PaidSlots != 1 {
+		t.Fatalf("second slot: %+v", snapshot)
+	}
+	if err := hireStaff(app, owner, "juninho", ""); !errors.Is(err, errStaffCoins) {
+		t.Fatalf("hiring without the fee: %v", err)
+	}
+	setGold(t, app, owner, 300)
+	if err := hireStaff(app, owner, "juninho", ""); err != nil || gold(t, app, owner) != 0 {
+		t.Fatalf("second hire: %v gold=%d", err, gold(t, app, owner))
+	}
+	// Dismissing frees the slot; filling it again costs nothing.
+	staff, _ := roomStaff(app, owner)
+	if err := dismissStaff(app, owner, staff[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot, _ = snapshotStaff(app, owner); snapshot.HireCoins != 0 || snapshot.PaidSlots != 2 {
+		t.Fatalf("after dismissal: %+v", snapshot)
+	}
+	if err := hireStaff(app, owner, "marcinha", ""); err != nil || gold(t, app, owner) != 0 {
+		t.Fatalf("refilling a paid slot: %v gold=%d", err, gold(t, app, owner))
+	}
+	if snapshot, _ = snapshotStaff(app, owner); snapshot.HireCoins != 800 {
+		t.Fatalf("third slot: %+v", snapshot)
 	}
 }

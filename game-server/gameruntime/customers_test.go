@@ -106,6 +106,7 @@ func TestSeatedCustomerEatsFoodThatArrivesInTime(t *testing.T) {
 	r.advanceNPC(customer, now.Add(20*time.Second))
 	r.world.Foods = dish
 	r.advanceNPC(customer, now.Add(30*time.Second))
+	r.advanceNPC(customer, now.Add(30*time.Second+gamerules.SelfPickup()))
 	if customer.State != "eating" || customer.Patience != nil || len(store.consumed) != 1 {
 		t.Fatalf("state=%s patience=%+v consumed=%v", customer.State, customer.Patience, store.consumed)
 	}
@@ -221,5 +222,52 @@ func TestBrowsingCustomerGetsAFreshWaitAndNeverComplains(t *testing.T) {
 	r.manager.wg.Wait()
 	if len(store.feedbacks) != 0 || customer.Emotion == nil || customer.Emotion.Kind != "neutral" {
 		t.Fatalf("browser verdicts=%v emotion=%+v", store.feedbacks, customer.Emotion)
+	}
+}
+
+func TestSelfServiceTakesThePickupTime(t *testing.T) {
+	store := &economyStore{payment: gamewire.Payment{RecipeID: "cake_1", Coins: 4, XP: 1, ServingsLeft: 3, PopularityTenths: 801}}
+	r, _ := economyRoom(store)
+	now := time.Now()
+	customer := seatedCustomer(r, now)
+	r.advanceNPC(customer, now)
+	if customer.fetch == nil || customer.Patience != nil || customer.Action == nil || customer.Action.Kind != "fetching" ||
+		r.reserved["dish"] != 1 || len(store.consumed) != 0 {
+		t.Fatalf("fetch not started: fetch=%v patience=%+v action=%+v reserved=%v", customer.fetch, customer.Patience, customer.Action, r.reserved)
+	}
+	// The reserved serving is not offered twice.
+	r.world.Foods[0].Servings = 1
+	if _, ok := r.availableFood(); ok {
+		t.Fatal("the fetched serving is still available")
+	}
+	r.advanceNPC(customer, now.Add(gamerules.SelfPickup()-time.Millisecond))
+	if customer.State != "seated" || len(store.consumed) != 0 {
+		t.Fatalf("served before the pickup time: %s %v", customer.State, store.consumed)
+	}
+	r.advanceNPC(customer, now.Add(gamerules.SelfPickup()))
+	if customer.State != "eating" || len(store.consumed) != 1 || store.waiter[0] || len(r.reserved) != 0 {
+		t.Fatalf("after pickup: state=%s consumed=%v waiter=%v reserved=%v", customer.State, store.consumed, store.waiter, r.reserved)
+	}
+}
+
+func TestSleepingRoomReturnsAFetchedServing(t *testing.T) {
+	store := &economyStore{}
+	r, _ := economyRoom(store)
+	now := time.Now()
+	customer := seatedCustomer(r, now)
+	customer.Kind = "npc"
+	r.advanceNPC(customer, now)
+	if customer.fetch == nil {
+		t.Fatal("fetch not started")
+	}
+	if err := r.sleep(now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.reserved) != 0 || customer.fetch != nil || store.slept == nil || len(store.slept.NPCs) != 1 {
+		t.Fatalf("reserved=%v fetch=%v saved=%+v", r.reserved, customer.fetch, store.slept)
+	}
+	saved := store.slept.NPCs[0]
+	if saved.PatienceRemaining < 5000 || saved.Action != nil || saved.State != "seated" {
+		t.Fatalf("saved customer = %+v", saved)
 	}
 }

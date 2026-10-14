@@ -207,7 +207,7 @@ func (r *room) assignDelivery(a *entity, now time.Time) bool {
 	}
 	waiting := []*entity{}
 	for _, c := range r.actors {
-		if c.Kind == "npc" && c.State == "seated" && c.Food == nil && c.TableID != "" && c.servedBy == "" {
+		if c.Kind == "npc" && c.State == "seated" && c.Food == nil && c.TableID != "" && c.servedBy == "" && c.fetch == nil {
 			waiting = append(waiting, c)
 		}
 	}
@@ -272,14 +272,14 @@ func (r *room) assignTable(a *entity, now time.Time) bool {
 // stepAside moves an idle employee off the tiles next to furniture, so
 // customers can always reach their chairs.
 func (r *room) stepAside(a *entity, now time.Time) {
-	if !r.besideFurniture(Tile{X: a.X, Y: a.Y}) {
+	if !r.inTheWay(Tile{X: a.X, Y: a.Y}) {
 		return
 	}
 	best, bestPath := Tile{}, []Tile(nil)
 	for y := 1; y < r.grid.height; y++ {
 		for x := 1; x < r.grid.width; x++ {
 			t := Tile{X: x, Y: y}
-			if !r.grid.walkable(t) || r.occupied(t, a.ID) || r.besideFurniture(t) {
+			if !r.grid.walkable(t) || r.occupied(t, a.ID) || r.inTheWay(t) {
 				continue
 			}
 			path := findPath(Tile{X: a.X, Y: a.Y}, t, func(t Tile) bool { return r.canWalk(t, a) }, r.grid.width*r.grid.height*4)
@@ -291,6 +291,20 @@ func (r *room) stepAside(a *entity, now time.Time) {
 	if bestPath != nil {
 		r.route(a, best, now)
 	}
+}
+
+// inTheWay marks the tiles idle staff leave free: beside the furniture
+// customers use, and the doorway with the tiles around it, which every
+// customer crosses (staff appear there, and an idle employee on the door
+// tile would lock everyone in or out).
+func (r *room) inTheWay(t Tile) bool {
+	if r.besideFurniture(t) || r.grid.doors[t] {
+		return true
+	}
+	if door, ok := r.grid.door(); ok {
+		return abs(t.X-door.X)+abs(t.Y-door.Y) <= 1
+	}
+	return false
 }
 
 func (r *room) besideFurniture(t Tile) bool {
@@ -366,7 +380,7 @@ func (r *room) deliver(a *entity, now time.Time) {
 	a.Direction = direction(Tile{X: a.X, Y: a.Y}, Tile{X: table.X, Y: table.Y})
 	foodID := a.job.food.ID
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	payment, err := r.manager.store.Consume(ctx, r.id, foodID, customer.TableID)
+	payment, err := r.manager.store.Consume(ctx, r.id, foodID, customer.TableID, true)
 	cancel()
 	r.release(foodID)
 	if err != nil {

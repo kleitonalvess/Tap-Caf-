@@ -25,7 +25,8 @@ type Storage interface {
 	Operate(context.Context, gamewire.Operation) (gamewire.Result, error)
 	// Consume takes one serving for a customer at a table and returns the payment
 	// already credited to the owner; the same transaction leaves the table dirty.
-	Consume(ctx context.Context, room, food, table string) (gamewire.Payment, error)
+	// waiter marks a staff delivery, which adds the customer's tip.
+	Consume(ctx context.Context, room, food, table string, waiter bool) (gamewire.Payment, error)
 	// Feedback records a customer verdict that came without a payment.
 	Feedback(context.Context, string, bool) error
 	// Clean clears a table's plates for the staff (no reward); an already
@@ -109,6 +110,9 @@ type entity struct {
 	// Customer: the waiter bringing the dish, and the wait left when it was paused.
 	servedBy       string
 	pausedPatience time.Duration
+	// Customer fetching a serving from the counter (self-service) until fetchAt.
+	fetch   *gamewire.Food
+	fetchAt time.Time
 	// Staff: the job in progress.
 	job *staffJob
 }
@@ -532,6 +536,7 @@ func (r *room) sleep(now time.Time) error {
 	// Jobs in progress are dropped first: promised servings go back to the
 	// counters and served customers resume their saved wait.
 	r.dropAllJobs(now)
+	r.dropFetches(now)
 	npcs := []gamewire.Actor{}
 	for _, a := range r.actors {
 		if a.Kind != "npc" {
@@ -786,6 +791,10 @@ func (r *room) freeTile(preferred Tile, except string) (Tile, bool) {
 func (r *room) releaseSeat(a *entity) {
 	if a.ChairID != "" && r.seats[a.ChairID] == a.ID {
 		delete(r.seats, a.ChairID)
+	}
+	if a.fetch != nil {
+		r.release(a.fetch.ID)
+		a.fetch = nil
 	}
 	a.ChairID = ""
 	a.TableID = ""
@@ -1091,7 +1100,14 @@ func (r *room) updateWorld(w gamewire.World) {
 	cookingChanged := string(w.Cooking) != string(r.world.Cooking)
 	foodsChanged := fmt.Sprint(w.Foods) != fmt.Sprint(r.world.Foods)
 	dirtChanged := fmt.Sprint(w.Dirt) != fmt.Sprint(r.world.Dirt)
+	// An expansion only grows the room towards the front (walls stay on tx=0
+	// and ty=0), so every actor and path stays valid; the grid is rebuilt
+	// for the new bounds and the next world event carries them.
+	resized := w.TilesX != r.world.TilesX || w.TilesY != r.world.TilesY
 	r.world = w
+	if resized {
+		r.grid = newGrid(w)
+	}
 	r.syncStaff(time.Now())
 	doorChanged := false
 	for _, u := range changes {
@@ -1131,10 +1147,13 @@ func (r *room) updateWorld(w gamewire.World) {
 			}
 		}
 	}
-	if len(changes) > 0 || cookingChanged {
+	if len(changes) > 0 || cookingChanged || resized {
 		e := gamewire.Event{Type: "world", Units: changes, Revision: w.Revision}
 		if cookingChanged {
 			e.Cooking = w.Cooking
+		}
+		if resized {
+			e.TilesX, e.TilesY = w.TilesX, w.TilesY
 		}
 		r.broadcast(e, "")
 	}

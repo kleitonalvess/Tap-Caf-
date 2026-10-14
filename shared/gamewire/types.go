@@ -29,15 +29,17 @@ type Food struct {
 // Payment is credited by persistence when a customer takes a serving; the room
 // broadcasts it at that moment, together with the owner's HUD update.
 type Payment struct {
-	ActorID          string `json:"actorId,omitempty"`
-	RecipeID         string `json:"recipeId"`
-	Coins            int64  `json:"coins"`
-	XP               int64  `json:"xp"`
-	Level            int    `json:"level"`
-	LevelUp          bool   `json:"levelUp,omitempty"`
-	LevelReward      int64  `json:"levelReward,omitempty"`
-	ServingsLeft     int    `json:"servingsLeft"`
-	PopularityTenths int    `json:"popularityTenths"`
+	ActorID  string `json:"actorId,omitempty"`
+	RecipeID string `json:"recipeId"`
+	Coins    int64  `json:"coins"`
+	// Tip is the part of Coins a waiter's delivery earned.
+	Tip              int64 `json:"tip,omitempty"`
+	XP               int64 `json:"xp"`
+	Level            int   `json:"level"`
+	LevelUp          bool  `json:"levelUp,omitempty"`
+	LevelReward      int64 `json:"levelReward,omitempty"`
+	ServingsLeft     int   `json:"servingsLeft"`
+	PopularityTenths int   `json:"popularityTenths"`
 }
 type World struct {
 	RoomID   string          `json:"roomId"`
@@ -141,16 +143,19 @@ type Result struct {
 	World  *World          `json:"world,omitempty"`
 }
 type Event struct {
-	Type      string          `json:"type"`
-	Epoch     string          `json:"epoch"`
-	Seq       uint64          `json:"seq"`
-	ServerNow int64           `json:"serverNow"`
-	SelfID    string          `json:"selfId,omitempty"`
-	World     *World          `json:"world,omitempty"`
-	Actors    []Actor         `json:"actors,omitempty"`
-	Removed   []string        `json:"removed,omitempty"`
-	Units     []Unit          `json:"units,omitempty"`
-	Revision  int             `json:"revision,omitempty"`
+	Type      string   `json:"type"`
+	Epoch     string   `json:"epoch"`
+	Seq       uint64   `json:"seq"`
+	ServerNow int64    `json:"serverNow"`
+	SelfID    string   `json:"selfId,omitempty"`
+	World     *World   `json:"world,omitempty"`
+	Actors    []Actor  `json:"actors,omitempty"`
+	Removed   []string `json:"removed,omitempty"`
+	Units     []Unit   `json:"units,omitempty"`
+	Revision  int      `json:"revision,omitempty"`
+	// Set on a world event when the room grew (expansion).
+	TilesX    int             `json:"tilesX,omitempty"`
+	TilesY    int             `json:"tilesY,omitempty"`
 	Cooking   json.RawMessage `json:"cooking,omitempty"`
 	Foods     []Food          `json:"foods,omitempty"`
 	Dirt      []Dirt          `json:"dirt,omitempty"`

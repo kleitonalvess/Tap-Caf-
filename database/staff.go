@@ -34,11 +34,14 @@ type staffView struct {
 
 // staffSnapshot is what the Funcionários window shows: slots open at the
 // owner's level, who works in the café and every profile that can be hired.
+// HireCoins is what the next hire costs; PaidSlots were already paid for.
 type staffSnapshot struct {
 	Level         int                      `json:"level"`
 	Slots         int                      `json:"slots"`
 	NextSlotLevel int                      `json:"nextSlotLevel,omitempty"`
 	HireCoins     int64                    `json:"hireCoins"`
+	PaidSlots     int                      `json:"paidSlots"`
+	SlotFees      []int64                  `json:"slotFees"`
 	Staff         []staffView              `json:"staff"`
 	Profiles      []gamerules.StaffProfile `json:"profiles"`
 }
@@ -68,15 +71,26 @@ func snapshotStaff(app core.App, owner string) (staffSnapshot, error) {
 	if err != nil {
 		return staffSnapshot{}, err
 	}
+	if err := ensureRoom(app, owner); err != nil {
+		return staffSnapshot{}, err
+	}
+	room, err := app.FindFirstRecordByData("player_rooms", "user", owner)
+	if err != nil {
+		return staffSnapshot{}, err
+	}
 	level := max(1, state.GetInt("level"))
 	rules := gamerules.Staff()
-	snapshot := staffSnapshot{Level: level, Slots: gamerules.EmployeeSlots(level), HireCoins: rules.HireCoins, Staff: []staffView{}, Profiles: rules.Profiles}
+	snapshot := staffSnapshot{Level: level, Slots: gamerules.EmployeeSlots(level), SlotFees: rules.HireCoins, Staff: []staffView{}, Profiles: rules.Profiles}
 	if next, ok := gamerules.NextEmployeeSlotLevel(level); ok {
 		snapshot.NextSlotLevel = next
 	}
 	records, err := staffRecords(app, owner)
 	if err != nil {
 		return staffSnapshot{}, err
+	}
+	snapshot.PaidSlots = max(room.GetInt("staff_slots"), len(records))
+	if len(records) >= snapshot.PaidSlots {
+		snapshot.HireCoins = gamerules.HireCost(snapshot.PaidSlots + 1)
 	}
 	for _, record := range records {
 		snapshot.Staff = append(snapshot.Staff, staffView{
@@ -88,7 +102,8 @@ func snapshotStaff(app core.App, owner string) (staffSnapshot, error) {
 }
 
 // hireStaff takes a free slot for a predefined character. The look is drawn
-// once from the customer wardrobe policy and kept with the employee.
+// once from the customer wardrobe policy and kept with the employee. A slot
+// never filled before charges its one-time fee (the first one is free).
 func hireStaff(app core.App, owner, profileID, role string) error {
 	profile, ok := gamerules.StaffProfileByID(profileID)
 	if !ok {
@@ -108,7 +123,14 @@ func hireStaff(app core.App, owner, profileID, role string) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureRoom(app, owner); err != nil {
+		return err
+	}
 	return app.RunInTransaction(func(tx core.App) error {
+		room, err := tx.FindFirstRecordByData("player_rooms", "user", owner)
+		if err != nil {
+			return err
+		}
 		state, err := playerstate.GetOrCreate(tx, owner)
 		if err != nil {
 			return err
@@ -125,12 +147,19 @@ func hireStaff(app core.App, owner, profileID, role string) error {
 				return errStaffHired
 			}
 		}
-		if cost := gamerules.Staff().HireCoins; cost > 0 {
+		if paid := max(room.GetInt("staff_slots"), len(records)); len(records) >= paid {
+			cost := gamerules.HireCost(paid + 1)
 			if state.GetInt64("gold") < cost {
 				return errStaffCoins
 			}
-			state.Set("gold", state.GetInt64("gold")-cost)
-			if err = tx.Save(state); err != nil {
+			if cost > 0 {
+				state.Set("gold", state.GetInt64("gold")-cost)
+				if err = tx.Save(state); err != nil {
+					return err
+				}
+			}
+			room.Set("staff_slots", paid+1)
+			if err = tx.Save(room); err != nil {
 				return err
 			}
 		}

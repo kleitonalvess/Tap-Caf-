@@ -56,13 +56,22 @@ export class FloatingRewards {
 
   constructor(private readonly world: Container, private readonly icons: RewardIcons = {}) {}
 
-  spawn(x: number, y: number, depth: number, coins: number, xp: number): void {
+  /** tip is the part of coins a waiter's delivery earned; it rises on its own line. */
+  spawn(x: number, y: number, depth: number, coins: number, xp: number, tip = 0): void {
     const view = new Container();
     view.label = 'floating-reward';
     view.eventMode = 'none';
     let rowY = 0;
-    if (coins > 0) {
-      const row = rewardRow(`+${coins}`, 0xffd23f, 0x824310, this.icons.coin);
+    const tipped = Math.max(0, Math.min(tip, coins));
+    if (coins - tipped > 0) {
+      const row = rewardRow(`+${coins - tipped}`, 0xffd23f, 0x824310, this.icons.coin);
+      row.y = rowY;
+      view.addChild(row);
+      rowY += 56;
+    }
+    if (tipped > 0) {
+      const row = rewardRow(`+${tipped} gorjeta`, 0xb8f28c, 0x1f5a17, this.icons.coin);
+      row.label = 'floating-tip';
       row.y = rowY;
       view.addChild(row);
       rowY += 56;
@@ -142,7 +151,15 @@ export class LevelUpToast {
   }
 
   show(level: number, rewardCoins: number): void {
-    this.detail.text = rewardCoins > 0 ? `Nível ${level} · +${rewardCoins} moedas` : `Nível ${level}`;
+    this.showMessage('Subiu de nível!', rewardCoins > 0 ? `Nível ${level} · +${rewardCoins} moedas` : `Nível ${level}`);
+  }
+
+  /** The same banner for other celebrations (café expansion). */
+  showMessage(title: string, detail: string): void {
+    this.title.text = title;
+    this.detail.text = detail;
+    if (this.detail.width > TOAST_WIDTH - 40) this.detail.scale.set((TOAST_WIDTH - 40) / this.detail.width);
+    else this.detail.scale.set(1);
     this.elapsedMs = 0;
     this.view.visible = true;
     this.update(0);

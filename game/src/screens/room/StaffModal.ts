@@ -13,8 +13,12 @@ export interface StaffModalOptions {
   locks: readonly { employees: number; level: number }[];
   /** The hired employee's current look, when the room has already drawn it. */
   portrait?: (staffId: string) => Texture | undefined;
+  /** The owner's coins, to show whether the next slot's fee is affordable. */
+  gold?: () => number;
   audio?: SoundPlayer;
 }
+
+const coins = (value: number): string => value.toLocaleString('pt-BR');
 
 const PANEL_WIDTH = 1500;
 const PANEL_HEIGHT = 910;
@@ -200,10 +204,19 @@ export class StaffModal {
       this.renderTeam(snapshot);
       this.renderHiring(snapshot);
     }
-    const footer = this.message || (snapshot ? (snapshot.hireCoins > 0 ? `Contratar custa ${snapshot.hireCoins} moedas.` : 'Contratar é grátis (valor provisório).') : '');
+    const footer = this.message || (snapshot ? this.feeNote(snapshot) : '');
     const line = this.text(footer, PANEL_WIDTH / 2, PANEL_HEIGHT - 50, 26, this.messageError ? 0xc0392b : 0x8a5a2b);
     line.anchor.set(0.5);
     this.content.addChild(line);
+  }
+
+  /** The first slot is free; every other slot charges its fee once, and changing role is always free. */
+  private feeNote(snapshot: StaffSnapshot): string {
+    if (snapshot.hireCoins > 0) {
+      return `Próxima contratação: ${coins(snapshot.hireCoins)} moedas, taxa única da ${snapshot.staff.length + 1}ª vaga. Trocar de função é grátis.`;
+    }
+    if (snapshot.staff.length < (snapshot.paidSlots ?? 0)) return 'Esta vaga já foi paga: contratar de novo é grátis.';
+    return 'A 1ª vaga é grátis; as outras têm taxa única. Trocar de função é grátis.';
   }
 
   private rowStart(count: number): number {
@@ -230,6 +243,11 @@ export class StaffModal {
       const level = this.text(`Nível ${slot.level}`, CARD_WIDTH / 2, 172, 28, 0x8c7f6c, '700');
       level.anchor.set(0.5);
       card.addChild(lock, level);
+      if (slot.fee > 0) {
+        const fee = this.text(`Taxa: ${coins(slot.fee)}`, CARD_WIDTH / 2, 210, 20, 0x8c7f6c);
+        fee.anchor.set(0.5);
+        card.addChild(fee);
+      }
       return card;
     }
     if (slot.kind === 'free') {
@@ -254,7 +272,7 @@ export class StaffModal {
       outline.stroke({ color: LIGHT_BROWN, width: 4 });
       const label = this.text('Vaga livre', CARD_WIDTH / 2, 120, 28, 0x8a5a2b, '700');
       label.anchor.set(0.5);
-      const hint = this.text('Contrate abaixo', CARD_WIDTH / 2, 160, 20, 0xa58058);
+      const hint = this.text(slot.fee > 0 ? `Taxa única: ${coins(slot.fee)}` : 'Contrate abaixo · grátis', CARD_WIDTH / 2, 160, 20, 0xa58058);
       hint.anchor.set(0.5);
       card.addChild(new Graphics().roundRect(0, 0, CARD_WIDTH, height, 18).fill(CREAM), outline, label, hint);
       return card;
@@ -280,6 +298,18 @@ export class StaffModal {
   private renderHiring(snapshot: StaffSnapshot): void {
     const heading = this.text('Contratar', 48, HIRE_Y - 46, 32, DARK_BROWN, '700');
     this.content.addChild(heading);
+    const fee = snapshot.staff.length < snapshot.slots ? snapshot.hireCoins : 0;
+    const gold = this.options.gold?.();
+    const affordable = gold === undefined || gold >= fee;
+    if (snapshot.staff.length < snapshot.slots) {
+      const caption = fee > 0
+        ? `Taxa desta vaga: ${coins(fee)} moedas${affordable ? '' : ` · faltam ${coins(fee - (gold ?? 0))}`}`
+        : 'Esta vaga não tem taxa';
+      const chip = this.text(caption, PANEL_WIDTH - 48, HIRE_Y - 30, 24, affordable ? 0x2e7d32 : 0xc0392b, '700');
+      chip.anchor.set(1, 0.5);
+      chip.label = 'staff-hire-fee';
+      this.content.addChild(chip);
+    }
     const profiles = hireableProfiles(snapshot);
     if (profiles.length === 0) {
       const all = this.text('Todos os personagens já trabalham no seu café.', PANEL_WIDTH / 2, HIRE_Y + 110, 28, 0x8a5a2b);
@@ -289,10 +319,10 @@ export class StaffModal {
     }
     const free = snapshot.staff.length < snapshot.slots;
     const start = this.rowStart(profiles.length);
-    profiles.forEach((profile, index) => this.content.addChild(this.profileCard(profile, free, start + index * (CARD_WIDTH + CARD_GAP), HIRE_Y)));
+    profiles.forEach((profile, index) => this.content.addChild(this.profileCard(profile, free, affordable, start + index * (CARD_WIDTH + CARD_GAP), HIRE_Y)));
   }
 
-  private profileCard(profile: StaffProfile, free: boolean, x: number, y: number): Container {
+  private profileCard(profile: StaffProfile, free: boolean, affordable: boolean, x: number, y: number): Container {
     const card = new Container();
     card.label = `staff-profile-${profile.id}`;
     card.position.set(x, y);
@@ -314,7 +344,7 @@ export class StaffModal {
     }
     const roles: StaffRole[] = [profile.role, otherRole(profile.role)];
     roles.forEach((role, index) => {
-      card.addChild(this.button(ROLE_LABEL[role], 10 + index * ((CARD_WIDTH - 26) / 2 + 6), 190, (CARD_WIDTH - 26) / 2, ROLE_COLOR[role], !this.busy,
+      card.addChild(this.button(ROLE_LABEL[role], 10 + index * ((CARD_WIDTH - 26) / 2 + 6), 190, (CARD_WIDTH - 26) / 2, ROLE_COLOR[role], !this.busy && affordable,
         () => void this.run(() => this.options.client.hire(profile.id, role), `${profile.name} contratado(a) como ${ROLE_LABEL[role]}!`),
         `staff-hire-${profile.id}-${role}`));
     });

@@ -73,10 +73,43 @@ type Tip struct {
 	Coins int64 `json:"coins"`
 }
 
+// ServiceRules: how a dish reaches the table. A waiter must always beat
+// self-service, so customers fetching their own dish take a while and only
+// a waiter's delivery earns a tip.
+type ServiceRules struct {
+	SelfPickupMs     int   `json:"selfPickupMs"`
+	WaiterTipPercent int   `json:"waiterTipPercent"`
+	WaiterTipMin     int64 `json:"waiterTipMin"`
+}
+
+// MaxRoomTiles is the largest room side: the client packs tile indexes as
+// ty*20+tx (MAX_NUM_TILES_X in game/src/world/iso.ts).
+const MaxRoomTiles = 20
+
+// ExpansionRules: the café grows one step at a time from the starter room.
+// Each step is paid with coins once the level is reached, or with cash at any
+// level, and pays back RewardCoins plus the step's XP. RewardCoins comes from
+// the config's <expansions><newsFeed><rewardCoins>, which rewarded friends'
+// clicks on the expansion post; without a news feed it is paid on completion.
+type ExpansionRules struct {
+	StartTiles  int             `json:"startTiles"`
+	RewardCoins int64           `json:"rewardCoins"`
+	Steps       []ExpansionStep `json:"steps"`
+}
+
+type ExpansionStep struct {
+	Tiles int   `json:"tiles"`
+	Level int   `json:"level"`
+	Coins int64 `json:"coins"`
+	Cash  int64 `json:"cash"`
+	XP    int64 `json:"xp"`
+}
+
 // StaffRules: predefined characters the owner may hire (friends later), the
-// cost and the length of the staff actions in the room.
+// one-time fee of each slot (index 0 is the first) and the length of the
+// staff actions in the room.
 type StaffRules struct {
-	HireCoins     int64          `json:"hireCoins"`
+	HireCoins     []int64        `json:"hireCoins"`
 	PickupSeconds int            `json:"pickupSeconds"`
 	BusSeconds    int            `json:"busSeconds"`
 	Profiles      []StaffProfile `json:"profiles"`
@@ -117,6 +150,8 @@ type Rules struct {
 	Customers         CustomerRules   `json:"customers"`
 	Stove             StoveRules      `json:"stove"`
 	Tables            TableRules      `json:"tables"`
+	Service           ServiceRules    `json:"service"`
+	Expansions        ExpansionRules  `json:"expansions"`
 	Staff             StaffRules      `json:"staff"`
 	Levels            []Level         `json:"levels"`
 	CustomerFrequency []Frequency     `json:"customerFrequency"`
@@ -188,7 +223,32 @@ func validate(r Rules) string {
 	if t := r.Tables; t.CleaningSeconds < 1 || t.CleaningSeconds > 30 || t.CleaningXP < 0 {
 		return "invalid table rules"
 	}
-	if s := r.Staff; s.HireCoins < 0 || s.PickupSeconds < 1 || s.PickupSeconds > 30 || s.BusSeconds < 1 || s.BusSeconds > 30 ||
+	if v := r.Service; v.SelfPickupMs < 0 || v.SelfPickupMs > 30000 || v.WaiterTipPercent < 0 || v.WaiterTipPercent > 100 || v.WaiterTipMin < 0 {
+		return "invalid service rules"
+	}
+	e := r.Expansions
+	if e.StartTiles < 2 || e.StartTiles > MaxRoomTiles || e.RewardCoins < 0 {
+		return "invalid starter room"
+	}
+	for i, step := range e.Steps {
+		previous := ExpansionStep{Tiles: e.StartTiles, Level: 1}
+		if i > 0 {
+			previous = e.Steps[i-1]
+		}
+		if step.Tiles <= previous.Tiles || step.Tiles > MaxRoomTiles || step.Level < previous.Level || step.Level > len(r.Levels) ||
+			step.Coins <= 0 || step.Cash <= 0 || step.XP < 0 {
+			return "expansions must grow up to the room limit"
+		}
+	}
+	if len(r.Staff.HireCoins) != len(r.EmployeeLocks) {
+		return "every employee slot needs a hiring fee"
+	}
+	for i, fee := range r.Staff.HireCoins {
+		if fee < 0 || i > 0 && fee < r.Staff.HireCoins[i-1] {
+			return "hiring fees must not decrease"
+		}
+	}
+	if s := r.Staff; s.PickupSeconds < 1 || s.PickupSeconds > 30 || s.BusSeconds < 1 || s.BusSeconds > 30 ||
 		len(s.Profiles) < len(r.EmployeeLocks) {
 		return "invalid staff rules"
 	}
@@ -313,6 +373,40 @@ func NextEmployeeSlotLevel(level int) (int, bool) {
 	return 0, false
 }
 
+// HireCost is the one-time fee to open the given slot (1 is the first);
+// slots beyond the table cost like the last one.
+func HireCost(slot int) int64 {
+	fees := rules.Staff.HireCoins
+	if slot < 1 || len(fees) == 0 {
+		return 0
+	}
+	return fees[min(slot, len(fees))-1]
+}
+
+func Expansions() ExpansionRules {
+	e := rules.Expansions
+	e.Steps = append([]ExpansionStep{}, e.Steps...)
+	return e
+}
+
+// NextExpansion is the step after a room of the given side (false at the cap).
+func NextExpansion(tiles int) (ExpansionStep, bool) {
+	for _, step := range rules.Expansions.Steps {
+		if step.Tiles > tiles {
+			return step, true
+		}
+	}
+	return ExpansionStep{}, false
+}
+
+// SelfPickup is how long a customer takes to fetch a dish from the counter.
+func SelfPickup() time.Duration { return time.Duration(rules.Service.SelfPickupMs) * time.Millisecond }
+
+// WaiterTip is what a customer adds for a dish worth coins brought to the table.
+func WaiterTip(coins int64) int64 {
+	return max(rules.Service.WaiterTipMin, coins*int64(rules.Service.WaiterTipPercent)/100)
+}
+
 func PickupDuration() time.Duration { return time.Duration(rules.Staff.PickupSeconds) * time.Second }
 
 func BusDuration() time.Duration { return time.Duration(rules.Staff.BusSeconds) * time.Second }
@@ -326,6 +420,8 @@ func Public() Rules {
 	snapshot.Levels = append([]Level{}, rules.Levels...)
 	snapshot.Recipes = Recipes()
 	snapshot.Staff.Profiles = append([]StaffProfile{}, rules.Staff.Profiles...)
+	snapshot.Staff.HireCoins = append([]int64{}, rules.Staff.HireCoins...)
+	snapshot.Expansions = Expansions()
 	return snapshot
 }
 

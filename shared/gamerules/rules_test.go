@@ -180,3 +180,57 @@ func TestStaffProfilesIncludeTheVostuWaiter(t *testing.T) {
 		t.Fatal("fewer profiles than slots")
 	}
 }
+
+func TestExpansionsGrowTwoTilesUpToTheClientLimit(t *testing.T) {
+	e := Expansions()
+	if e.StartTiles != 8 || e.RewardCoins != 250 || len(e.Steps) != 6 {
+		t.Fatalf("expansions = %+v", e)
+	}
+	// Values set by the project owner: side, level, coins, cash.
+	want := [][4]int64{{10, 5, 2000, 10}, {12, 10, 6000, 20}, {14, 15, 15000, 35}, {16, 22, 35000, 50}, {18, 30, 75000, 75}, {20, 40, 150000, 100}}
+	tiles := e.StartTiles
+	for i, step := range e.Steps {
+		if step.Tiles != tiles+2 || [4]int64{int64(step.Tiles), int64(step.Level), step.Coins, step.Cash} != want[i] || step.XP <= 0 {
+			t.Fatalf("step %d = %+v", i, step)
+		}
+		next, ok := NextExpansion(tiles)
+		if !ok || next != step {
+			t.Fatalf("next after %d = %+v %v", tiles, next, ok)
+		}
+		tiles = step.Tiles
+	}
+	if tiles != MaxRoomTiles {
+		t.Fatalf("last step %d, limit %d", tiles, MaxRoomTiles)
+	}
+	if _, ok := NextExpansion(MaxRoomTiles); ok {
+		t.Fatal("expansion beyond the limit")
+	}
+	Public().Expansions.Steps[0].Coins = 1
+	if Expansions().Steps[0].Coins != 2000 {
+		t.Fatal("public rules share the expansion steps")
+	}
+}
+
+func TestHireCostChargesFromTheSecondSlot(t *testing.T) {
+	want := []int64{0, 300, 800, 2000, 5000, 10000, 20000}
+	for i, fee := range want {
+		if got := HireCost(i + 1); got != fee {
+			t.Fatalf("slot %d costs %d, want %d", i+1, got, fee)
+		}
+	}
+	if HireCost(0) != 0 || HireCost(99) != 20000 {
+		t.Fatalf("out of range: %d %d", HireCost(0), HireCost(99))
+	}
+}
+
+func TestWaiterBeatsSelfService(t *testing.T) {
+	if SelfPickup() < 3*time.Second || SelfPickup() > 4*time.Second {
+		t.Fatalf("self pickup = %v", SelfPickup())
+	}
+	// Every dish gets at least one coin of tip; dearer dishes a share of the price.
+	for coins, want := range map[int64]int64{0: 1, 3: 1, 14: 1, 20: 2, 55: 5} {
+		if got := WaiterTip(coins); got != want {
+			t.Fatalf("tip for %d = %d, want %d", coins, got, want)
+		}
+	}
+}

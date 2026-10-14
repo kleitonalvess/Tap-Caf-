@@ -9,10 +9,12 @@ export interface SharedDirt { tableId: string; plates: number; since: number }
 export interface SharedPatience { startedAt: number; duration: number }
 /** Credited by the server when the customer received the serving; the HUD refresh comes from the same save. */
 export interface SharedPayment {
-  actorId?: string; recipeId: string; coins: number; xp: number; level: number;
+  /** coins is the total credited; tip is the part a waiter's delivery earned. */
+  actorId?: string; recipeId: string; coins: number; tip?: number; xp: number; level: number;
   levelUp?: boolean; levelReward?: number; servingsLeft: number; popularityTenths: number;
 }
-export interface SharedAction { kind: 'cooking' | 'serving' | 'cleaning' | 'seated' | 'eating'; stoveId?: string; startedAt: number; duration: number }
+/** fetching: a customer without a waiter fetching a serving from the counter. */
+export interface SharedAction { kind: 'cooking' | 'serving' | 'cleaning' | 'seated' | 'eating' | 'fetching'; stoveId?: string; startedAt: number; duration: number }
 export interface SharedEmotion { id: string; kind: 'satisfied' | 'dissatisfied' | 'neutral'; startedAt: number; duration: number }
 export interface SharedActor {
   id: string; kind?: 'human' | 'npc' | 'staff'; name?: string; appearance?: string;
@@ -32,7 +34,10 @@ export interface SharedWorld {
 export interface RoomEvent {
   type: 'welcome' | 'actors' | 'world' | 'food' | 'dirt' | 'payment' | 'ack' | 'error'; epoch: string; seq: number; serverNow: number;
   selfId?: string; world?: SharedWorld; actors?: SharedActor[]; removed?: string[];
-  units?: RoomUnit[]; revision?: number; foods?: SharedFood[]; dirt?: SharedDirt[]; cooking?: CookingSnapshot; payment?: SharedPayment;
+  units?: RoomUnit[]; revision?: number;
+  /** Set on a world event when the café grew (expansion). */
+  tilesX?: number; tilesY?: number;
+  foods?: SharedFood[]; dirt?: SharedDirt[]; cooking?: CookingSnapshot; payment?: SharedPayment;
   requestId?: string; message?: string;
 }
 
