@@ -60,9 +60,9 @@ Distribuição do código fonte para desenvolvimento local. Banco, servidor do j
 | Pasta | Responsabilidade |
 | --- | --- |
 | `database/` | PocketBase, autenticação, migrações, inventário, compras e persistência dos quartos. |
-| `game-server/` | Servidor Go/WebSocket, instâncias dos quartos, jogadores, NPCs, navegação e ações compartilhadas. |
+| `game-server/` | Servidor Go/WebSocket, instâncias dos quartos, jogadores, NPCs, navegação e ações compartilhadas. Em `game-server/standalone/`, o mesmo núcleo para o navegador (Go → WebAssembly). |
 | `game/` | Cliente TypeScript/PixiJS, renderização, interface, áudio e assets usados em execução. |
-| `shared/` | Protocolo entre serviços, catálogo de itens e versão do servidor. |
+| `shared/` | Protocolo entre serviços, catálogo de itens, regras do jogo, domínio da persistência (`shared/cafe`, usado pelo PocketBase e pelo modo standalone) e versão do servidor. |
 | `scripts/` | Inicialização do ambiente e sincronização do catálogo. |
 | `tools/` | Asset Studio (Posicionador, Image Cutter e Twister) e gerador de gabaritos isométricos. |
 | `ripped/` | Efeitos sonoros e game-config.xml modificado, como referências do jogo. |
@@ -86,6 +86,8 @@ O launcher compila os dois serviços Go, inicia o PocketBase, inicia o servidor 
 - Conta do banco novo em modo dev: `test@local.mail`, senha `123456`.
 
 `Ctrl+C` salva o estado dos quartos antes de encerrar os serviços iniciados pelo launcher. Ele não reutiliza processos ou bancos de outra cópia do projeto. Para executar duas cópias simultaneamente, altere as portas.
+
+O launcher também compila o modo offline (`game/public/standalone/`). Se a página inicial não conseguir falar com os serviços, o jogo abre sozinho no modo offline; `?offline=1` força esse modo mesmo com os serviços no ar.
 
 ## Configuração e dados locais
 
@@ -147,6 +149,21 @@ O comando valida os manifestos e sincroniza os catálogos do cliente e de `share
 
 `npm run typecheck` verifica os tipos. `npm run build` gera o cliente em `game/dist/`, mas não é necessário para o modo dev. A versão do jogo é `0.0.4.19` em `VERSION`, nos campos `gameVersion`, em `shared/buildinfo/version.go` e em `game/src/core/version.ts`. O campo npm `version` usa `0.0.4-19` por compatibilidade com SemVer.
 
+## Modo standalone (sem servidores)
+
+O mesmo jogo roda inteiro no navegador: o servidor dos quartos (`gameruntime`) e as regras de persistência (`shared/cafe`) são compilados para WebAssembly e executados num Web Worker, e o café é salvo no IndexedDB do navegador. Visitas e recursos sociais não existem nesse modo.
+
+```sh
+npm run wasm                # só o motor: game/public/standalone/coffe.wasm + wasm_exec.js
+npm run build:standalone    # site estático em game/dist-standalone/
+npm run preview:standalone  # serve o build estático em http://localhost:4173/
+```
+
+- `game/dist-standalone/` usa caminhos relativos: publique o conteúdo da pasta em qualquer hospedagem estática (GitHub Pages, Vercel), inclusive numa subpasta. O servidor precisa entregar `.wasm` como `application/wasm` (o jogo tem uma alternativa mais lenta quando não entrega).
+- O modo também é escolhido por `VITE_STANDALONE=true` no build, por `?offline=1` no endereço ou automaticamente quando `/api/coffe/session` não responde.
+- O save fica no navegador e no aparelho do jogador, separado das contas do servidor. Um café aberto em duas abas é recusado na segunda.
+- Os arquivos de `game/public/standalone/` são gerados e ficam fora do Git; `npm run build` e `npm run dev` também os geram.
+
 ## Ferramentas de assets
 
 O [Asset Studio](tools/asset-positioner/README.md) inclui **Asset Positioner**, **Image Cutter** e **Twister para paredes e pisos**, com importação, recorte, espelhamento, posicionamento, conversão isométrica, exportação PNG/JSON e salvamento de projetos.
@@ -169,6 +186,6 @@ Os PNGs gerados ficam em `tools/gabaritos/isometrico/`. Para cadastrar a arte ex
 
 ## Conteúdo da distribuição
 
-Estão incluídos código editável, migrações, configurações, ferramentas e os assets necessários para executar o jogo atual. A pasta ripped/ contém os sons e a configuração de referência descritos acima. Caches, demos comparativas, builds, bancos locais e arquivos de referência de outros jogos não fazem parte da entrega.
+Estão incluídos código editável, migrações, configurações, ferramentas e os assets necessários para executar o jogo atual. O motor WebAssembly do modo standalone é gerado (`npm run wasm`) e não faz parte dos arquivos versionados. A pasta ripped/ contém os sons e a configuração de referência descritos acima. Caches, demos comparativas, builds, bancos locais e arquivos de referência de outros jogos não fazem parte da entrega.
 
 O código desenvolvido para o projeto usa a licença MIT em `LICENSE`. Dependências e assets de terceiros conservam suas licenças e autoria; a licença do código não concede novos direitos sobre imagens, modelos ou áudio de outros jogos.

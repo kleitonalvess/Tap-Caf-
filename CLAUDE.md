@@ -10,7 +10,8 @@ AGENTS.md (importado acima) é a fonte das regras de trabalho, comandos, portas,
 | --- | --- | --- |
 | Cliente | TypeScript 5.9 estrito, PixiJS 8, Vite 7 | `game/` |
 | Simulação dos quartos | Go 1.27, WebSocket (`coder/websocket`), uma goroutine por quarto | `game-server/` |
-| Persistência | PocketBase 0.40 (SQLite), migrações em Go, SSE | `database/` |
+| Persistência | PocketBase 0.40 (SQLite), migrações em Go, SSE; regras em `shared/cafe` | `database/` |
+| Modo standalone | o mesmo Go compilado para WebAssembly num Web Worker, save em IndexedDB | `game-server/standalone/`, `game/src/standalone/` |
 | Contratos | Go sem dependências: protocolo (`gamewire`), itens (`roomcatalog`), regras (`gamerules`) | `shared/` |
 | Testes JS | Vitest 4.1.11 (raiz), lógica pura do cliente e das ferramentas | `tests/unit/`, `tests/tools/` |
 
@@ -23,7 +24,7 @@ AGENTS.md (importado acima) é a fonte das regras de trabalho, comandos, portas,
 | Interpolação, câmera, HUD, efeitos visuais, áudio | cliente | — |
 | Preferências (volumes, mudo, faixa, zoom bitter) | `localStorage`, por jogador | — |
 
-- Estado de jogo não vai para `localStorage`: o cliente não é confiável e o café é compartilhado com visitantes em tempo real.
+- Estado de jogo não vai para `localStorage`: o cliente não é confiável e o café é compartilhado com visitantes em tempo real. Exceção deliberada: no modo standalone o café é só do jogador, e o motor (o mesmo Go) roda num Web Worker com o save no IndexedDB e uma cópia no `localStorage` ao sair (ver "Modo standalone").
 - Progresso offline sai de instantes absolutos gravados no banco (`preparing_at`, `started_at`, `ready_at`, `spoils_at`, `room_dirt.created`); o snapshot calcula o estado a partir de `now`. Novos timers (contratar, turnos) seguem o mesmo padrão: gravar o instante, nunca decrementar por tick.
 - Sem humanos, o quarto aguarda 30 s, salva os NPCs (`ActionRemaining`, `PatienceRemaining`), grava `player_rooms.slept_at` e dorme. Ao acordar, a persistência conta o expediente da ausência (ver "Expediente offline"); ausências curtas (< 2 min) só deslocam os relógios pela pausa.
 - Grava-se no banco por transação de jogo (comprar, cozinhar, tirar porção, veredito de cliente), nunca por passo ou quadro.
@@ -146,6 +147,7 @@ Eventos do protocolo: `welcome` (ao dono, com `away` quando há resumo da ausên
 | Juice e modal de nível | Modal de nível com desbloqueios implementado; moedas/XP flutuantes | 8 |
 | Fazenda (ingredientes frescos) e Discoteca (Festa do Bairro) | Implementado (valores definidos pelo responsável) | 9 |
 | Expediente offline com "Bem-vindo de volta!" | Implementado (valores definidos pelo responsável, só ganhos) | 9 |
+| Modo standalone (jogo inteiro no navegador, sem servidores) | Implementado (sem recursos sociais; exportar/importar o save pendente) | 10 |
 
 - **Fogão e cliente:** ver "Cozinha e clientes". O config cita `stoveCleaningCoinCost`, `stoveCleaningXPGain`, `waitingChairTime`, `waitingFoodTime`, `eatingTime` e `dishPickupTime`, todos com valores adulterados.
 - **Fluxo decidido:** sem garçom, o cliente pega a porção do balcão (autosserviço, 3,5 s); com garçom, o prato vai do balcão à mesa na bandeja e rende gorjeta. O `dishPickupTime` do config (adulterado, 0) sugere esse tempo de coleta, sem valor confiável.
@@ -171,8 +173,8 @@ Eventos do protocolo: `welcome` (ao dono, com `away` quando há resumo da ausên
 
 Fruto da auditoria abaixo. Cada sprint fecha botões ou abas que hoje não fazem nada e acrescenta um motivo para voltar ao jogo. Os valores novos entram como provisórios em `rules.json` (marcados `"provisional": true`). Até a sprint de cada um, os ícones mortos devem pelo menos responder com "Em breve" (Sprint 11).
 
-10. **Modo standalone** (próxima): o jogo roda no navegador sem PocketBase nem servidor Go, por exemplo no GitHub Pages, com o save em IndexedDB. Com os serviços no ar, segue o multiplayer completo. Desenho em "Modo standalone (Sprint 10)".
-11. **Polimento e retenção diária**:
+10. **Modo standalone** (concluída): domínio da persistência extraído para `shared/cafe`, motor Go/WASM num Web Worker, save em IndexedDB, pausa da aba com expediente ao voltar e builds estáticos. Ver "Modo standalone (Sprint 10)".
+11. **Polimento e retenção diária** (próxima):
     - Nenhum ícone mudo: cartão "Em breve" com o nome do sistema e a sprint; `striped-chicken` passa a abrir a Fazenda (`StreetModal`); `house` e `waiter` somem para visitantes.
     - **Correio** (`mail`): caixa `player_mail` para resumos, prêmios e avisos; a primeira carta é a "Carta de Boas-Vindas" (+50 moedas, uma vez por conta), no lugar das 5.000 moedas do nível 1 do config. A fila de janelas de entrada (`<principal>`, uma vez por dia) mostra o "Bem-vindo de volta!" e o bônus diário.
     - **Bônus diário** de 6 dias (`<dailyBonus>` do config dá só a quantidade de dias; os prêmios são de design): `last_claim_at` e `streak` em `player_state`, resgate idempotente pela data em America/Sao_Paulo. O 6º dia é a primeira fonte de Grana.
@@ -221,26 +223,16 @@ Fruto da auditoria abaixo. Cada sprint fecha botões ou abas que hoje não fazem
 
 ## Modo standalone (Sprint 10)
 
-O objetivo é jogar sem servidores (GitHub Pages ou arquivos estáticos), com o save no navegador; com PocketBase e o servidor Go no ar, nada muda. A decisão recomendada é rodar no navegador o mesmo núcleo em Go, compilado para WebAssembly, e não reescrever a simulação em TypeScript:
+O jogo roda sem servidores (GitHub Pages ou arquivos estáticos), com o save no navegador; com PocketBase e o servidor Go no ar, nada muda. O navegador executa o mesmo núcleo em Go, compilado para WebAssembly, e não uma reescrita em TypeScript: não há regra duplicada nem teste de paridade de simulação a manter.
 
-- `game-server/gameruntime` e `shared/gamerules` já compilam com `GOOS=js GOARCH=wasm` sem alteração (verificado: 7,3 MB, 2,0 MB com gzip, incluindo o `net/http` do `http.go`, que sai do build por build tag).
-- O `gameruntime` só depende de `shared/` e da interface `Storage` (`Load`, `Active`, `Sleep`, `Operate`, `Consume`, `Feedback`, `Clean`). Um `Storage` local herda clientes, funcionários, navegação e festa sem duplicar regra.
-- Reescrever em TypeScript duplicaria a simulação e as transações de `database/` e exigiria testes de paridade para sempre.
-
-Passos:
-
-1. **Domínio sem PocketBase.** Extrair de `database/` (cozinha, pagamento, sujeira, equipe, expansão, rua e expediente offline) funções puras sobre um `Cafe` em memória, num pacote novo (por exemplo `shared/gamecore`). Os handlers do PocketBase passam a carregar os registros, aplicar a função e salvar na mesma transação. Os testes atuais de `database/` provam que nada mudou. É a maior parte do trabalho e já deixa as regras testáveis sem banco.
-2. **`cmd/standalone` (js/wasm).** Criar o `Manager` do `gameruntime` com um `Storage` sobre o `gamecore`. A ponte `syscall/js` expõe `join`, os comandos e as rotas do cliente, e os eventos saem no mesmo JSON do `gamewire`. Roda num Web Worker para não disputar quadros com o Pixi.
-3. **Save em IndexedDB.** O `Cafe` serializado é gravado a cada transação de jogo, as mesmas que hoje vão ao banco, nunca por tick. Cada perfil local tem seu save, separado das contas do servidor. Exportar e importar o JSON permite trocar de aparelho. O save é do jogador: sem ranking, o relógio adiantado do aparelho é aceitável.
-4. **Cliente.** Uma interface `GameBackend` tem duas implementações:
-   - `NetworkBackend`: os `fetch`, o WebSocket e o SSE de hoje (`room-realtime`, `player-state-realtime`, `cooking`, `staff`, `street`, `tables`, `expansion`, `appearance`, `room-inventory`, `game-rules`, `away`, `session`).
-   - `LocalBackend`: o worker.
-
-   A escolha vem do build `VITE_STANDALONE=1` (GitHub Pages, `base` relativo). No build normal, o jogo oferece "Jogar offline" quando `/api/coffe/session` não responde.
-5. **Expediente offline local.** O mesmo `catchUp` roda ao abrir a aba (`slept_at` no save), e o "Bem-vindo de volta!" funciona igual.
-6. **Fica de fora:** visitas, vizinhos, presentes e todo recurso social (Sprint 15).
-
-Pronto quando um Playwright no build estático, sem PocketBase, conseguir: entrar, cozinhar, receber o pagamento, recarregar a página com o save e ver o "Bem-vindo de volta!" depois de uma ausência simulada.
+- **Domínio sem PocketBase** (`shared/cafe`): quarto, cozinha, pagamento, sujeira, rua, equipe, expansão, expediente offline e a ponte do servidor do jogo (`PublicWorld`, `Operate`, `SaveDormant`, `LoadSeed`) rodam sobre a interface `cafe.Store` (`First`, `Find`, `Get`, `New`, `Save`, `Delete`, `Transaction` aninhável, `NPCLooks`). O servidor usa `database/pbstore` (PocketBase); o navegador usa `cafe.MemoryStore` (cópia por coleção na transação, um erro desfaz tudo, `Export`/`LoadMemoryStore` em JSON). `database/` ficou com rotas, autenticação, migrações e wrappers finos; `database/parity_test.go` roda o mesmo roteiro nos dois stores e exige resultados idênticos. Os catálogos de aparência foram para `shared/appearance` e `shared/npcappearance`.
+- **Motor** (`game-server/standalone`): `Engine` cria o `gameruntime.Manager` sobre um `Storage` local e responde às rotas `/api/coffe` que o cliente usa (`router.go`); mudanças no quarto passam por `Manager.Operate`, como no servidor. `Connection` fala o protocolo do WebSocket (`join`, comandos, eventos com `epoch`/`seq`) e sobrevive à pausa. `standalone/wasm` é a ponte `syscall/js` (`start`, `fetch`, `connect`, `send`, `suspend`, `resume`, `export`); `gameruntime/http.go` sai do build `js`. Binário: 6,8 MB (1,8 MB com gzip).
+- **Cliente**: `game/src/game/backend.ts` é a fronteira (`apiFetch`, `openRoomSocket`, `openRealtime`); os módulos de rede não sabem qual backend atende. `game/src/standalone/local-backend.ts` devolve `Response` reais, um socket e um SSE locais e conversa com `engine.worker.ts`, que carrega `standalone/wasm_exec.js` e `standalone/coffe.wasm` (versão na URL contra cache velho).
+- **Save** (`save-store.ts`): IndexedDB (`coffe-mania`/`saves`/`main`) com perfil local (id de 15 caracteres, nome "Jogador"), `savedAt` e o `Export` do café; cópia síncrona no `localStorage` ao sair, e a carga escolhe a mais nova. O worker salva depois de cada transação de jogo (`OnCommit`, agrupado em 400 ms), nunca por tick; o HUD só é avisado quando `player_state` muda.
+- **Pausa e ausência**: aba escondida → `Suspend` (o quarto dorme como um quarto sem jogadores no servidor e grava `slept_at`) e save imediato; aba visível → `Resume`, a conexão entra no quarto novo e recebe outro `welcome`. Uma aba fechada sem esse save deixa `slept_at` vazio: na próxima abertura, `restore` usa o último instante visto (`coffe-standalone-seen`, gravado a cada 15 s e ao esconder, ou o `savedAt`) e descarta os clientes salvos. O `WakeRoom` conta o expediente e o "Bem-vindo de volta!" é o mesmo do servidor.
+- **Modo**: build `npm run build:standalone` (`--mode standalone` ou `VITE_STANDALONE=true`, base relativa, `game/dist-standalone`), `?offline=1`, ou queda automática quando `/api/coffe/session` não responde (o selo "Offline · salvo neste navegador" avisa). Uma aba por café (`navigator.locks`, com 3 s de espera para o recarregar). Ficam de fora visitas, vizinhos, presentes e todo recurso social (Sprint 15).
+- **Verificado ao vivo no Chromium, sem PocketBase nem servidor Go** (Vite em modo standalone e os dois builds de produção servidos como arquivos estáticos, um deles numa subpasta como no GitHub Pages): conta local nova, cozinhar, pagamento, recarregar com o save (moedas e XP preservados), aba escondida grava `slept_at`, ausência de 1 h com expediente (3 porções, +12 moedas, popularidade 80,3 → 80,6), aba fechada sem salvar contada do último instante visto (com subida de nível), segunda aba recusada e nenhuma requisição a `/api` ou `/game`. O build normal sem servidores tenta a sessão uma vez e cai no modo offline. O modo servidor seguiu igual (login, cozinhar, pagamento, nenhum download do motor).
+- **Pendente**: exportar e importar o save (trocar de aparelho); medir o tempo de carga do worker em celulares.
 
 ## Auditoria da interface e dos dados (Sprint 9)
 
@@ -291,6 +283,7 @@ Feita por leitura do código (sem execução) e conferida por amostragem. Estado
 
 ## Verificação
 
-- Go: `go vet ./...` e `go test ./shared/... ./database/ ./game-server/...` (use `-race` em `gameruntime`). Testes de persistência usam banco temporário e as migrações reais.
-- Cliente: `npm run typecheck` e `npm test` (Vitest: música, preferências, manifesto de sprites, detecção do Recortador, disponibilidade e páginas do livro, estados do fogão, paciência e busca do prato, prédios da rua, vagas e taxas de funcionários, desbloqueios de nível, oferta de expansão e `RoomModel.resize`).
+- Go: `go vet ./...` e `go test ./shared/... ./database/ ./game-server/...` (use `-race` em `gameruntime` e `standalone`). Testes de persistência usam banco temporário e as migrações reais; `database/parity_test.go` compara PocketBase e `MemoryStore`. O motor compila com `npm run wasm` (`GOOS=js GOARCH=wasm`).
+- Cliente: `npm run typecheck` e `npm test` (Vitest: música, preferências, manifesto de sprites, detecção do Recortador, disponibilidade e páginas do livro, estados do fogão, paciência e busca do prato, prédios da rua, vagas e taxas de funcionários, desbloqueios de nível, oferta de expansão, `RoomModel.resize` e o backend local do modo standalone).
+- Standalone: Vite com `--mode standalone` numa porta própria (os ganchos `__coffeMania` só existem no dev) e os builds de produção servidos como arquivos estáticos. No Chromium com `--use-gl=swiftshader` a carga é lenta (2–3 fps; o Pixi limita cada quadro a 100 ms, então a animação "Abrindo seu café" demora dezenas de segundos): use `?screen=room`.
 - E2E manual: binários compilados do código atual, banco novo em diretório temporário, portas próprias (ex.: 18090/18091/15173) e Chromium com `--use-gl=swiftshader`. Para testar a ajuda de emergência, crie um superusuário no banco temporário e ajuste `gold` em `player_state`. Encerre o servidor do jogo (SIGINT) antes do PocketBase para o salvamento final.
