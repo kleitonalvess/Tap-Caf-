@@ -3,15 +3,8 @@ import { Assets, Rectangle, Texture } from 'pixi.js';
 import { LOADING_ASSET_URLS } from '../screens/loading/assets';
 import { Wardrobe } from '../avatar/wardrobe';
 import { IndoorArt } from './indoor-art';
-import { ItemCatalog } from './item-catalog';
 
 const base = import.meta.env.BASE_URL ?? '/';
-const dataUrl = (file: string) =>
-  new URL(`assets/data/${file}`, new URL(base, document.baseURI)).href;
-
-/** Catálogo de itens de interior disponível nos assets do cliente. */
-export const ITEM_CATALOG_URL = dataUrl('interior-items.json');
-
 const avatarUrl = (file: string) =>
   new URL(`assets/avatar/${file}`, new URL(base, document.baseURI)).href;
 
@@ -167,7 +160,6 @@ export const GAME_ASSET_URLS: readonly string[] = [
   ...Object.values(AVATAR_PLACEHOLDER_URLS),
   LOADING_ASSET_URLS.frame,
   ...LOADING_ASSET_URLS.banners,
-  ITEM_CATALOG_URL,
   INDOOR_ART_URL,
   UI_ACTION_BAR_URL,
   UI_STORE_ACTION_BAR_URL,
@@ -191,15 +183,7 @@ export const GAME_ASSET_URLS: readonly string[] = [
   FOOD_CAKE_STAGE_2_URL,
 ];
 
-let catalogCache: ItemCatalog | null = null;
 let artCache: IndoorArt | null = null;
-
-/** Passa pelo Assets do Pixi, então aproveita o que a barra já baixou. */
-export async function loadItemCatalog(): Promise<ItemCatalog> {
-  if (catalogCache) return catalogCache;
-  catalogCache = ItemCatalog.from(await Assets.load<unknown>(ITEM_CATALOG_URL));
-  return catalogCache;
-}
 
 export async function loadIndoorArt(): Promise<IndoorArt> {
   if (artCache) return artCache;

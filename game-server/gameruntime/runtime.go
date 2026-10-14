@@ -115,8 +115,9 @@ type entity struct {
 	fetchAt time.Time
 	// Consecutive seconds spent waiting for a blocked step (see waitBlocked).
 	waits int
-	// Staff: the job in progress.
-	job *staffJob
+	// Staff: the job in progress, and since when it stands in the doorway.
+	job          *staffJob
+	doorwaySince time.Time
 }
 type room struct {
 	manager       *Manager
@@ -1261,6 +1262,9 @@ func (r *room) tick(now time.Time) {
 				a.waits = 0
 				changed = true
 			}
+		}
+		if a.Kind == "staff" && r.clearDoorway(a, now) {
+			changed = true
 		}
 		if a.Move == nil && len(a.path) == 0 {
 			if a.State == "to_seat" {

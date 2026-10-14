@@ -102,3 +102,48 @@ func TestWaiterOnTheDoorLetsCustomersOut(t *testing.T) {
 		}
 	}
 }
+
+// boxedDoorway puts a waiter on the door tile with every tile around it taken.
+func boxedDoorway(now time.Time) (*room, *entity) {
+	r := starterRoom(now.Add(time.Hour))
+	for i, t := range []Tile{{X: 3, Y: 1}, {X: 5, Y: 1}, {X: 3, Y: 2}, {X: 4, Y: 2}, {X: 5, Y: 2}} {
+		standing(r, &entity{Actor: gamewire.Actor{ID: fmt.Sprintf("human:%d", i), Kind: "human", X: t.X, Y: t.Y, State: "idle"}})
+	}
+	w := &entity{Actor: gamewire.Actor{ID: "staff:w", Kind: "staff", Role: "waiter", X: 4, Y: 1, State: "idle"}}
+	standing(r, w)
+	r.world.Staff = []gamewire.StaffMember{{ID: "w", Name: "W", Role: "waiter", Appearance: "look"}}
+	return r, w
+}
+
+func TestEmployeeNeverHoldsTheDoorway(t *testing.T) {
+	now := time.Now()
+	r, w := boxedDoorway(now)
+	r.tick(now)
+	for end := now.Add(doorwayGrace - 200*time.Millisecond); now.Before(end); now = now.Add(100 * time.Millisecond) {
+		r.tick(now)
+	}
+	if w.X != 4 || w.Y != 1 {
+		t.Fatalf("moved before the grace: (%d,%d)", w.X, w.Y)
+	}
+	for end := now.Add(time.Second); now.Before(end); now = now.Add(100 * time.Millisecond) {
+		r.tick(now)
+	}
+	here := Tile{X: w.X, Y: w.Y}
+	if r.doorway(here) || r.occupied(here, w.ID) || !r.grid.walkable(here) {
+		t.Fatalf("waiter still blocks the way at %+v", here)
+	}
+}
+
+func TestWorkingEmployeeStaysInTheDoorway(t *testing.T) {
+	now := time.Now()
+	r, w := boxedDoorway(now)
+	w.State = "busing"
+	w.Action = &gamewire.ActorAction{Kind: "busing", StartedAt: now.UnixMilli(), Duration: 10000}
+	w.due = now.Add(10 * time.Second)
+	for end := now.Add(3 * time.Second); now.Before(end); now = now.Add(100 * time.Millisecond) {
+		r.tick(now)
+	}
+	if w.X != 4 || w.Y != 1 {
+		t.Fatalf("a working employee was moved: (%d,%d)", w.X, w.Y)
+	}
+}

@@ -329,13 +329,69 @@ func (r *room) stepAside(a *entity, now time.Time) {
 // customer crosses (staff appear there, and an idle employee on the door
 // tile would lock everyone in or out).
 func (r *room) inTheWay(t Tile) bool {
-	if r.besideFurniture(t) || r.grid.doors[t] {
+	return r.besideFurniture(t) || r.doorway(t)
+}
+
+// doorway is the door tile and the tiles beside it: the only way in and out.
+func (r *room) doorway(t Tile) bool {
+	if r.grid.doors[t] {
 		return true
 	}
 	if door, ok := r.grid.door(); ok {
 		return abs(t.X-door.X)+abs(t.Y-door.Y) <= 1
 	}
 	return false
+}
+
+// doorwayGrace is how long an employee may stand in the doorway without
+// working before being moved inside.
+const doorwayGrace = 2 * time.Second
+
+// clearDoorway is the last resort against a gridlock at the door: an employee
+// standing in the doorway (waiting for a blocked step or idle, not working)
+// for doorwayGrace is put on the nearest free tile inside the café, whatever
+// blocks the way. Customers can always get in and out. Reports a move.
+func (r *room) clearDoorway(a *entity, now time.Time) bool {
+	if a.Move != nil || a.Action != nil || !r.doorway(Tile{X: a.X, Y: a.Y}) {
+		a.doorwaySince = time.Time{}
+		return false
+	}
+	if a.doorwaySince.IsZero() {
+		a.doorwaySince = now
+		return false
+	}
+	if now.Sub(a.doorwaySince) < doorwayGrace {
+		return false
+	}
+	tile, ok := r.insideTile(a)
+	if !ok {
+		return false
+	}
+	r.unindexActor(a.ID)
+	a.X, a.Y = tile.X, tile.Y
+	a.path, a.waits, a.doorwaySince = nil, 0, time.Time{}
+	r.indexActor(a)
+	return true
+}
+
+// insideTile is the free tile nearest to a outside the doorway, preferring one
+// that is not in the way either (ties by row, then column).
+func (r *room) insideTile(a *entity) (Tile, bool) {
+	best, found, bestAside, bestDistance := Tile{}, false, false, 0
+	for y := 1; y < r.grid.height; y++ {
+		for x := 1; x < r.grid.width; x++ {
+			t := Tile{X: x, Y: y}
+			if !r.grid.walkable(t) || r.occupied(t, a.ID) || r.doorway(t) {
+				continue
+			}
+			aside := !r.besideFurniture(t)
+			distance := abs(t.X-a.X) + abs(t.Y-a.Y)
+			if !found || aside && !bestAside || aside == bestAside && distance < bestDistance {
+				best, found, bestAside, bestDistance = t, true, aside, distance
+			}
+		}
+	}
+	return best, found
 }
 
 func (r *room) besideFurniture(t Tile) bool {

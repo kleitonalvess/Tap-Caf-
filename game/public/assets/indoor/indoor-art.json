@@ -66,7 +66,7 @@
    "characterId": 541,
    "frames": [
     {
-     "file": "WhiteTableCloth-1.png",
+     "file": "../items/white_cloth_table/white_cloth_table.png",
      "width": 176,
      "height": 127,
      "left": -90,
@@ -90,28 +90,28 @@
    "characterId": 1217,
    "frames": [
     {
-     "file": "Chair02-1.png",
+     "file": "../items/classic_chair/rotation-0.png",
      "width": 83,
      "height": 143,
      "left": -40,
      "top": -80.2
     },
     {
-     "file": "Chair02-2.png",
+     "file": "../items/classic_chair/rotation-1.png",
      "width": 83,
      "height": 143,
      "left": -40,
      "top": -80.2
     },
     {
-     "file": "Chair02-3.png",
+     "file": "../items/classic_chair/rotation-2.png",
      "width": 83,
      "height": 143,
      "left": -40,
      "top": -80.2
     },
     {
-     "file": "Chair02-4.png",
+     "file": "../items/classic_chair/rotation-3.png",
      "width": 83,
      "height": 143,
      "left": -40,
@@ -135,7 +135,7 @@
    "characterId": 2112,
    "frames": [
     {
-     "file": "pink_stove.png",
+     "file": "../items/starter_stove/starter_stove.png",
      "width": 160,
      "height": 127,
      "left": -80,
@@ -159,7 +159,7 @@
    "characterId": 1680,
    "frames": [
     {
-     "file": "DelicateBush-1.png",
+     "file": "../items/delicate_bush/delicate_bush.png",
      "width": 74,
      "height": 165,
      "left": -36.7,
@@ -183,28 +183,28 @@
    "characterId": 2242,
    "frames": [
     {
-     "file": "LetterBox-1.png",
+     "file": "../items/letter_box/rotation-0.png",
      "width": 123,
      "height": 181,
      "left": -58.8,
      "top": -112.4
     },
     {
-     "file": "LetterBox-2.png",
+     "file": "../items/letter_box/rotation-1.png",
      "width": 123,
      "height": 181,
      "left": -58.8,
      "top": -112.4
     },
     {
-     "file": "LetterBox-3.png",
+     "file": "../items/letter_box/rotation-2.png",
      "width": 123,
      "height": 181,
      "left": -58.8,
      "top": -112.4
     },
     {
-     "file": "LetterBox-4.png",
+     "file": "../items/letter_box/rotation-3.png",
      "width": 123,
      "height": 181,
      "left": -58.8,
@@ -228,14 +228,14 @@
    "characterId": 588,
    "frames": [
     {
-     "file": "MenuHolder-1.png",
+     "file": "../items/menu_holder/rotation-0.png",
      "width": 309,
      "height": 167,
      "left": -153.3,
      "top": -120.1
     },
     {
-     "file": "MenuHolder-2.png",
+     "file": "../items/menu_holder/rotation-1.png",
      "width": 309,
      "height": 167,
      "left": -153.3,
@@ -259,14 +259,14 @@
    "characterId": 593,
    "frames": [
     {
-     "file": "AchievementPanel-1.png",
+     "file": "../items/achievement_panel/rotation-0.png",
      "width": 322,
      "height": 170,
      "left": -161.1,
      "top": -146.8
     },
     {
-     "file": "AchievementPanel-2.png",
+     "file": "../items/achievement_panel/rotation-1.png",
      "width": 322,
      "height": 170,
      "left": -161.1,
@@ -290,14 +290,14 @@
    "characterId": 206,
    "frames": [
     {
-     "file": "WindowInside11-1.png",
+     "file": "../items/basic_window/rotation-0.png",
      "width": 146,
      "height": 125,
      "left": -74,
      "top": -120.1
     },
     {
-     "file": "WindowInside11-2.png",
+     "file": "../items/basic_window/rotation-1.png",
      "width": 146,
      "height": 125,
      "left": -74,
@@ -321,7 +321,7 @@
    "characterId": 1396,
    "frames": [
     {
-     "file": "mafia_door.png",
+     "file": "../items/mafia_door/mafia_door.png",
      "width": 92,
      "height": 218,
      "left": -87,
@@ -350,14 +350,14 @@
    "characterId": 737,
    "frames": [
     {
-     "file": "Wall2-1.png",
+     "file": "../items/room_wall/rotation-0.png",
      "width": 160,
      "height": 282,
      "left": -80,
      "top": -202
     },
     {
-     "file": "Wall2-2.png",
+     "file": "../items/room_wall/rotation-1.png",
      "width": 160,
      "height": 282,
      "left": -80,
@@ -381,7 +381,7 @@
    "characterId": 734,
    "frames": [
     {
-     "file": "WallCorner-1.png",
+     "file": "../items/room_wall_corner/room_wall_corner.png",
      "width": 36,
      "height": 251,
      "left": -18,
@@ -406,7 +406,7 @@
    "wallpaperRotation": 1,
    "frames": [
     {
-     "file": "Wall17-2.png",
+     "file": "../items/default_wallpaper_name/default_wallpaper_name.png",
      "width": 80,
      "height": 273,
      "left": -80,
@@ -430,7 +430,7 @@
    "characterId": 829,
    "frames": [
     {
-     "file": "FloorTile-1.png",
+     "file": "../items/default_tile_name/default_tile_name.png",
      "width": 164,
      "height": 84,
      "left": -82,

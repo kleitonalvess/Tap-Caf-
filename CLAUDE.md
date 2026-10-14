@@ -92,7 +92,7 @@ Eventos do protocolo: `welcome` (ao dono, com `away` quando há resumo da ausên
 
 ## Fazenda e Discoteca (Sprint 9)
 
-- Regras (`street` em `rules.json`, provisórias): Fazenda com `cooldownSeconds` 1200, `bonusPercent` 20 e `maxCharges` 1; Discoteca com `durationSeconds` 300, `cooldownSeconds` 1800 (contado do fim da festa), `arrivalFactor` 1,5 e `tipMultiplier` 2.
+- Regras (`street` em `rules.json`, definidas pelo responsável): Fazenda com `cooldownSeconds` 1200, `bonusPercent` 20 e `maxCharges` 1; Discoteca com `durationSeconds` 300, `cooldownSeconds` 1800 (contado do fim da festa), `arrivalFactor` 1,5 e `tipMultiplier` 2.
 - Persistência (`database/street.go`, migração `202610180001`): `player_rooms.farm_harvested_at`, `fresh_charges` e `party_started_at` (instantes, nunca contadores por tick). `streetState` deriva `gamewire.Street` (`farmReadyAt`, `freshCharges`, `partyStartedAt`/`EndsAt`/`ReadyAt`), que vai no `World`, no snapshot do quarto e em eventos `world`. Rotas do dono: `POST /api/coffe/street/farm/harvest` e `/disco/party` → servidor do jogo (`farm_harvest`, `party_start`).
 - Ingredientes frescos: colher dá uma carga (até `maxCharges`; com a carga guardada a colheita espera). O próximo `cook_start` consome a carga e marca o preparo `fresh`; cancelar devolve a carga (sem passar de `maxCharges`); servir soma as porções em `room_food.fresh_servings`. Cada porção fresca paga `FreshBonus` (20% arredondado para cima: +1 a +3 moedas e +1 XP nas receitas atuais), em `payment.freshCoins/freshXp`. O livro mostra "Ingredientes frescos: +20%", o balcão ganha uma folha verde e a moeda sobe como "+N fresco".
 - Festa do Bairro: durante a janela, o intervalo de chegada é dividido por `arrivalFactor`, a gorjeta do garçom é multiplicada por `tipMultiplier` e quem se serve sozinho também dá a gorjeta básica (`serveServing` decide pela janela no instante do pagamento). O cliente acende luzes coloridas sobre o piso (`PartyLights`, recortadas pelo losango do café), mostra o selo "Festa do Bairro · m:ss", acelera os holofotes da Discoteca e troca a música pela faixa procedural "Festa do Bairro" (`FESTA_DO_BAIRRO`, disco-funk a 122 bpm, só na festa; `AudioEngine.setOverride` não altera a preferência). Visitantes veem e ouvem a festa. Nível da faixa ainda não medido em LUFS.
@@ -101,7 +101,7 @@ Eventos do protocolo: `welcome` (ao dono, com `away` quando há resumo da ausên
 ## Expediente offline (Sprint 9)
 
 - Quando o quarto dorme, `saveDormantRoom` grava `player_rooms.slept_at`. No `load` seguinte (o quarto acorda), `wakeRoom` (`database/offline.go`) roda numa transação: limpa `slept_at` (dois despertares simultâneos nunca contam duas vezes) e, se a ausência passou de `offline.minAwaySeconds` (120), chama `catchUp`.
-- `catchUp` é determinístico e limitado a `maxAwaySeconds` (8 h). Ritmo de uma refeição = o mais lento entre chegadas pela popularidade (`CustomersPerMinute`), giro das cadeiras com mesa (`seatCycleSeconds` 30 por cadeira) e entregas do garçom (`deliverySeconds` 20 por garçom). Sem funcionários, cada cadeira de mesa limpa serve uma refeição e a mesa fica suja; com garçom ou faxineiro as mesas são limpas no fim e as cadeiras giram. Cada refeição passa por `serveServing` no instante em que teria acontecido (gorjeta do garçom, festa e porções frescas valem). Só ganhos: sem comida ou sem porta o café fecha, e ninguém perde popularidade sem o dono presente. Pratos nos fogões não são servidos (é tarefa do dono) e estragam pelos próprios instantes. Os clientes salvos na dormência vão embora.
+- `catchUp` é determinístico e limitado a `maxAwaySeconds` (8 h); os valores de `offline` foram definidos pelo responsável. Ritmo de uma refeição = o mais lento entre chegadas pela popularidade (`CustomersPerMinute`), giro das cadeiras com mesa (`seatCycleSeconds` 30 por cadeira) e entregas do garçom (`deliverySeconds` 20 por garçom). Sem funcionários, cada cadeira de mesa limpa serve uma refeição e a mesa fica suja; com garçom ou faxineiro as mesas são limpas no fim e as cadeiras giram. Cada refeição passa por `serveServing` no instante em que teria acontecido (gorjeta do garçom, festa e porções frescas valem). Só ganhos: sem comida ou sem porta o café fecha, e ninguém perde popularidade sem o dono presente. Pratos nos fogões não são servidos (é tarefa do dono) e estragam pelos próprios instantes. Os clientes salvos na dormência vão embora.
 - O resumo (`gamewire.AwaySummary`: período, tempo contado e tempo cortado pelo limite (`cappedMs`), porções, moedas, gorjetas, frescos, XP, nível, popularidade, pratos sujos/recolhidos, equipe, porções restantes, pratos prontos/estragados no fogão) acumula em `player_rooms.away_summary` até o dono confirmar (`POST /api/coffe/room/away/ack`). Com o quarto dormindo, só o `welcome` do dono o traz, já somado à nova ausência; o snapshot o traz quando o quarto está acordado (um visitante acordou antes). Visitantes nunca o recebem. O `ack` lê e grava numa transação, para não restaurar o `slept_at` de um despertar concorrente.
 - Cliente: `WelcomeBackModal` "Bem-vindo de volta!" (`awayLines` em `game/src/game/away.ts`) abre quando nenhuma outra janela está aberta. Um resumo com o mesmo `from` de um já mostrado é a versão somada: substitui a janela aberta ou, depois do Coletar, mostra só a diferença (`awayAddition`); "Coletar" confirma e faz as moedas e o XP subirem sobre o avatar (o crédito já aconteceu ao acordar).
 
@@ -113,7 +113,7 @@ Eventos do protocolo: `welcome` (ao dono, com `away` quando há resumo da ausên
 - Taxa por vaga: `player_rooms.staff_slots` conta as vagas já pagas (a migração `202610170001` conta a equipe existente). Contratar numa vaga nunca preenchida cobra `HireCost(vaga)` na mesma transação; dispensar e recontratar na mesma vaga é grátis; trocar de função é sempre grátis. `GET /api/coffe/staff` devolve `hireCoins` (custo da próxima contratação), `paidSlots` e `slotFees`.
 - Garçom sempre melhor que autosserviço: além de recolher pratos, a entrega do garçom chama `/consume` com `waiter: true` e o cliente dá gorjeta (`WaiterTip`: 10% do preço, mínimo 1 moeda, valores provisórios), que sobe em verde ("+1 gorjeta") junto com o pagamento. A tabela `<tips>` do config (100 a 500 moedas por faixa de nível) não serve como gorjeta por prato (pratos valem 3 a 14); seu significado é desconhecido e ela segue sem uso.
 - Quem pega o trabalho: o funcionário livre (sem tarefa, parado e sem caminho) mais próximo, em passos, do balcão para entregas ou da mesa suja para limpeza (`nearestIdle`; empate pelo id). Os outros deixam a tarefa para ele, que a assume no próximo segundo ocioso. Quem anda ou espera um passo bloqueado não conta: um funcionário preso seguraria a tarefa de todos.
-- Trabalho interrompido (dispensa, troca de função, dormência) volta atrás: a porção retorna ao balcão e o cliente retoma a espera de onde parou (mínimo 5 s). Funcionário parado sai dos tiles vizinhos de móveis e da porta (o tile da porta e os vizinhos dele, por onde todo cliente passa): os funcionários nascem na porta, e sem essa regra um quarto que acordava sem trabalho deixava o garçom parado ali, travando quem entrava e quem saía (visto no E2E da Sprint 7).
+- Trabalho interrompido (dispensa, troca de função, dormência) volta atrás: a porção retorna ao balcão e o cliente retoma a espera de onde parou (mínimo 5 s). Funcionário parado sai dos tiles vizinhos de móveis e da porta (o tile da porta e os vizinhos dele, por onde todo cliente passa): os funcionários nascem na porta, e sem essa regra um quarto que acordava sem trabalho deixava o garçom parado ali, travando quem entrava e quem saía (visto no E2E da Sprint 7). Última defesa (`clearDoorway`, decisão do responsável): funcionário parado ou esperando no tile da porta ou num vizinho dele por `doorwayGrace` (2 s), sem estar trabalhando, é posto no tile livre mais próximo dentro do salão, de preferência fora dos vizinhos de móveis; assim um cliente nunca fica preso na entrada ou na saída.
 - Cliente: ícone de garçom da barra inferior abre a janela "Funcionários" (`StaffModal`: vagas por nível, equipe com trocar função e dispensar, perfis para contratar). Cada função assa só os seus clipes (`WAITER_CLIPS`, `CLEANER_CLIPS`); trocar a função assa de novo.
 
 ## Expansão do café (Sprint 7)
@@ -144,8 +144,8 @@ Eventos do protocolo: `welcome` (ao dono, com `away` quando há resumo da ausên
 | Expansão do café (8×8 → 20×20, moedas + nível ou Grana) | Implementado | 7 |
 | Construção, loja por categoria, decoração com bônus de popularidade | Parcial: grade, arrastar, girar, guardar e comprar existem | 7 |
 | Juice e modal de nível | Modal de nível com desbloqueios implementado; moedas/XP flutuantes | 8 |
-| Fazenda (ingredientes frescos) e Discoteca (Festa do Bairro) | Implementado (valores provisórios) | 9 |
-| Expediente offline com "Bem-vindo de volta!" | Implementado (ritmos provisórios, só ganhos) | 9 |
+| Fazenda (ingredientes frescos) e Discoteca (Festa do Bairro) | Implementado (valores definidos pelo responsável) | 9 |
+| Expediente offline com "Bem-vindo de volta!" | Implementado (valores definidos pelo responsável, só ganhos) | 9 |
 
 - **Fogão e cliente:** ver "Cozinha e clientes". O config cita `stoveCleaningCoinCost`, `stoveCleaningXPGain`, `waitingChairTime`, `waitingFoodTime`, `eatingTime` e `dishPickupTime`, todos com valores adulterados.
 - **Fluxo decidido:** sem garçom, o cliente pega a porção do balcão (autosserviço, 3,5 s); com garçom, o prato vai do balcão à mesa na bandeja e rende gorjeta. O `dishPickupTime` do config (adulterado, 0) sugere esse tempo de coleta, sem valor confiável.
@@ -174,7 +174,7 @@ Fruto da auditoria abaixo. Cada sprint fecha botões ou abas que hoje não fazem
 10. **Modo standalone** (próxima): o jogo roda no navegador sem PocketBase nem servidor Go, por exemplo no GitHub Pages, com o save em IndexedDB. Com os serviços no ar, segue o multiplayer completo. Desenho em "Modo standalone (Sprint 10)".
 11. **Polimento e retenção diária**:
     - Nenhum ícone mudo: cartão "Em breve" com o nome do sistema e a sprint; `striped-chicken` passa a abrir a Fazenda (`StreetModal`); `house` e `waiter` somem para visitantes.
-    - **Correio** (`mail`): caixa `player_mail` para resumos, prêmios e avisos. A fila de janelas de entrada (`<principal>`, uma vez por dia) mostra o "Bem-vindo de volta!" e o bônus diário.
+    - **Correio** (`mail`): caixa `player_mail` para resumos, prêmios e avisos; a primeira carta é a "Carta de Boas-Vindas" (+50 moedas, uma vez por conta), no lugar das 5.000 moedas do nível 1 do config. A fila de janelas de entrada (`<principal>`, uma vez por dia) mostra o "Bem-vindo de volta!" e o bônus diário.
     - **Bônus diário** de 6 dias (`<dailyBonus>` do config dá só a quantidade de dias; os prêmios são de design): `last_claim_at` e `streak` em `player_state`, resgate idempotente pela data em America/Sao_Paulo. O 6º dia é a primeira fonte de Grana.
     - **HUD**: a barra de XP mostra o progresso dentro do nível; botões "+" (Moedas abre a Loja, Grana abre fontes e usos); rosto de humor abre o painel de Popularidade; renomear o café (rota POST validada). Visitantes passam a ver o nome e a popularidade do café visitado.
     - **Correções da auditoria**:
@@ -209,13 +209,13 @@ Fruto da auditoria abaixo. Cada sprint fecha botões ou abas que hoje não fazem
     - **Clientes conhecidos**: `friendCustomerProbability` 0,3 do config como referência.
     - **Energia** (hoje 50/50 fixo) regenerada por instante gravado, gasta em ações sociais opcionais.
 16. **Clientes especiais e pote de gorjetas**:
-    - **Clientes VIP e críticos** (`<visitors>` como modelo, com arquétipos fictícios no lugar das alusões a pessoas reais): marca persistida na dormência como o `browsing`, pagamento multiplicado e "resenha" com bônus temporário de popularidade.
+    - **Clientes VIP e críticos** (`<visitors>` como modelo; o responsável trocou os nomes de pessoas reais por paródias, por exemplo "Mick Jaca", "Freddie Mercúrio", "Chef Jacquinho" e "Ana Maria Broa"): marca persistida na dormência como o `browsing`, pagamento multiplicado e "resenha" com bônus temporário de popularidade.
     - **Pote de gorjetas** com o teto diário da tabela `<tips>` por faixa de nível.
     - **Perfis de funcionário com atributo** (hoje só mudam nome e frase).
     - **Motor de dicas** (`<suggestions>`, `<inactivity>`).
 17. **Testes e distribuição**:
     - Suites Playwright conforme AGENTS.md, com os roteiros E2E dentro do repositório.
-    - Limpeza dos assets órfãos e do download duplicado.
+    - Limpeza dos assets órfãos (o download duplicado já foi resolvido).
     - `DevPanel` só em DEV ou removido.
     - Medição em LUFS da faixa "Festa do Bairro".
 
@@ -264,16 +264,15 @@ Feita por leitura do código (sem execução) e conferida por amostragem. Estado
 - **Sem uso, com destino no roteiro:** `achievements` (5 conquistas ativas), `dailyBonus` (6 dias), metas (25 códigos, sem definições), `pushGift`, `misteryCrate` (9 caixas e 45 pacotes com códigos fora do nosso catálogo), temperos 800001–800003, `special_neighbors`, `visitors`, `tips`, `suggestions`/`inactivity`/`principal` e `friendCustomerProbability`.
 - **Sem destino:** `<level low frequency>` (interpretação incerta), `characterShadow` e `emailCampaignItems` (sem coleta de e-mail).
 - **Adulterados, não usar:** `speedMultiplier`, `sellBackRatio` e `creditsToCoinsFactor` (99); `dishPickupTime`, `gatherTime` e `eatingTime` (0); `waitingChairTime`, `waitingDiningSetTime` e `waitingFoodTime` (999); `stoveCleaningXPGain` (999).
-- **Decisão do responsável:** o `rewardCoins` de 5.000 do nível 1 nunca é pago (contas novas nascem com 100 moedas).
+- **Decisão do responsável:** o `rewardCoins` de 5.000 do nível 1 não é pago (destruiria a progressão inicial e a ajuda de emergência); contas novas nascem com 100 moedas e 25 de Grana, e a Sprint 11 entrega uma "Carta de Boas-Vindas" no Correio com um incentivo pequeno (+50 moedas).
 
 **Assets:**
-- 16 arquivos órfãos, sem leitor:
-  - 6 PNGs em `indoor/` (125 KB);
+- 14 arquivos órfãos, sem leitor:
+  - 4 PNGs em `indoor/` (`Door-1`, `Door-2`, `Stove01-1`, `Wall17-1`);
   - `icon_bundle_2`…`7`, `wardrobe-icons/clothes.png` e `store-icons/crops.json` em `ui/` (6,6 MB);
   - `loading/geometry.json`;
   - `items/catalog.json`, gerado pelo `assets:room` e não lido pelo cliente.
-- `data/interior-items.json` (120 KB, campo `source: restaurant.bin`, provavelmente de outro jogo) é baixado no carregamento e ninguém o lê.
-- 23 PNGs de `indoor/` são idênticos aos de `items/` e são baixados duas vezes.
+- Resolvido depois da auditoria: `data/interior-items.json` (do Restaurant City, confirmado pelo responsável) e o `item-catalog.ts` que o lia saíram do projeto; os 23 PNGs de `indoor/` idênticos aos de `items/` foram apagados e o `indoor-art.json` aponta para os de `items/` (`../items/<classe>/<arquivo>`), então cada imagem é baixada uma vez. `mafia_tile_floor.png` e `mafia_wall.png`, cópias sem uso, também saíram.
 - `compiled_sfx.mp3` continua sem trechos rotulados.
 
 ## Débitos técnicos
@@ -285,7 +284,7 @@ Feita por leitura do código (sem execução) e conferida por amostragem. Estado
 - Garçom × autosserviço: o autosserviço leva 3,5 s fixos; o garçom anda até o balcão e até a mesa (agora sempre o garçom livre mais próximo). Num café 20×20 a caminhada ainda pode passar de 3,5 s; a gorjeta e a coleta de pratos mantêm o garçom vantajoso.
 - Grana: contas novas nascem com `playerstate.StarterCash` = 25 (decisão do responsável: um atalho de expansão para experimentar). Contas existentes mantêm o saldo; ainda não existe forma de ganhar Grana no jogo.
 - Passo bloqueado: `nextStep` contorna uma quina diagonal ocupada ou um tile ocupado recalculando a rota; sem alternativa, jogador e funcionário esperam até `blockedRetries` (3) segundos e desistem (o funcionário escolhe outro tile ou tarefa), e o cliente NPC espera o tile liberar. Uma ação pedida pelo jogador parado nessa espera (cozinhar, servir, limpar) substitui a caminhada (`standStill`). O caso do avatar parado em (3,2) no E2E da Sprint 7 é atribuído a essa regra antiga, sem confirmação naquela execução.
-- Travamento intermitente na porta (visto uma vez, no E2E da Sprint 9, logo após contratar o garçom com clientes comendo): o garçom ficou parado no tile da porta, três clientes saindo esperavam esse tile e os pratos não foram recolhidos por mais de 2 min. Não se repetiu em duas E2E completas, em três rodadas ao vivo seguidas nem em simulação (`door_test.go`: 300 contratações em instantes aleatórios e o estado congelado com o dono em cada tile). Se voltar a aparecer, registre o estado do quarto (posição, caminho, `waits`, tarefa e `claimed` de cada ator) antes de mudar regras de navegação.
+- Travamento intermitente na porta (visto uma vez, no E2E da Sprint 9, logo após contratar o garçom com clientes comendo): o garçom ficou parado no tile da porta, três clientes saindo esperavam esse tile e os pratos não foram recolhidos por mais de 2 min. A causa não foi reproduzida (duas E2E completas, três rodadas ao vivo e `door_test.go`); a regra `clearDoorway` (ver Funcionários) desfaz esse estado em 2 s, qualquer que seja a causa. Se o garçom voltar a parar longe da porta, registre o estado do quarto (posição, caminho, `waits`, tarefa e `claimed` de cada ator) antes de mudar regras de navegação.
 - Limite de 20×20: `tileIndex` do cliente empacota `ty * MAX_NUM_TILES_X + tx` com `MAX_NUM_TILES_X = 20`. Salas maiores (o servidor aceita até 40) exigem trocar essa chave antes de criar novos passos.
 - Falha intermitente não reproduzida: em uma execução, `cook_start` voltou sem chegar à persistência (sem `game-internal/operation` no log). As candidatas são as validações do servidor ("Aproxime seu personagem do fogão" e "Aguarde o preparo"), herdadas da versão inicial. Duas repetições passaram.
 - Lockfile: o npm 10.9 falha com `edgesOut` ao adicionar dependências com peers opcionais, e o npm 11.6 remove os campos `libc` do lockfile. Para alterar dependências, use npm ≥ 11.20 (o projeto exige Node 24, que traz o npm 11).
