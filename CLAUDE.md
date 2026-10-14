@@ -78,7 +78,7 @@ Eventos do protocolo: `welcome`, `actors`, `world`, `food` e `dirt` (sempre a li
 ## Sujeira e limpeza (Sprint 5)
 
 - Cada refeição paga deixa um prato na mesa: `serveCustomer` grava um registro em `room_dirt` (`user`, `table_id`, `created`) na mesma transação do pagamento. O servidor do jogo espelha o prato (`addDirt`) e transmite `dirt`; o snapshot do mundo agrupa os pratos por mesa (`gamewire.Dirt`: `tableId`, `plates`, `since`).
-- Mesa suja não recebe cliente; as cadeiras dela ainda contam na lotação, então os clientes entram, não acham mesa limpa e saem bravos (fora da cozinha parada). Mesa suja não pode ser movida nem guardada (`errTableDirty`).
+- Mesa suja não recebe cliente; as cadeiras dela ainda contam na lotação, então os clientes entram, não acham mesa limpa e saem bravos (fora da cozinha parada). Sem nenhuma cadeira limpa livre, entra só um cliente por vez (`cleanSeatFree`); antes disso, no E2E, três mesas sujas derrubaram a popularidade de 80 para 73,7 em poucos minutos. Mesa suja não pode ser movida nem guardada (`errTableDirty`).
 - Limpar: o dono toca na mesa, o avatar anda até o lado dela e chama `POST /api/coffe/room/tables/clean` (`tableId`). O servidor do jogo valida a adjacência (operação `table_clean`), a persistência apaga os pratos e concede `tables.cleaningXp` (hoje 0). O avatar faz o clipe original `CLIP.CLEAN` (balde e escova) por `tables.cleaningSeconds` (2 s); a pose sai antes do evento `dirt`, e o cliente mantém os pratos até o fim da escova, quando eles somem com brilho e som de vassoura.
 - Visual: `TableDirt` desenha até três pratos sujos em canvas; depois de 20 s aparecem moscas. Os valores de `tables` são provisórios: o config só nomeia `dishPickupTime` (adulterado), indício de que os pratos eram recolhidos após cada refeição.
 
@@ -97,6 +97,12 @@ Eventos do protocolo: `welcome`, `actors`, `world`, `food` e `dirt` (sempre a li
 - Trabalho interrompido (dispensa, troca de função, dormência) volta atrás: a porção retorna ao balcão e o cliente retoma a espera de onde parou (mínimo 5 s). Funcionário parado sai dos tiles vizinhos de móveis para não bloquear cadeiras.
 - Cliente: ícone de garçom da barra inferior abre a janela "Funcionários" (`StaffModal`: vagas por nível, equipe com trocar função e dispensar, perfis para contratar). Cada função assa só os seus clipes (`WAITER_CLIPS`, `CLEANER_CLIPS`); trocar a função assa de novo.
 
+## Subida de nível (Sprint 8)
+
+- `levelUnlocks(rules, de, até)` e `nextUnlocks(rules, nível)` (`game/src/game/game-rules.ts`) leem receitas por nível e `employeeLocks` das regras públicas; os itens da loja ainda não têm nível mínimo.
+- `LevelUpModal`: "Nível N!", moedas do prêmio, cartões do que abriu (receitas com a arte, nova vaga de funcionário), próximos objetivos e atalhos "Ver receitas" e "Contratar". Vários níveis de uma vez mostram tudo o que abriu no intervalo.
+- `celebrateLevel` mostra uma vez por nível, a partir do primeiro sinal: o evento `payment` ou o estado do jogador por SSE (tempero e limpeza também dão XP). `knownLevel` nasce no construtor para o carregamento nunca repetir uma subida. Com outra janela aberta, cai no aviso curto (`LevelUpToast`).
+
 ## GDD resumido
 
 **Loop central:** cozinhar → servir porções → clientes chegam conforme a popularidade → comem e pagam (moedas + XP) → o nível libera receitas, itens e funcionários → decorar e expandir aumenta a popularidade.
@@ -110,7 +116,7 @@ Eventos do protocolo: `welcome`, `actors`, `world`, `food` e `dirt` (sempre a li
 | Sujeira e limpeza (pratos por refeição, mesa bloqueada, limpeza com animação) | Implementado (valores provisórios) | 5 |
 | Funcionários (garçom com bandeja, faxineiro, vagas por nível) | Implementado (perfis e tempos provisórios) | 6 |
 | Construção, loja por categoria, expansão do café | Parcial: grade, arrastar, girar, guardar e comprar existem | 7 |
-| Juice e modal de nível | Parcial: moedas/XP flutuantes e aviso de nível | 8 |
+| Juice e modal de nível | Modal de nível com desbloqueios implementado; moedas/XP flutuantes | 8 |
 
 - **Fogão e cliente:** ver "Cozinha e clientes". O config cita `stoveCleaningCoinCost`, `stoveCleaningXPGain`, `waitingChairTime`, `waitingFoodTime`, `eatingTime` e `dishPickupTime`, todos com valores adulterados.
 - **Fluxo decidido:** o cliente pega a porção do balcão sentado (autosserviço). Garçons (Sprint 6) levarão o prato do balcão à mesa; os campos `dishPickupTime` do config apontam para essa entrega.
@@ -128,7 +134,7 @@ Eventos do protocolo: `welcome`, `actors`, `world`, `food` e `dirt` (sempre a li
 5. **Sujeira e limpeza** (concluída): pratos por refeição na transação do pagamento, mesa suja bloqueada, clientes bravos sem mesa limpa, limpeza validada pelo servidor com o clipe `CLEAN`. Junto: regra da cozinha parada e os dois prédios da rua.
 6. **Funcionários** (concluída): `room_staff`, vagas por nível do config, garçom que leva o prato na bandeja e recolhe pratos, faxineiro, janela de gerenciamento. Junto: cliente `browsing` sem penalidade e com paciência renovada no primeiro prato.
 7. **Construção e expansão:** categorias da loja, decoração com bônus de popularidade e compra de área (`tiles_x`/`tiles_y`, até 40). O conteúdo depende dos PNGs processados no Asset Studio.
-8. **Juice e testes:** modal de nível com desbloqueios, barras sobre clientes e suites Vitest/Playwright conforme AGENTS.md.
+8. **Juice e testes** (modal de nível concluído): modal de nível com desbloqueios e atalhos. Falta: suites Playwright conforme AGENTS.md (hoje os roteiros E2E ficam fora do repositório).
 
 ## Débitos técnicos
 

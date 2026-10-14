@@ -88,3 +88,22 @@ func TestCleaningATableNeedsTheOwnerBesideIt(t *testing.T) {
 		t.Fatalf("while cleaning: %q", message)
 	}
 }
+
+func TestOnlyDirtyTablesLetOneCustomerInAtATime(t *testing.T) {
+	r, _ := economyRoom(&economyStore{})
+	now := time.Now()
+	r.world.Units = append(r.world.Units, gamewire.Unit{ID: "chair2", ItemID: 3040001, Placed: true, X: 4, Y: 3, Rotation: 2})
+	r.grid = newGrid(r.world)
+	r.world.Dirt = []gamewire.Dirt{{TableID: "table", Plates: 1, Since: now.UnixMilli()}}
+	if !r.shouldSpawn(now) {
+		t.Fatal("dirty tables still bring one customer")
+	}
+	r.actors["npc:a"] = &entity{Actor: gamewire.Actor{ID: "npc:a", Kind: "npc", State: "wandering"}}
+	if r.shouldSpawn(now) {
+		t.Fatal("a second customer came in with only dirty tables")
+	}
+	r.world.Dirt = nil
+	if !r.shouldSpawn(now) {
+		t.Fatal("clean tables should admit the second customer")
+	}
+}

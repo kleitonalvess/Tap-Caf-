@@ -73,6 +73,8 @@ import { RoomDepthSorter, setItemOverlayDepth } from './RoomDepthSorter';
 import { StreetScenery } from './StreetScenery';
 import { TableDirt } from './TableDirt';
 import { StaffModal } from './StaffModal';
+import { LevelUpModal } from './LevelUpModal';
+import { levelUnlocks, nextUnlocks } from '../../game/game-rules';
 import { StaffClient } from '../../game/staff';
 import { OutsideNpcManager, type PreparedNpcView } from './OutsideNpcManager';
 import { createProceduralWallView, type WallWallpaper } from './ProceduralWallView';
@@ -270,6 +272,9 @@ export class RoomScreen implements Screen {
   readonly wardrobeModal?: WardrobeScreenModal;
   readonly settingsModal?: SettingsModal;
   private staffModal?: StaffModal;
+  private levelUpModal?: LevelUpModal;
+  /** Last level celebrated; a level-up shows what opened since then. */
+  private knownLevel = 1;
   /** Dishes on the waiters' trays, by actor id. */
   private readonly trayDishes = new Map<string, Sprite>();
   readonly storeBar?: StoreActionBar;
@@ -425,6 +430,8 @@ export class RoomScreen implements Screen {
     this.cookProgressTextures = options.cookTextures;
     this.cookingClient = options.cookingClient;
     this.rules = options.rules;
+    // Set before any player state arrives, so loading never replays a level-up.
+    this.knownLevel = Math.max(1, options.playerState?.level ?? options.roomSnapshot?.playerState?.level ?? 1);
     // Processed PNGs where they exist (only the cake so far); the rest are drawn.
     const images: Record<string, { stage1?: Texture; stage2?: Texture }> = {
       cake_1: { stage1: options.cookTextures?.cakeStage1, stage2: options.cookTextures?.cakeStage2 },
@@ -822,6 +829,15 @@ export class RoomScreen implements Screen {
       });
       this.view.addChild(this.staffModal.view);
     }
+    if (options.roomSnapshot && options.roomSnapshot.canEdit !== false && this.rules) {
+      this.levelUpModal = new LevelUpModal({
+        art: this.recipeArt,
+        ...(options.audio ? { audio: options.audio } : {}),
+        onRecipes: () => this.openRecipeBook(),
+        onStaff: () => this.openStaffScreen(),
+      });
+      this.view.addChild(this.levelUpModal.view);
+    }
     this.updateMobileHudLayout();
     if (options.cookingSnapshot) this.acceptCookingSnapshot(options.cookingSnapshot, true);
     if (this.realtime) {
@@ -909,10 +925,26 @@ export class RoomScreen implements Screen {
       this.floatingRewards.spawn(view.x, view.y, view.zIndex, payment.coins, payment.xp);
     }
     this.audio?.play('coin');
-    if (payment.levelUp && this.roomSnapshot?.canEdit !== false) {
-      this.levelUpToast.show(payment.level, payment.levelReward ?? 0);
-      this.audio?.play('levelUp');
+    if (payment.levelUp && this.roomSnapshot?.canEdit !== false) this.celebrateLevel(payment.level, payment.levelReward);
+  }
+
+  /**
+   * One celebration per level, from whichever arrives first: the payment
+   * event or the player state (seasoning and cleaning also give XP).
+   */
+  private celebrateLevel(level: number, rewardCoins?: number): void {
+    if (level <= this.knownLevel) return;
+    const from = this.knownLevel;
+    this.knownLevel = level;
+    this.audio?.play('levelUp');
+    const reward = rewardCoins ?? (this.rules?.levels ?? [])
+      .filter((entry) => entry.level > from && entry.level <= level).reduce((sum, entry) => sum + entry.rewardCoins, 0);
+    if (!this.levelUpModal || !this.rules || this.isModalOpen || this.storeBar?.isOpen) {
+      this.levelUpToast.show(level, reward);
+      return;
     }
+    this.closeStoveActions();
+    this.levelUpModal.show({ level, rewardCoins: reward, unlocks: levelUnlocks(this.rules, from, level), next: nextUnlocks(this.rules, level) });
   }
 
   private acceptSharedWorld(world: SharedWorld): void {
@@ -1972,7 +2004,7 @@ export class RoomScreen implements Screen {
   }
 
   private get isModalOpen(): boolean {
-    return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen || this.staffModal?.isOpen);
+    return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen || this.staffModal?.isOpen || this.levelUpModal?.isOpen);
   }
 
   /** Funcionários: slots by level, hire, switch role and dismiss (owner only). */
@@ -2686,6 +2718,7 @@ export class RoomScreen implements Screen {
   /** Apply an authenticated snapshot to both HUDs without rebuilding the room. */
   setPlayerState(state: PlayerState): void {
     if (this.roomSnapshot) this.roomSnapshot.playerState = state;
+    if (this.roomSnapshot?.canEdit !== false && state.level > this.knownLevel) this.celebrateLevel(state.level);
     this.topBars?.setState(state);
     this.actionBarMood?.setSatisfaction(state.satisfaction);
     this.actionBarMood?.setCafeName(state.cafeName);
@@ -2786,6 +2819,7 @@ export class RoomScreen implements Screen {
     }
     this.floatingRewards.update(deltaMs, !this.storeBar?.isOpen);
     this.levelUpToast.update(deltaMs);
+    this.levelUpModal?.update(deltaMs);
     this.audioControl?.update();
     this.updateRushIntensity();
     if (this.doorViews.length) {
@@ -2847,6 +2881,7 @@ export class RoomScreen implements Screen {
     this.wardrobeModal?.setStageScale(scale);
     this.settingsModal?.setStageScale(scale);
     this.staffModal?.setStageScale(scale);
+    this.levelUpModal?.setStageScale(scale);
     this.audioControl?.setStageScale(scale);
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
@@ -2903,6 +2938,7 @@ export class RoomScreen implements Screen {
     this.wardrobeModal?.destroy();
     this.settingsModal?.destroy();
     this.staffModal?.destroy();
+    this.levelUpModal?.destroy();
     this.trayDishes.forEach((dish) => { if (!dish.destroyed) dish.destroy(); }); this.trayDishes.clear();
     this.outsideNpcManager?.destroy();
     this.npcAvatarSource?.destroy();

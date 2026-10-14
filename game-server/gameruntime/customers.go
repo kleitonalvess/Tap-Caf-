@@ -78,6 +78,16 @@ func (r *room) diningChairs() []Unit {
 	return chairs
 }
 
+// cleanSeatFree reports a dining chair nobody holds at a table without plates.
+func (r *room) cleanSeatFree(chairs []Unit) bool {
+	for _, u := range chairs {
+		if r.seats[u.ID] == "" && r.dirtOn(r.chairTable(u)) == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // chairTable is the table a chair faces, or "" when there is none.
 func (r *room) chairTable(chair Unit) string {
 	d := []Tile{{X: 1, Y: 0}, {X: 0, Y: 1}, {X: -1, Y: 0}, {X: 0, Y: -1}}[chair.Rotation%4]
@@ -127,8 +137,11 @@ func (r *room) shouldSpawn(now time.Time) bool {
 			}
 		}
 	}
-	capacity := min(r.manager.options.MaxNPCs, len(r.diningChairs()))
-	if r.kitchenIdle(now) {
+	chairs := r.diningChairs()
+	capacity := min(r.manager.options.MaxNPCs, len(chairs))
+	// An idle kitchen, or only dirty tables, lets one customer in at a time:
+	// enough to show the problem without draining popularity in a burst.
+	if r.kitchenIdle(now) || !r.cleanSeatFree(chairs) {
 		capacity = min(capacity, 1)
 	}
 	return active < capacity && total < 2*r.manager.options.MaxNPCs
