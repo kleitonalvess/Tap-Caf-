@@ -169,8 +169,11 @@ export class LevelUpToast {
   showMessage(title: string, detail: string): void {
     this.title.text = title;
     this.detail.text = detail;
-    if (this.detail.width > TOAST_WIDTH - 40) this.detail.scale.set((TOAST_WIDTH - 40) / this.detail.width);
-    else this.detail.scale.set(1);
+    // width includes the scale left by the previous message: measure at 1.
+    for (const text of [this.title, this.detail]) {
+      text.scale.set(1);
+      if (text.width > TOAST_WIDTH - 40) text.scale.set((TOAST_WIDTH - 40) / text.width);
+    }
     this.elapsedMs = 0;
     this.view.visible = true;
     this.update(0);
