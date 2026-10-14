@@ -17,6 +17,7 @@ import (
 
 	"coffe-mania/database/npcappearance"
 	"coffe-mania/database/playerstate"
+	"coffe-mania/shared/gamerules"
 	"coffe-mania/shared/gamewire"
 	"github.com/google/uuid"
 	"github.com/pocketbase/dbx"
@@ -84,7 +85,7 @@ func publicWorld(app core.App, owner string) (gamewire.World, error) {
 	if err != nil {
 		return gamewire.World{}, err
 	}
-	w := gamewire.World{RoomID: owner, Revision: snapshot.Revision, TilesX: snapshot.TilesX, TilesY: snapshot.TilesY, Units: []gamewire.Unit{}, Foods: []gamewire.Food{}}
+	w := gamewire.World{RoomID: owner, Revision: snapshot.Revision, TilesX: snapshot.TilesX, TilesY: snapshot.TilesY, Units: []gamewire.Unit{}, Foods: []gamewire.Food{}, Dirt: []gamewire.Dirt{}}
 	for _, u := range snapshot.Inventory {
 		if u.Placed {
 			w.Units = append(w.Units, gamewire.Unit{ID: u.UnitID, ItemID: u.ItemID, Placed: true, X: u.TX, Y: u.TY, Rotation: u.Rotation, StoveID: u.StoveID})
@@ -101,6 +102,9 @@ func publicWorld(app core.App, owner string) (gamewire.World, error) {
 	}
 	for _, food := range foods {
 		w.Foods = append(w.Foods, gamewire.Food{ID: food.Id, Recipe: food.GetString("recipe_id"), Servings: max(1, food.GetInt("servings")), CounterID: food.GetString("counter")})
+	}
+	if w.Dirt, err = roomDirt(app, owner); err != nil {
+		return w, err
 	}
 	return w, nil
 }
@@ -145,6 +149,16 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 		if err == nil {
 			body, err = snapshotCooking(app, op.Owner, types.NowDateTime())
 		}
+	case "table_clean":
+		var command struct {
+			TableID string `json:"tableId"`
+		}
+		if json.Unmarshal(op.Body, &command) != nil || command.TableID == "" {
+			return fail(400, "Pedido inválido.")
+		}
+		var plates int
+		plates, err = cleanTable(app, op.Owner, command.TableID)
+		body = map[string]any{"tableId": command.TableID, "plates": plates, "xp": gamerules.Tables().CleaningXP}
 	default:
 		return fail(400, "Operação desconhecida.")
 	}
@@ -165,7 +179,7 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 		case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy),
 			errors.Is(err, errCounterBusy), errors.Is(err, errRecipeLocked), errors.Is(err, errCookingCoins), errors.Is(err, errStoveDirty),
 			errors.Is(err, errDishSpoiled), errors.Is(err, errNothingToClean), errors.Is(err, errCleaningCoins), errors.Is(err, errNoCounter),
-			errors.Is(err, errSeasonClosed), errors.Is(err, errAlreadySeasoned):
+			errors.Is(err, errSeasonClosed), errors.Is(err, errAlreadySeasoned), errors.Is(err, errTableClean), errors.Is(err, errTableDirty):
 			return fail(409, err.Error())
 		default:
 			return fail(500, "Não foi possível salvar a operação.")
@@ -362,12 +376,13 @@ func registerGameBridge(e *core.ServeEvent) error {
 	}).Bind(apis.BodyLimit(4096))
 	group.POST("/{owner}/consume", func(r *core.RequestEvent) error {
 		var body struct {
-			FoodID string `json:"foodId"`
+			FoodID  string `json:"foodId"`
+			TableID string `json:"tableId"`
 		}
 		if r.BindBody(&body) != nil || body.FoodID == "" {
 			return r.BadRequestError("Inválido.", nil)
 		}
-		payment, err := serveCustomer(r.App, r.Request.PathValue("owner"), body.FoodID)
+		payment, err := serveCustomer(r.App, r.Request.PathValue("owner"), body.FoodID, body.TableID)
 		if errors.Is(err, errFoodGone) {
 			return r.NotFoundError("Prato indisponível.", nil)
 		}

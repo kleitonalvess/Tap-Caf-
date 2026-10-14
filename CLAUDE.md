@@ -24,7 +24,7 @@ AGENTS.md (importado acima) é a fonte das regras de trabalho, comandos, portas,
 | Preferências (volumes, mudo, faixa, zoom bitter) | `localStorage`, por jogador | — |
 
 - Estado de jogo não vai para `localStorage`: o cliente não é confiável e o café é compartilhado com visitantes em tempo real.
-- Progresso offline sai de instantes absolutos gravados no banco (`preparing_at`, `started_at`, `ready_at`, `spoils_at`); o snapshot calcula o estado a partir de `now`. Novos timers (sujeira, contratar) seguem o mesmo padrão: gravar o instante, nunca decrementar por tick.
+- Progresso offline sai de instantes absolutos gravados no banco (`preparing_at`, `started_at`, `ready_at`, `spoils_at`, `room_dirt.created`); o snapshot calcula o estado a partir de `now`. Novos timers (contratar, turnos) seguem o mesmo padrão: gravar o instante, nunca decrementar por tick.
 - Sem humanos, o quarto aguarda 30 s, salva os NPCs (`ActionRemaining`, `PatienceRemaining`) e dorme; ao acordar, desloca os relógios pela pausa.
 - Grava-se no banco por transação de jogo (comprar, cozinhar, tirar porção, veredito de cliente), nunca por passo ou quadro.
 
@@ -51,7 +51,7 @@ AGENTS.md (importado acima) é a fonte das regras de trabalho, comandos, portas,
 4. Cliente que sai sem veredito positivo (sem cadeira ou sem comida) chama `/feedback` uma única vez (flag persistida `emotionShown`) e reduz a popularidade.
 5. A popularidade define o intervalo entre chegadas (`arrivalInterval`, ±25%); `MaxNPCs` limita quantos clientes ficam dentro.
 
-Eventos do protocolo: `welcome`, `actors`, `world`, `food` (sempre a lista completa; ausente = vazia), `payment`, `ack`, `error`. Todo broadcast incrementa `seq`; o cliente reconecta ao detectar lacuna. Campos de dormência (`path`, `visits`) não são transmitidos.
+Eventos do protocolo: `welcome`, `actors`, `world`, `food` e `dirt` (sempre a lista completa; ausente = vazia), `payment`, `ack`, `error`. Todo broadcast incrementa `seq`; o cliente reconecta ao detectar lacuna. Campos de dormência (`path`, `visits`) não são transmitidos.
 
 ## Áudio (Sprint 2)
 
@@ -70,9 +70,24 @@ Eventos do protocolo: `welcome`, `actors`, `world`, `food` (sempre a lista compl
 - **Temperar** (`cook_season`): uma vez por lote, durante `preparing`/`cooking`, soma `seasonBonusPercent` das porções (arredonda para cima, mínimo 1) e dá `seasonXp` a quem temperou. É a única ação permitida a visitantes, que precisam estar dentro do café; o `GET` da cozinha esconde deles a ajuda de emergência.
 - **Ajuda de emergência:** a receita liberada mais barata sai com custo 0 só quando as moedas não pagam essa receita **e** não há preparo vivo (preparando, cozinhando ou pronto) nem comida no balcão. A condição é recalculada dentro da transação de `cook_start`; o cliente apenas exibe "Grátis (Ajuda de Emergência)".
 - **Balcão** (`serving_counter`, id 3080000, `kind: counter`, placeholder sem PNG): servir escolhe no servidor um balcão com a mesma receita (soma porções) ou um vazio. Sem balcão livre, o servir falha com 409. Balcão com comida não pode ser movido nem guardado. A migração `202610140001` dá um balcão às salas antigas em (7,3), guardado no inventário se o tile estiver ocupado.
-- **Clientes** (`game-server/gameruntime/customers.go`): entrar → reservar cadeira com mesa → sentado aguardando (paciência `patienceSeconds` = 40 s, transmitida em `actor.patience`) → pegar porção do balcão → comer → pagar → sair. Sem comida no prazo: emoção brava, `/feedback` e −0,3 de popularidade. A lotação acompanha as cadeiras com mesa (`diningChairs`); com o balcão vazio e um prato no fogo, o intervalo de chegada é multiplicado por `cookingArrivalFactor` (1,5).
+- **Clientes** (`game-server/gameruntime/customers.go`): entrar → reservar cadeira com mesa limpa → sentado aguardando (paciência `patienceSeconds` = 40 s, transmitida em `actor.patience`) → pegar porção do balcão → comer → pagar → sair. Sem comida no prazo ou sem mesa limpa: emoção brava, `/feedback` e −0,3 de popularidade. A lotação acompanha as cadeiras com mesa (`diningChairs`, incluindo as de mesas sujas); com o balcão vazio e um prato no fogo, o intervalo de chegada é multiplicado por `cookingArrivalFactor` (1,5).
+- **Cozinha parada** (`kitchenIdle`: nenhuma porção no balcão e nenhum preparo vivo, isto é, preparando, cozinhando ou pronto sem estragar): entra no máximo um cliente "olhando o cardápio" e quem sai sem comer mostra a cara neutra, sem `/feedback` nem perda de popularidade. A penalidade volta assim que há prato no fogo ou no balcão, inclusive para quem chegou antes. O cliente espelha a regra e pinta o balão de paciência de cinza-azulado.
 - **Cliente:** livro de receitas lido de `rules` (abas por faixa de nível, bloqueio por nível, custo em vermelho quando falta moeda; dois toques no mesmo cartão ou o botão cozinham, e o cartão pré-selecionado nunca cozinha com um toque), menu contextual do fogão (`StoveActionMenu`), fumaça e balão de pronto com urgência (`StoveEffects`), prato e contador ×N no balcão (`CounterDish`), balão de paciência (`PatienceMeter`) e prato da receita certa na mesa.
 - **Arte provisória:** `placeholder-art.ts` desenha itens com `"placeholder": true` e `parts: []` no mesmo enquadramento do Asset Studio (origem do tile, 160×80). Ao exportar o PNG real, preencha `parts`, remova `placeholder` e rode `npm run assets:room`.
+
+## Sujeira e limpeza (Sprint 5)
+
+- Cada refeição paga deixa um prato na mesa: `serveCustomer` grava um registro em `room_dirt` (`user`, `table_id`, `created`) na mesma transação do pagamento. O servidor do jogo espelha o prato (`addDirt`) e transmite `dirt`; o snapshot do mundo agrupa os pratos por mesa (`gamewire.Dirt`: `tableId`, `plates`, `since`).
+- Mesa suja não recebe cliente; as cadeiras dela ainda contam na lotação, então os clientes entram, não acham mesa limpa e saem bravos (fora da cozinha parada). Mesa suja não pode ser movida nem guardada (`errTableDirty`).
+- Limpar: o dono toca na mesa, o avatar anda até o lado dela e chama `POST /api/coffe/room/tables/clean` (`tableId`). O servidor do jogo valida a adjacência (operação `table_clean`), a persistência apaga os pratos e concede `tables.cleaningXp` (hoje 0). O avatar faz o clipe original `CLIP.CLEAN` (balde e escova) por `tables.cleaningSeconds` (2 s); a pose sai antes do evento `dirt`, e o cliente mantém os pratos até o fim da escova, quando eles somem com brilho e som de vassoura.
+- Visual: `TableDirt` desenha até três pratos sujos em canvas; depois de 20 s aparecem moscas. Os valores de `tables` são provisórios: o config só nomeia `dishPickupTime` (adulterado), indício de que os pratos eram recolhidos após cada refeição.
+
+## Prédios da rua
+
+- `game/src/world/street-scenery.ts` é o manifesto (`STREET_BUILDINGS`: id, nome, status, pegada em tiles fora do quarto, altura e `image` opcional) e guarda as faixas de rua e calçada medidas nos PNGs `CityBackground*` (`STREET_BANDS`). Um teste garante que nenhum prédio fica sobre a rua ou o quarto.
+- `StreetScenery.ts` cria cada prédio no mundo com profundidade pela pegada no chão (`setRoomDepth`), hit area na silhueta, cartão de nome no hover/toque, pulso de neon, holofotes e cata-vento. `street-art.ts` desenha a arte em canvas na projeção do quarto.
+- Hoje: Fazenda de Ingredientes (tx −17…−14, ty −1…1, entre a árvore de trás e o pinheiro da frente) e Discoteca (tx 1…4, ty −17…−14). Para trocar pela arte do Asset Studio, preencha `image` com o arquivo e os offsets `left`/`top` relativos ao vértice superior do tile (tx, ty), como nas partes dos itens.
+- A câmera sobe até `bg.top + SCENE_CAMERA_TOP_INSET` (150) para alcançar os prédios; as laterais continuam com 900.
 
 ## GDD resumido
 
@@ -84,15 +99,15 @@ Eventos do protocolo: `welcome`, `actors`, `world`, `food` (sempre a lista compl
 | Áudio Web Audio (amostras + síntese, trilha adaptativa, controle no HUD) | Implementado | 2 |
 | Fogão completo (bônus, estragado, limpeza), balcão e livro de receitas por catálogo | Implementado (valores provisórios, arte placeholder) | 3 |
 | Máquina de estados de clientes com paciência, lotação por cadeiras e reclamações | Implementado (fluxo de autosserviço no balcão) | 4 |
-| Sujeira e limpeza | Planejado | 5 |
+| Sujeira e limpeza (pratos por refeição, mesa bloqueada, limpeza com animação) | Implementado (valores provisórios) | 5 |
 | Funcionários | Planejado | 6 |
 | Construção, loja por categoria, expansão do café | Parcial: grade, arrastar, girar, guardar e comprar existem | 7 |
 | Juice e modal de nível | Parcial: moedas/XP flutuantes e aviso de nível | 8 |
 
 - **Fogão e cliente:** ver "Cozinha e clientes". O config cita `stoveCleaningCoinCost`, `stoveCleaningXPGain`, `waitingChairTime`, `waitingFoodTime`, `eatingTime` e `dishPickupTime`, todos com valores adulterados.
 - **Fluxo decidido:** o cliente pega a porção do balcão sentado (autosserviço). Garçons (Sprint 6) levarão o prato do balcão à mesa; os campos `dishPickupTime` do config apontam para essa entrega.
-- **Sujeira:** surge após N refeições por mesa ou comida estragada; bloqueia a mesa ou reduz a popularidade até a limpeza.
-- **Funcionários:** limite por nível segundo `employeeLocks` (1 no nível 1, 2 no 7 … 7 no 47); tarefas de servir e limpar; ficam no quarto como NPC `staff`.
+- **Sujeira:** ver "Sujeira e limpeza (Sprint 5)". Comida estragada continua sendo limpa no fogão.
+- **Funcionários:** o config só traz o limite por nível (`employees/amountLocks`: 1 no nível 1, 2 no 7 … 7 no 47) e um amigo padrão `vostuFriend` com a imagem `vostu-waiter.png`, indício de que os funcionários eram amigos contratados. O modelo de avatar já tem os clipes `WAITOR_WALK`, `WAITOR_WORKING` (bandeja) e `CLEANER_*`. Decisão em aberto: amigos, NPCs contratados ou ambos.
 - **Áudio:** ver a seção "Áudio (Sprint 2)".
 
 ## Roteiro de sprints
@@ -101,17 +116,17 @@ Eventos do protocolo: `welcome`, `actors`, `world`, `food` (sempre a lista compl
 2. **AudioEngine** (concluída): mixer Web Audio, sons originais com síntese de reserva, duas trilhas procedurais adaptativas, controle no HUD, Recortador de SFX e primeira suíte Vitest. Pendente do responsável: ouvir e rotular os trechos de `compiled_sfx.mp3`. A urgência de "comida prestes a queimar" entra com o estado estragado (Sprint 3).
 3. **Fogão e balcão** (concluída): tempero, estragado e limpeza por timestamp, ajuda de emergência, balcão com mescla de porções, livro de receitas por catálogo, rota `GET /api/coffe/rules` e arte placeholder substituível.
 4. **Clientes** (concluída): `customers.go`, paciência de 40 s persistida na dormência, lotação por cadeiras com mesa, chegada mais lenta com prato no fogo e balcão vazio, balão de paciência.
-5. **Sujeira e limpeza:** entidades persistidas por evento, ação de limpar e penalidade de popularidade.
+5. **Sujeira e limpeza** (concluída): pratos por refeição na transação do pagamento, mesa suja bloqueada, clientes bravos sem mesa limpa, limpeza validada pelo servidor com o clipe `CLEAN`. Junto: regra da cozinha parada e os dois prédios da rua.
 6. **Funcionários:** contratação com limite por nível, agenda de tarefas e persistência.
 7. **Construção e expansão:** categorias da loja, decoração com bônus de popularidade e compra de área (`tiles_x`/`tiles_y`, até 40). O conteúdo depende dos PNGs processados no Asset Studio.
 8. **Juice e testes:** modal de nível com desbloqueios, barras sobre clientes e suites Vitest/Playwright conforme AGENTS.md.
 
 ## Débitos técnicos
 
-- `RoomScreen.ts` (~2,7 mil linhas) e `runtime.go` (~1,2 mil linhas): extrair controladores (cozimento, atores ao vivo) ao alterar essas áreas, não em refatorações isoladas. A máquina de estados dos clientes já saiu para `customers.go`.
+- `RoomScreen.ts` (~2,8 mil linhas) e `runtime.go` (~1,2 mil linhas): extrair controladores (cozimento, mesas, atores ao vivo) ao alterar essas áreas, não em refatorações isoladas. A máquina de estados dos clientes já saiu para `customers.go`.
 - Só `cake_1` tem PNG; as outras nove receitas e o balcão usam arte desenhada em canvas até o processamento no Asset Studio.
 - Moedas creditadas ao entregar a porção: um quarto que dorme ou cai depois disso não perde pagamento. Para pagar só no fim da refeição, é preciso um recibo idempotente persistido com o NPC.
-- Popularidade em café sem comida: com 40 s de paciência, clientes que chegam sem nada no fogo nem no balcão saem bravos. No E2E, 5 min com o fogão parado ou com prato pronto não servido derrubaram a popularidade de 80 para 75. Avaliar se a chegada deve pausar também quando nada está no fogo.
+- Um cliente que chegou com a cozinha parada e ainda espera quando o primeiro prato vai ao fogo passa a valer como cliente comum: se a paciência acabar antes de o prato sair, ele reclama (visto no E2E). É a leitura literal da regra; mudar exige marcar o cliente como "só olhando".
 - Falha intermitente não reproduzida: em uma execução, `cook_start` voltou sem chegar à persistência (sem `game-internal/operation` no log). As candidatas são as validações do servidor ("Aproxime seu personagem do fogão" e "Aguarde o preparo"), herdadas da versão inicial. Duas repetições passaram.
 - Lockfile: o npm 10.9 falha com `edgesOut` ao adicionar dependências com peers opcionais, e o npm 11.6 remove os campos `libc` do lockfile. Para alterar dependências, use npm ≥ 11.20 (o projeto exige Node 24, que traz o npm 11).
 

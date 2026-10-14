@@ -1,8 +1,9 @@
 {
-  "source": "ripped/game-config.xml.txt (referência modificada). Níveis, popularidade, frequência, gorjetas e funcionários vêm do arquivo. Receitas, fogão e paciência dos clientes são valores de design provisórios: o repositório não contém a lista original de receitas.",
+  "source": "ripped/game-config.xml.txt (referência modificada). Níveis, popularidade, frequência, gorjetas e funcionários vêm do arquivo. Receitas, fogão, mesas e paciência dos clientes são valores de design provisórios: o repositório não contém a lista original de receitas nem dados de sujeira (o config só nomeia dishPickupTime, adulterado).",
   "popularity": { "min": 5, "max": 105, "satisfiedDelta": 0.1, "unsatisfiedDelta": 0.3 },
   "customers": { "patienceSeconds": 40, "cookingArrivalFactor": 1.5 },
   "stove": { "prepareSeconds": 2, "cleaningCoins": 0, "cleaningXp": 1, "seasonBonusPercent": 25, "seasonXp": 1 },
+  "tables": { "cleaningSeconds": 2, "cleaningXp": 0 },
   "levels": [
     { "level": 1, "requiredXp": 0, "rewardCoins": 5000 },
     { "level": 2, "requiredXp": 7, "rewardCoins": 700 },

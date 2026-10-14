@@ -1,8 +1,9 @@
 package gameruntime
 
-// Customer state machine: entering → wandering (looking for a dining seat) →
-// to_seat → seated (waiting for food, with patience) → eating → wandering →
-// leaving. Only the room goroutine runs it; persistence calls are the only I/O.
+// Customer state machine: entering → wandering (looking for a clean dining seat)
+// → to_seat → seated (waiting for food, with patience) → eating → wandering →
+// leaving. Each meal leaves its plate on the table, which seats nobody until it
+// is cleared. Only the room goroutine runs it; persistence calls are the only I/O.
 
 import (
 	"context"
@@ -65,26 +66,54 @@ func (r *room) arrivalInterval(now time.Time) time.Duration {
 	return time.Duration(float64(base) * (0.75 + rand.Float64()/2))
 }
 
-// diningChairs are placed chairs facing a table: the only seats where a customer can eat.
+// diningChairs are placed chairs facing a table: the only seats where a customer
+// can eat. Dirty tables still count here, so customers keep coming and complain.
 func (r *room) diningChairs() []Unit {
 	chairs := []Unit{}
 	for _, u := range r.world.Units {
-		if item, _ := roomcatalog.ByID(u.ItemID); !u.Placed || item.Kind != "chair" {
-			continue
-		}
-		d := []Tile{{X: 1, Y: 0}, {X: 0, Y: 1}, {X: -1, Y: 0}, {X: 0, Y: -1}}[u.Rotation%4]
-		for _, other := range r.grid.objects[Tile{X: u.X + d.X, Y: u.Y + d.Y}] {
-			if item, _ := roomcatalog.ByID(other.ItemID); item.Kind == "table" {
-				chairs = append(chairs, u)
-				break
-			}
+		if item, _ := roomcatalog.ByID(u.ItemID); u.Placed && item.Kind == "chair" && r.chairTable(u) != "" {
+			chairs = append(chairs, u)
 		}
 	}
 	return chairs
 }
 
+// chairTable is the table a chair faces, or "" when there is none.
+func (r *room) chairTable(chair Unit) string {
+	d := []Tile{{X: 1, Y: 0}, {X: 0, Y: 1}, {X: -1, Y: 0}, {X: 0, Y: -1}}[chair.Rotation%4]
+	for _, other := range r.grid.objects[Tile{X: chair.X + d.X, Y: chair.Y + d.Y}] {
+		if item, _ := roomcatalog.ByID(other.ItemID); item.Kind == "table" {
+			return other.ID
+		}
+	}
+	return ""
+}
+
+func (r *room) dirtOn(tableID string) *gamewire.Dirt {
+	for i := range r.world.Dirt {
+		if r.world.Dirt[i].TableID == tableID {
+			return &r.world.Dirt[i]
+		}
+	}
+	return nil
+}
+
+// addDirt mirrors the plate that persistence left on the table with the payment.
+func (r *room) addDirt(tableID string, now time.Time) {
+	if tableID == "" {
+		return
+	}
+	if dirt := r.dirtOn(tableID); dirt != nil {
+		dirt.Plates++
+	} else {
+		r.world.Dirt = append(r.world.Dirt, gamewire.Dirt{TableID: tableID, Plates: 1, Since: now.UnixMilli()})
+	}
+	r.broadcast(gamewire.Event{Type: "dirt", Dirt: r.world.Dirt}, "")
+}
+
 // shouldSpawn admits a customer only when a dining seat could be waiting for
-// them; leaving customers do not count, but the total stays bounded.
+// them; leaving customers do not count, but the total stays bounded. With the
+// kitchen idle only one customer comes in to look at the menu.
 func (r *room) shouldSpawn(now time.Time) bool {
 	if now.Before(r.spawnAt) {
 		return false
@@ -99,6 +128,9 @@ func (r *room) shouldSpawn(now time.Time) bool {
 		}
 	}
 	capacity := min(r.manager.options.MaxNPCs, len(r.diningChairs()))
+	if r.kitchenIdle(now) {
+		capacity = min(capacity, 1)
+	}
 	return active < capacity && total < 2*r.manager.options.MaxNPCs
 }
 
@@ -122,7 +154,7 @@ func (r *room) advanceNPC(a *entity, now time.Time) bool {
 	case "wandering":
 		if a.visits < 2 {
 			for _, u := range r.diningChairs() {
-				if r.seats[u.ID] == "" && r.reserveChair(a, u.ID, now) {
+				if r.seats[u.ID] == "" && r.dirtOn(r.chairTable(u)) == nil && r.reserveChair(a, u.ID, now) {
 					return false
 				}
 			}
@@ -153,10 +185,11 @@ func (r *room) advanceNPC(a *entity, now time.Time) bool {
 		if a.TableID != "" && len(r.world.Foods) > 0 {
 			food := r.world.Foods[0]
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			payment, err := r.manager.store.Consume(ctx, r.id, food.ID)
+			payment, err := r.manager.store.Consume(ctx, r.id, food.ID, a.TableID)
 			cancel()
 			if err == nil {
 				r.takeServing(food.ID, payment.ServingsLeft)
+				r.addDirt(a.TableID, now)
 				food.Servings = 0
 				food.CounterID = ""
 				a.Food = &food
@@ -254,8 +287,14 @@ func (r *room) exitNPC(a *entity, now time.Time) {
 	a.Action = nil
 	// A customer shows one verdict. Without the satisfied one from eating, this
 	// exit is a complaint and costs popularity exactly once (the flag is saved).
+	// With nothing to eat in the whole café the customer only browsed: a neutral
+	// face and no penalty, so an idle café keeps its rating.
 	if !a.EmotionShown {
-		r.reportUnsatisfied()
+		if r.kitchenIdle(now) {
+			r.startEmotion(a, "neutral", now)
+		} else {
+			r.reportUnsatisfied()
+		}
 	}
 	r.startEmotion(a, "dissatisfied", now)
 	if (Tile{X: a.X, Y: a.Y}) != entry {

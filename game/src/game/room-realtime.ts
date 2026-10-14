@@ -3,6 +3,8 @@ import type { RoomUnit } from './room-inventory';
 import type { Tile } from '../world/iso';
 
 export interface SharedFood { id: string; recipeId: string; servings?: number; counterId?: string }
+/** Plates left on a table; a dirty table seats nobody until it is cleared. */
+export interface SharedDirt { tableId: string; plates: number; since: number }
 /** How long a seated customer still waits for food. */
 export interface SharedPatience { startedAt: number; duration: number }
 /** Credited by the server when the customer received the serving; the HUD refresh comes from the same save. */
@@ -10,8 +12,8 @@ export interface SharedPayment {
   actorId?: string; recipeId: string; coins: number; xp: number; level: number;
   levelUp?: boolean; levelReward?: number; servingsLeft: number; popularityTenths: number;
 }
-export interface SharedAction { kind: 'cooking' | 'serving' | 'seated' | 'eating'; stoveId?: string; startedAt: number; duration: number }
-export interface SharedEmotion { id: string; kind: 'satisfied' | 'dissatisfied'; startedAt: number; duration: number }
+export interface SharedAction { kind: 'cooking' | 'serving' | 'cleaning' | 'seated' | 'eating'; stoveId?: string; startedAt: number; duration: number }
+export interface SharedEmotion { id: string; kind: 'satisfied' | 'dissatisfied' | 'neutral'; startedAt: number; duration: number }
 export interface SharedActor {
   id: string; kind?: 'human' | 'npc'; name?: string; appearance?: string;
   tx: number; ty: number; direction: number; outside: boolean; state: string;
@@ -21,12 +23,12 @@ export interface SharedActor {
 }
 export interface SharedWorld {
   roomId: string; revision: number; tilesX: number; tilesY: number;
-  units: RoomUnit[]; foods: SharedFood[]; cooking?: CookingSnapshot;
+  units: RoomUnit[]; foods: SharedFood[]; dirt?: SharedDirt[]; cooking?: CookingSnapshot;
 }
 export interface RoomEvent {
-  type: 'welcome' | 'actors' | 'world' | 'food' | 'payment' | 'ack' | 'error'; epoch: string; seq: number; serverNow: number;
+  type: 'welcome' | 'actors' | 'world' | 'food' | 'dirt' | 'payment' | 'ack' | 'error'; epoch: string; seq: number; serverNow: number;
   selfId?: string; world?: SharedWorld; actors?: SharedActor[]; removed?: string[];
-  units?: RoomUnit[]; revision?: number; foods?: SharedFood[]; cooking?: CookingSnapshot; payment?: SharedPayment;
+  units?: RoomUnit[]; revision?: number; foods?: SharedFood[]; dirt?: SharedDirt[]; cooking?: CookingSnapshot; payment?: SharedPayment;
   requestId?: string; message?: string;
 }
 

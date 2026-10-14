@@ -18,11 +18,18 @@ func seatedCustomer(r *room, now time.Time) *entity {
 	return customer
 }
 
+// onTheFire puts a batch on a stove that is ready at readyAt and spoils two minutes later.
+func onTheFire(r *room, readyAt time.Time) {
+	r.world.Cooking, _ = json.Marshal(map[string]any{"stoves": []any{map[string]any{"id": "s", "cooking": map[string]string{
+		"readyAt": readyAt.UTC().Format(time.RFC3339Nano), "spoilsAt": readyAt.Add(2 * time.Minute).UTC().Format(time.RFC3339Nano)}}}})
+}
+
 func TestSeatedCustomerWaitsForTheWholePatience(t *testing.T) {
 	store := &economyStore{}
 	r, _ := economyRoom(store)
 	r.world.Foods = nil
 	now := time.Now()
+	onTheFire(r, now.Add(time.Hour))
 	customer := seatedCustomer(r, now)
 	if customer.Patience == nil || customer.Patience.Duration != gamerules.CustomerPatience().Milliseconds() {
 		t.Fatalf("patience not shown: %+v", customer.Patience)
@@ -40,6 +47,52 @@ func TestSeatedCustomerWaitsForTheWholePatience(t *testing.T) {
 	r.manager.wg.Wait()
 	if len(store.feedbacks) != 1 || store.feedbacks[0] {
 		t.Fatalf("impatient customer verdicts = %v", store.feedbacks)
+	}
+	if customer.Emotion == nil || customer.Emotion.Kind != "dissatisfied" || r.popularity != 797 {
+		t.Fatalf("emotion=%+v popularity=%d", customer.Emotion, r.popularity)
+	}
+}
+
+func TestIdleKitchenCustomerLeavesWithoutPenalty(t *testing.T) {
+	store := &economyStore{}
+	r, _ := economyRoom(store)
+	r.world.Foods = nil
+	now := time.Now()
+	// A spoiled batch is not food: the kitchen is still idle.
+	onTheFire(r, now.Add(-3*time.Minute))
+	if !r.kitchenIdle(now) {
+		t.Fatal("spoiled batch counted as food")
+	}
+	customer := seatedCustomer(r, now)
+	patience := gamerules.CustomerPatience()
+	r.advanceNPC(customer, now.Add(patience))
+	r.advanceNPC(customer, now.Add(patience+time.Second))
+	r.manager.wg.Wait()
+	if len(store.feedbacks) != 0 || r.popularity != 800 {
+		t.Fatalf("idle café lost popularity: verdicts=%v popularity=%d", store.feedbacks, r.popularity)
+	}
+	if customer.Emotion == nil || customer.Emotion.Kind != "neutral" {
+		t.Fatalf("emotion = %+v", customer.Emotion)
+	}
+}
+
+func TestIdleKitchenAdmitsOneBrowsingCustomer(t *testing.T) {
+	r, _ := economyRoom(&economyStore{})
+	now := time.Now()
+	// Two dining seats: the starter one and a second chair facing the table.
+	r.world.Units = append(r.world.Units, gamewire.Unit{ID: "chair2", ItemID: 3040001, Placed: true, X: 4, Y: 3, Rotation: 2})
+	r.grid = newGrid(r.world)
+	r.actors["npc:a"] = &entity{Actor: gamewire.Actor{ID: "npc:a", Kind: "npc", State: "seated"}}
+	if !r.shouldSpawn(now) {
+		t.Fatal("food on the counter: the second seat should admit a customer")
+	}
+	r.world.Foods = nil
+	if r.shouldSpawn(now) {
+		t.Fatal("idle kitchen admitted a second customer")
+	}
+	onTheFire(r, now.Add(time.Minute))
+	if !r.shouldSpawn(now) {
+		t.Fatal("a batch on the fire should reopen the café")
 	}
 }
 

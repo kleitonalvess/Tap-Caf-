@@ -14,7 +14,7 @@ var errFoodGone = errors.New("Prato indisponível.")
 
 // serveCustomer takes one serving and credits the owner in one transaction, so a
 // customer can never eat without paying or pay for a serving that was not taken.
-func serveCustomer(app core.App, owner, foodID string) (gamewire.Payment, error) {
+func serveCustomer(app core.App, owner, foodID, tableID string) (gamewire.Payment, error) {
 	var payment gamewire.Payment
 	err := app.RunInTransaction(func(tx core.App) error {
 		food, err := tx.FindRecordById("room_food", foodID)
@@ -43,6 +43,9 @@ func serveCustomer(app core.App, owner, foodID string) (gamewire.Payment, error)
 		recipe, _ := gamerules.RecipeByID(food.GetString("recipe_id"))
 		progress := playerstate.Award(state, recipe.PricePerServing, recipe.XPPerServing)
 		if err = tx.Save(state); err != nil {
+			return err
+		}
+		if err = leavePlate(tx, owner, tableID); err != nil {
 			return err
 		}
 		payment = gamewire.Payment{

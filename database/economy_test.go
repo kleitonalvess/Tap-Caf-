@@ -78,20 +78,20 @@ func TestServeCustomerTakesServingsAndPays(t *testing.T) {
 	gold, popularity := before.GetInt64("gold"), before.GetInt("satisfaction_current_tenths")
 	foodID := addFood(t, app, owner, 2)
 
-	first, err := serveCustomer(app, owner, foodID)
+	first, err := serveCustomer(app, owner, foodID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.ServingsLeft != 1 || first.Coins != cake.PricePerServing || first.XP != cake.XPPerServing {
 		t.Fatalf("first payment = %+v", first)
 	}
-	if _, err = serveCustomer(app, owner, foodID); err != nil {
+	if _, err = serveCustomer(app, owner, foodID, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = app.FindRecordById("room_food", foodID); err == nil {
 		t.Fatal("an empty dish stayed in the room")
 	}
-	if _, err = serveCustomer(app, owner, foodID); !errors.Is(err, errFoodGone) {
+	if _, err = serveCustomer(app, owner, foodID, ""); !errors.Is(err, errFoodGone) {
 		t.Fatalf("third serving error = %v, want errFoodGone", err)
 	}
 	after := playerState(t, app, owner)
@@ -109,7 +109,7 @@ func TestServeCustomerTakesServingsAndPays(t *testing.T) {
 func TestServeCustomerRejectsAnotherOwnersDish(t *testing.T) {
 	app, owner := newEconomyApp(t)
 	foodID := addFood(t, app, owner, 1)
-	if _, err := serveCustomer(app, "someone-else", foodID); !errors.Is(err, errFoodGone) {
+	if _, err := serveCustomer(app, "someone-else", foodID, ""); !errors.Is(err, errFoodGone) {
 		t.Fatalf("foreign dish error = %v", err)
 	}
 	if _, err := app.FindRecordById("room_food", foodID); err != nil {
@@ -125,7 +125,7 @@ func TestLevelUpGrantsRewardCoins(t *testing.T) {
 		t.Fatal(err)
 	}
 	gold := state.GetInt64("gold")
-	payment, err := serveCustomer(app, owner, addFood(t, app, owner, 1))
+	payment, err := serveCustomer(app, owner, addFood(t, app, owner, 1), "")
 	if err != nil {
 		t.Fatal(err)
 	}

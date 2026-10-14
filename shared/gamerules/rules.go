@@ -47,6 +47,13 @@ type StoveRules struct {
 	SeasonXP           int64 `json:"seasonXp"`
 }
 
+// TableRules: every meal leaves its dishes on the table, which stays dirty
+// (no customer sits there) until someone clears it.
+type TableRules struct {
+	CleaningSeconds int   `json:"cleaningSeconds"`
+	CleaningXP      int64 `json:"cleaningXp"`
+}
+
 type CustomerRules struct {
 	// How long a seated customer waits for food before leaving unsatisfied.
 	PatienceSeconds int `json:"patienceSeconds"`
@@ -83,6 +90,7 @@ type Rules struct {
 	Popularity        PopularityRules `json:"popularity"`
 	Customers         CustomerRules   `json:"customers"`
 	Stove             StoveRules      `json:"stove"`
+	Tables            TableRules      `json:"tables"`
 	Levels            []Level         `json:"levels"`
 	CustomerFrequency []Frequency     `json:"customerFrequency"`
 	Tips              []Tip           `json:"tips"`
@@ -149,6 +157,9 @@ func validate(r Rules) string {
 	if s.PrepareSeconds < 0 || s.PrepareSeconds > 60 || s.CleaningCoins < 0 || s.CleaningXP < 0 ||
 		s.SeasonBonusPercent < 0 || s.SeasonBonusPercent > 100 || s.SeasonXP < 0 {
 		return "invalid stove rules"
+	}
+	if t := r.Tables; t.CleaningSeconds < 1 || t.CleaningSeconds > 30 || t.CleaningXP < 0 {
+		return "invalid table rules"
 	}
 	const week = 7 * 24 * 60 * 60
 	seen := map[string]bool{}
@@ -229,6 +240,11 @@ func CustomerPatience() time.Duration {
 }
 
 func CookingArrivalFactor() float64 { return rules.Customers.CookingArrivalFactor }
+
+func Tables() TableRules { return rules.Tables }
+
+// TableCleaning is how long clearing a dirty table animates.
+func TableCleaning() time.Duration { return time.Duration(rules.Tables.CleaningSeconds) * time.Second }
 
 // Public is the whole rule set for clients; none of it is secret.
 func Public() Rules {

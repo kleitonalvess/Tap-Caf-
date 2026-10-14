@@ -146,3 +146,12 @@ func TestPublicRulesAreACopy(t *testing.T) {
 		t.Fatal("Public exposes the shared recipe slice")
 	}
 }
+
+func TestTableRulesAreValid(t *testing.T) {
+	if TableCleaning() <= 0 || Tables().CleaningXP < 0 {
+		t.Fatalf("table rules = %+v", Tables())
+	}
+	if Public().Tables != Tables() {
+		t.Fatal("table rules missing from the public rules")
+	}
+}

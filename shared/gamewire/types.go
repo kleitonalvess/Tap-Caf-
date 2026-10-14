@@ -46,7 +46,16 @@ type World struct {
 	TilesY   int             `json:"tilesY"`
 	Units    []Unit          `json:"units"`
 	Foods    []Food          `json:"foods"`
+	Dirt     []Dirt          `json:"dirt"`
 	Cooking  json.RawMessage `json:"cooking,omitempty"`
+}
+
+// Dirt is the dishes left on one table; a dirty table seats nobody.
+type Dirt struct {
+	TableID string `json:"tableId"`
+	Plates  int    `json:"plates"`
+	// Unix milliseconds of the oldest plate.
+	Since int64 `json:"since"`
 }
 type Movement struct {
 	From      Tile  `json:"from"`
@@ -130,6 +139,7 @@ type Event struct {
 	Revision  int             `json:"revision,omitempty"`
 	Cooking   json.RawMessage `json:"cooking,omitempty"`
 	Foods     []Food          `json:"foods,omitempty"`
+	Dirt      []Dirt          `json:"dirt,omitempty"`
 	Payment   *Payment        `json:"payment,omitempty"`
 	RequestID string          `json:"requestId,omitempty"`
 	Message   string          `json:"message,omitempty"`

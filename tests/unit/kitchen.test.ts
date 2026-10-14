@@ -84,4 +84,9 @@ describe('customer patience', () => {
     expect(patienceLeft(patience, 60_000)).toBe(0);
     expect(patienceColor(0.9)).not.toBe(patienceColor(0.1));
   });
+
+  it('turns calm when nothing in the café can be served', () => {
+    expect(patienceColor(0.1, true)).toBe(patienceColor(0.9, true));
+    expect(patienceColor(0.1, true)).not.toBe(patienceColor(0.1));
+  });
 });

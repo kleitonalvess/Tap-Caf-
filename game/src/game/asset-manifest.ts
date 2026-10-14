@@ -285,6 +285,8 @@ export async function loadStoreActionBarIcons(): Promise<ActionBarIconTexture[]>
 export interface NpcEmotionTextures {
   dissatisfied: readonly Texture[];
   satisfied: readonly Texture[];
+  /** First two faces of the dissatisfied row: a customer who only browsed the menu. */
+  neutral: readonly Texture[];
 }
 
 /** Cinco expressões por linha, recortadas com uma margem mínima sem incluir a vizinha. */
@@ -309,9 +311,11 @@ export async function loadNpcEmotionTextures(): Promise<NpcEmotionTextures> {
       source: sheet.source,
       frame: new Rectangle(x, y, width, height),
     }));
+  const dissatisfied = crop(EMOTION_FRAMES.dissatisfied);
   return {
-    dissatisfied: crop(EMOTION_FRAMES.dissatisfied),
+    dissatisfied,
     satisfied: crop(EMOTION_FRAMES.satisfied),
+    neutral: dissatisfied.slice(0, 2),
   };
 }
 

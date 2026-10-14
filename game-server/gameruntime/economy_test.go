@@ -30,7 +30,7 @@ func (s *economyStore) Sleep(_ context.Context, _ string, state gamewire.Sleep) 
 func (s *economyStore) Operate(context.Context, gamewire.Operation) (gamewire.Result, error) {
 	return gamewire.Result{}, nil
 }
-func (s *economyStore) Consume(_ context.Context, _ string, food string) (gamewire.Payment, error) {
+func (s *economyStore) Consume(_ context.Context, _ string, food, _ string) (gamewire.Payment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.consumed = append(s.consumed, food)

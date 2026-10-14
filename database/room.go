@@ -266,6 +266,16 @@ func mutateRoom(app core.App, userID, action string, command roomCommand) (roomS
 					return err
 				}
 			}
+			// Plates belong to the table where they were left.
+			if item.Kind == "table" {
+				dirty, err := tableIsDirty(tx, userID, unit.Id)
+				if err != nil {
+					return err
+				}
+				if dirty {
+					return errTableDirty
+				}
+			}
 		}
 		if action == "store" {
 			unit.Set("placed", false)
@@ -426,7 +436,7 @@ func registerRoomRoutes(e *core.ServeEvent) {
 					return r.NotFoundError(err.Error(), nil)
 				case errors.Is(err, errRoomPosition):
 					return r.BadRequestError(err.Error(), nil)
-				case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy), errors.Is(err, errCounterBusy):
+				case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy), errors.Is(err, errCounterBusy), errors.Is(err, errTableDirty):
 					return apis.NewApiError(http.StatusConflict, err.Error(), nil)
 				default:
 					return r.InternalServerError("Não foi possível salvar esta operação.", err)

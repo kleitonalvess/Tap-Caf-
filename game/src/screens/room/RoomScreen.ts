@@ -25,7 +25,8 @@ import { createActionBarBetaSlots } from './ActionBarBetaSlots';
 import { MAIN_ACTION_BAR_SCALE, StoreActionBar } from './StoreActionBar';
 import { RoomStoreController } from './RoomStoreController';
 import { roomModelItems, type RoomSnapshot, type RoomInventoryClient } from '../../game/room-inventory';
-import { RoomRealtime, type RoomEvent, type SharedActor, type SharedFood, type SharedPayment, type SharedWorld } from '../../game/room-realtime';
+import { RoomRealtime, type RoomEvent, type SharedActor, type SharedDirt, type SharedFood, type SharedPayment, type SharedWorld } from '../../game/room-realtime';
+import { cleanTable } from '../../game/tables';
 import { WardrobeScreenModal, type WardrobeScreenTextures } from './WardrobeScreenModal';
 import { SettingsModal, type SettingsModalOptions } from '../../ui/SettingsModal';
 import { findPath } from '../../world/PathFinder';
@@ -69,6 +70,8 @@ import { ActorView } from './ActorView';
 import { AvatarActorView } from './AvatarActorView';
 import { NpcEmotion } from './NpcEmotion';
 import { RoomDepthSorter, setItemOverlayDepth } from './RoomDepthSorter';
+import { StreetScenery } from './StreetScenery';
+import { TableDirt } from './TableDirt';
 import { OutsideNpcManager, type PreparedNpcView } from './OutsideNpcManager';
 import { createProceduralWallView, type WallWallpaper } from './ProceduralWallView';
 import { TOP_BAR_ICON_FRAMES, TopBars, type TopBarsTextures } from './TopBars';
@@ -100,8 +103,14 @@ const MAX_ITEM_HEIGHT = 150 * ROOM_ASSET_SCALE;
 /** Folga em volta da sala, para ela não encostar na borda da tela. */
 const CAMERA_PADDING = 60 * ROOM_ASSET_SCALE;
 
-/** Mantém as bordas laterais e superior da textura longe do pan habitual. */
+/** Mantém as bordas laterais da textura longe do pan habitual. */
 const SCENE_CAMERA_INSET = 900;
+
+/**
+ * Acima do café a arte é gramado até a borda; a folga menor deixa a câmera
+ * alcançar os prédios da rua (StreetScenery) e seus cartões sob o HUD superior.
+ */
+const SCENE_CAMERA_TOP_INSET = 150;
 
 /** A diagonal até (25,25) usa apenas o terreno verde contínuo abaixo da arte. */
 const SCENE_DIAGONAL_PAN_TILE = 25;
@@ -257,6 +266,7 @@ export class RoomScreen implements Screen {
   /** Barras de recursos fora da câmera. */
   readonly topBars?: TopBars;
   private readonly floatingRewards: FloatingRewards;
+  private streetScenery?: StreetScenery;
   private readonly levelUpToast = new LevelUpToast();
   private readonly audio?: SoundPlayer & { setIntensity(value: number): void };
   private readonly audioControl?: AudioHudControl;
@@ -310,6 +320,10 @@ export class RoomScreen implements Screen {
   private readonly realtime?: RoomRealtime;
   private readonly liveActors = new Map<string, { actor: Actor; view: ActorRenderer; state: SharedActor; bundle?: BakedAvatarBundle; appearanceRevision: number; appearanceController?: AbortController }>();
   private readonly mealViews = new Map<string, Sprite>();
+  /** Plates left on tables (shared state) and their views, by table unit id. */
+  private dirt: SharedDirt[] = [];
+  private readonly tableDirt = new Map<string, TableDirt>();
+  private tableCleaning?: { table: RoomItem; phase: 'walking' | 'requesting' };
   private readonly sharedCookingViews = new Map<string, Sprite>();
   private readonly sharedCookingProgress = new Map<string, { mode: 'cooking' | 'serving'; bar: CookProgressBar }>();
   private readonly liveEmotions = new Map<string, { id: string; effect: NpcEmotion }>();
@@ -806,9 +820,11 @@ export class RoomScreen implements Screen {
       this.liveActors.clear();
       if (event.world) this.acceptSharedWorld(event.world);
       this.foods = event.world?.foods ?? [];
+      this.dirt = event.world?.dirt ?? [];
     }
-    // Food events always carry the whole list; an absent field means every counter is empty.
+    // Food and dirt events always carry the whole list; an absent field means none.
     if (event.type === 'food') this.foods = event.foods ?? [];
+    if (event.type === 'dirt') this.dirt = event.dirt ?? [];
     for (const update of event.actors ?? []) {
       const state = this.realtime.actors.get(update.id); if (!state) continue;
       let entry = this.liveActors.get(state.id);
@@ -929,7 +945,7 @@ export class RoomScreen implements Screen {
       else { entry.actor.speedX = 0; entry.actor.speedY = 0; }
       if (state.state === 'entering' && entry.actor.tileX >= 1 && entry.actor.tileY >= 1) entry.actor.outside = false;
       const action = state.state === 'eating' ? CLIP.EAT : state.state === 'seated' ? CLIP.SIT :
-        state.state === 'cooking' || state.state === 'serving' ? CLIP.COOKING : null;
+        state.state === 'cooking' || state.state === 'serving' ? CLIP.COOKING : state.state === 'cleaning' ? CLIP.CLEAN : null;
       entry.view.setActionClip?.(action, state.action ? now - state.action.startedAt : undefined);
       this.advanceActorView(entry.view, deltaMs);
       this.updateLiveEmotion(id, state, entry.view.view, now);
@@ -946,6 +962,7 @@ export class RoomScreen implements Screen {
         setItemOverlayDepth(meal, table);
       } else { this.mealViews.get(id)?.destroy(); this.mealViews.delete(id); }
     }
+    this.updateTableDirt(deltaMs, now);
     this.updateSharedStoves(now);
   }
 
@@ -1068,6 +1085,94 @@ export class RoomScreen implements Screen {
     for (const [id, dish] of this.counterDishes) if (!present.has(id)) { dish.destroy(); this.counterDishes.delete(id); }
   }
 
+  /** Mirrors the server's kitchenIdle: no counter servings and no unspoiled batch on a stove. */
+  private kitchenIdle(serverNowMs: number): boolean {
+    if (this.foods.length > 0) return false;
+    for (const job of this.occupiedStoves.values()) if (stoveStatus(job, serverNowMs) !== 'spoiled') return false;
+    return true;
+  }
+
+  /** Dirty plates sit on their table once nobody is eating there; cleared ones sparkle away. */
+  private updateTableDirt(deltaMs: number, now: number): void {
+    const eating = new Set<string>();
+    for (const state of this.realtime?.actors.values() ?? []) if (state.food && state.tableId) eating.add(state.tableId);
+    const present = new Set<string>();
+    const owner = this.roomSnapshot?.canEdit !== false;
+    for (const dirt of this.dirt) {
+      const table = this.model.items.find((item) => item.kind === 'table' && item.inventoryUnitId === dirt.tableId);
+      if (!table || eating.has(dirt.tableId)) continue;
+      present.add(dirt.tableId);
+      let view = this.tableDirt.get(dirt.tableId);
+      if (!view || view.vanishing) {
+        view?.destroy();
+        view = new TableDirt();
+        if (owner) {
+          view.view.eventMode = 'static';
+          view.view.cursor = 'pointer';
+          this.bindSceneryTap(view.view, () => this.cleanTableAt(table));
+        }
+        this.tableDirt.set(dirt.tableId, view);
+        this.world.addChild(view.view);
+      }
+      view.setPlates(dirt.plates);
+      view.view.position.set(tileToScreenX(table.tx, table.ty), tileToScreenY(table.tx, table.ty) - 30);
+      view.view.renderable = !this.storeBar?.isOpen;
+      setItemOverlayDepth(view.view, table);
+      view.update(deltaMs, now - dirt.since, now);
+    }
+    for (const [id, view] of this.tableDirt) {
+      if (present.has(id)) continue;
+      const table = this.model.items.find((item) => item.inventoryUnitId === id);
+      // A table that was moved away just loses its plates.
+      if (!table) { view.destroy(); this.tableDirt.delete(id); continue; }
+      // Cleared: the plates stay while the brush works, then sparkle away.
+      if (!view.vanishing && this.cleaningBeside(table, now)) { view.update(deltaMs, 0, now); continue; }
+      view.vanish();
+      if (view.update(deltaMs, 0, now)) { view.destroy(); this.tableDirt.delete(id); }
+    }
+  }
+
+  private cleaningBeside(table: RoomItem, now: number): boolean {
+    for (const state of this.realtime?.actors.values() ?? []) {
+      if (state.state !== 'cleaning' || !state.action || now >= state.action.startedAt + state.action.duration) continue;
+      if (footprintTiles(table).some((tile) => Math.abs(tile.tx - state.tx) + Math.abs(tile.ty - state.ty) === 1)) return true;
+    }
+    return false;
+  }
+
+  /** The owner walks beside a dirty table and clears it (server-checked). */
+  private cleanTableAt(table: RoomItem): void {
+    if (this.roomSnapshot?.canEdit === false || this.tableCleaning || this.servingProcess || this.startingCook) return;
+    if (this.realtime && !this.realtime.connected) return;
+    const approach = this.findCookingApproach(table);
+    if (!approach) {
+      this.showNotice('Não há como chegar até essa mesa.');
+      return;
+    }
+    this.tableCleaning = { table, phase: 'walking' };
+    if (approach.path.length) {
+      this.movePlayerAlong(approach.path);
+      this.drawTarget(approach.destination);
+    }
+  }
+
+  private requestTableClean(): void {
+    const process = this.tableCleaning;
+    if (!process || process.phase !== 'walking' || !process.table.inventoryUnitId) return;
+    process.phase = 'requesting';
+    const table = process.table;
+    void cleanTable(table.inventoryUnitId!).then((result) => {
+      if (this.destroyed) return;
+      this.audio?.play('broom');
+      if (result.xp > 0) this.floatingRewards.spawn(tileToScreenX(table.tx, table.ty), tileToScreenY(table.tx, table.ty), itemDepth(table.tx, table.ty), 0, result.xp);
+    }).catch((error: unknown) => {
+      if (!this.destroyed) this.showNotice(error instanceof Error ? error.message : 'Não foi possível limpar a mesa.');
+    }).finally(() => {
+      if (this.tableCleaning === process) this.tableCleaning = undefined;
+      this.target.clear();
+    });
+  }
+
   private updatePatience(id: string, state: SharedActor, actorView: Container, now: number): void {
     let meter = this.patienceMeters.get(id);
     if (!state.patience || state.state !== 'seated') {
@@ -1075,7 +1180,7 @@ export class RoomScreen implements Screen {
       return;
     }
     if (!meter) { meter = new PatienceMeter(); this.patienceMeters.set(id, meter); this.world.addChild(meter.view); }
-    meter.update(patienceLeft(state.patience, now), actorView, now);
+    meter.update(patienceLeft(state.patience, now), actorView, now, this.kitchenIdle(now));
     meter.view.renderable = !this.storeBar?.isOpen;
   }
 
@@ -2018,6 +2123,25 @@ export class RoomScreen implements Screen {
         index === 0 ? 'room-city-background' : `room-city-background-${index + 1}`,
       ));
     }
+    // The lots of the street layout above belong to this background.
+    this.streetScenery = new StreetScenery({
+      world: this.world,
+      bindGestures: (target, onTap) => this.bindSceneryTap(target, onTap),
+      onTap: () => this.audio?.play('click'),
+    });
+  }
+
+  /** Buildings keep the room gestures: dragging over them pans, the wheel zooms. */
+  private bindSceneryTap(target: Container, onTap: () => void): void {
+    target.on('pointerdown', this.onDragStart);
+    target.on('pointerup', this.onDragEnd);
+    target.on('pointerupoutside', this.onDragEnd);
+    target.on('wheel', this.onWheel);
+    target.on('pointertap', (event) => {
+      if (this.dragCancelledTap || this.isModalOpen || this.storeBar?.isOpen) return;
+      event.stopPropagation();
+      onTap();
+    });
   }
 
   /** Espalha os pontos de partida sem depender de sorteio. */
@@ -2048,7 +2172,7 @@ export class RoomScreen implements Screen {
       return {
         left: bg.left + SCENE_CAMERA_INSET,
         right: bg.left + bg.width - SCENE_CAMERA_INSET,
-        top: bg.top + SCENE_CAMERA_INSET,
+        top: bg.top + SCENE_CAMERA_TOP_INSET,
         bottom: Math.max(
           bg.top + bg.height - SCENE_CAMERA_INSET,
           tileToScreenY(SCENE_DIAGONAL_PAN_TILE, SCENE_DIAGONAL_PAN_TILE),
@@ -2557,6 +2681,10 @@ export class RoomScreen implements Screen {
     }
 
     this.outsideNpcManager?.update(deltaMs);
+    this.streetScenery?.update(deltaMs);
+    if (this.tableCleaning?.phase === 'walking' && this.networkPending === 0 && this.realtime?.connected !== false && this.player.reachedPathEnd()) {
+      this.requestTableClean();
+    }
     this.floatingRewards.update(deltaMs, !this.storeBar?.isOpen);
     this.levelUpToast.update(deltaMs);
     this.audioControl?.update();
@@ -2660,7 +2788,9 @@ export class RoomScreen implements Screen {
     this.counterDishes.forEach((dish) => dish.destroy()); this.counterDishes.clear();
     this.stoveEffects.forEach((effects) => effects.destroy()); this.stoveEffects.clear();
     this.patienceMeters.forEach((meter) => meter.destroy()); this.patienceMeters.clear();
+    this.tableDirt.forEach((view) => view.destroy()); this.tableDirt.clear();
     this.recipeArt.destroy();
+    this.streetScenery?.destroy();
     this.roomStore?.destroy();
     this.destroyed = true;
     this.closeStoveActions();

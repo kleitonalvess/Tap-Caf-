@@ -12,7 +12,9 @@ export function patienceLeft(patience: { startedAt: number; duration: number }, 
   return Math.max(0, Math.min(1, 1 - (serverNowMs - patience.startedAt) / patience.duration));
 }
 
-export function patienceColor(left: number): number {
+/** Calm: nothing to eat in the café, so running out costs nothing (neutral grey-blue). */
+export function patienceColor(left: number, calm = false): number {
+  if (calm) return 0x8fa3b5;
   return left > 0.5 ? 0x43a047 : left > 0.2 ? 0xf5a623 : 0xd8432f;
 }
 
@@ -33,8 +35,8 @@ export class PatienceMeter {
     this.view.addChild(bubble, this.pie, hint);
   }
 
-  update(left: number, actorView: Container, serverNowMs: number): void {
-    const color = patienceColor(left);
+  update(left: number, actorView: Container, serverNowMs: number, calm = false): void {
+    const color = patienceColor(left, calm);
     this.pie.clear().circle(0, 0, RADIUS).fill(0xf1ebe0);
     if (left > 0) {
       const start = -Math.PI / 2;
@@ -43,7 +45,7 @@ export class PatienceMeter {
     this.view.position.set(actorView.x + 34, actorView.y - HEIGHT_ABOVE_FEET);
     this.view.zIndex = POPUP_DRAW_PRIORITY + actorView.zIndex;
     // The last moments blink to draw the player's eye.
-    this.view.alpha = left < 0.15 ? 0.55 + 0.45 * Math.abs(Math.sin(serverNowMs / 160)) : 1;
+    this.view.alpha = left < 0.15 && !calm ? 0.55 + 0.45 * Math.abs(Math.sin(serverNowMs / 160)) : 1;
   }
 
   destroy(): void {

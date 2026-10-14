@@ -75,9 +75,9 @@ func (s *HTTPStorage) Operate(ctx context.Context, op gamewire.Operation) (gamew
 	err := s.request(ctx, "POST", op.Owner+"/operation", op, &out)
 	return out, err
 }
-func (s *HTTPStorage) Consume(ctx context.Context, id, food string) (gamewire.Payment, error) {
+func (s *HTTPStorage) Consume(ctx context.Context, id, food, table string) (gamewire.Payment, error) {
 	var out gamewire.Payment
-	err := s.request(ctx, "POST", id+"/consume", map[string]string{"foodId": food}, &out)
+	err := s.request(ctx, "POST", id+"/consume", map[string]string{"foodId": food, "tableId": table}, &out)
 	var status *statusError
 	if errors.As(err, &status) && status.code == http.StatusNotFound {
 		return out, ErrFoodGone

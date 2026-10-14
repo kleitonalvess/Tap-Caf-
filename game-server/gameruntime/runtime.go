@@ -23,8 +23,9 @@ type Storage interface {
 	Active(context.Context, string, int) error
 	Sleep(context.Context, string, gamewire.Sleep) error
 	Operate(context.Context, gamewire.Operation) (gamewire.Result, error)
-	// Consume takes one serving and returns the payment already credited to the owner.
-	Consume(context.Context, string, string) (gamewire.Payment, error)
+	// Consume takes one serving for a customer at a table and returns the payment
+	// already credited to the owner; the same transaction leaves the table dirty.
+	Consume(ctx context.Context, room, food, table string) (gamewire.Payment, error)
 	// Feedback records a customer verdict that came without a payment.
 	Feedback(context.Context, string, bool) error
 }
@@ -299,6 +300,20 @@ func (m *Manager) Operate(ctx context.Context, op gamewire.Operation) (gamewire.
 			return err
 		}
 		if result.Status >= 200 && result.Status < 300 && result.World != nil {
+			// The cleaning pose goes out before the cleared table, so clients keep
+			// the plates until the brush is done.
+			if op.Action == "table_clean" {
+				var body struct {
+					TableID string `json:"tableId"`
+				}
+				_ = json.Unmarshal(op.Body, &body)
+				if a := r.actors["human:"+op.User]; a != nil {
+					if table, ok := r.adjacentUnit(a, body.TableID, "table"); ok {
+						r.startUnitAction(a, table, "cleaning", time.Now(), gamerules.TableCleaning())
+						r.broadcast(gamewire.Event{Type: "actors", Actors: []gamewire.Actor{r.status(a, false)}}, "")
+					}
+				}
+			}
 			r.updateWorld(*result.World)
 			if op.Action == "cook_start" {
 				if a := r.actors["human:"+op.User]; a != nil {
@@ -811,12 +826,16 @@ func (r *room) command(p *Peer, c gamewire.Command) {
 	fail := func(message string) {
 		r.send(p, gamewire.Event{Type: "error", RequestID: c.RequestID, Message: message})
 	}
-	if (a.State == "cooking" || a.State == "serving") && time.Now().Before(a.due) {
+	if busyState(a.State) && time.Now().Before(a.due) {
 		if c.Type == "serve_prepare" && a.State == "serving" && a.Action != nil && a.Action.StoveID == c.StoveID {
 			r.send(p, gamewire.Event{Type: "ack", RequestID: c.RequestID})
 			return
 		}
-		fail("Aguarde o preparo.")
+		if a.State == "cleaning" {
+			fail("Aguarde terminar a limpeza.")
+		} else {
+			fail("Aguarde o preparo.")
+		}
 		return
 	}
 	now := time.Now()
@@ -1007,6 +1026,22 @@ func (r *room) validateOperation(op gamewire.Operation) string {
 			return "Aguarde o preparo."
 		}
 	}
+	if op.Action == "table_clean" {
+		var target struct {
+			TableID string `json:"tableId"`
+		}
+		_ = json.Unmarshal(op.Body, &target)
+		a := r.actors["human:"+op.User]
+		if a != nil && a.Action != nil && time.Now().Before(a.due) {
+			return "Aguarde terminar a ação."
+		}
+		if _, ok := r.adjacentUnit(a, target.TableID, "table"); !ok {
+			return "Aproxime seu personagem da mesa."
+		}
+		if r.dirtOn(target.TableID) == nil {
+			return "A mesa já está limpa."
+		}
+	}
 	if op.Action == "cook_season" && r.actors["human:"+op.User] == nil {
 		return "Entre no café para temperar."
 	}
@@ -1036,6 +1071,7 @@ func (r *room) updateWorld(w gamewire.World) {
 	}
 	cookingChanged := string(w.Cooking) != string(r.world.Cooking)
 	foodsChanged := fmt.Sprint(w.Foods) != fmt.Sprint(r.world.Foods)
+	dirtChanged := fmt.Sprint(w.Dirt) != fmt.Sprint(r.world.Dirt)
 	r.world = w
 	doorChanged := false
 	for _, u := range changes {
@@ -1085,6 +1121,10 @@ func (r *room) updateWorld(w gamewire.World) {
 	// A food event always carries the complete list; an absent field means none left.
 	if foodsChanged {
 		r.broadcast(gamewire.Event{Type: "food", Foods: w.Foods}, "")
+	}
+	// Same contract as food: the complete list, absent meaning every table is clean.
+	if dirtChanged {
+		r.broadcast(gamewire.Event{Type: "dirt", Dirt: w.Dirt}, "")
 	}
 }
 func (r *room) tick(now time.Time) {
@@ -1144,7 +1184,7 @@ func (r *room) tick(now time.Time) {
 				}
 				changed = true
 			}
-			if (a.State == "cooking" || a.State == "serving") && !now.Before(a.due) {
+			if busyState(a.State) && !now.Before(a.due) {
 				a.State = "idle"
 				a.Action = nil
 				changed = true
