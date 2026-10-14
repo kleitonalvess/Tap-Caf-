@@ -75,6 +75,32 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 			cancel()
 		}
 		return reply(200, state)
+	case "/api/coffe/daily/claim":
+		claim, err := cafe.ClaimDaily(e.store, e.profile.ID, time.Now())
+		if errors.Is(err, cafe.ErrDailyClaimed) {
+			return failure(409, err.Error())
+		}
+		if err != nil {
+			return failure(500, "Não foi possível coletar o bônus.")
+		}
+		return reply(200, claim)
+	case "/api/coffe/mail/claim":
+		var request struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(body, &request) != nil || request.ID == "" {
+			return failure(400, "Carta inválida.")
+		}
+		claim, err := cafe.ClaimLetter(e.store, e.profile.ID, request.ID, time.Now())
+		switch {
+		case errors.Is(err, cafe.ErrMailMissing):
+			return failure(404, err.Error())
+		case errors.Is(err, cafe.ErrMailClaimed):
+			return failure(409, err.Error())
+		case err != nil:
+			return failure(500, "Não foi possível abrir a carta.")
+		}
+		return reply(200, claim)
 	case "/api/coffe/room/away/ack":
 		if err := cafe.AcknowledgeAway(e.store, e.profile.ID); err != nil && !errors.Is(err, cafe.ErrNotFound) {
 			return failure(500, "Não foi possível salvar.")
@@ -129,6 +155,18 @@ func (e *Engine) get(path string, query url.Values) (int, []byte) {
 			return failure(500, "Não foi possível carregar o preparo.")
 		}
 		return reply(200, snapshot)
+	case "/api/coffe/daily":
+		daily, err := cafe.Daily(e.store, owner, time.Now())
+		if err != nil {
+			return failure(500, "Não foi possível carregar o bônus diário.")
+		}
+		return reply(200, daily)
+	case "/api/coffe/mail":
+		mail, err := cafe.SnapshotMail(e.store, owner)
+		if err != nil {
+			return failure(500, "Não foi possível carregar o correio.")
+		}
+		return reply(200, mail)
 	case "/api/coffe/staff":
 		snapshot, err := cafe.SnapshotStaff(e.store, owner)
 		if err != nil {

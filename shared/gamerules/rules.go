@@ -45,6 +45,35 @@ type StoveRules struct {
 	// Seasoning during preparation adds this share of the recipe's servings (rounded up).
 	SeasonBonusPercent int   `json:"seasonBonusPercent"`
 	SeasonXP           int64 `json:"seasonXp"`
+	// Cancelling a batch while it cooks returns this share of what it cost
+	// (rounded down); during preparation the whole cost comes back.
+	CancelRefundPercent int `json:"cancelRefundPercent"`
+}
+
+// DailyRules: the bonus for playing on consecutive days (dates in
+// America/Sao_Paulo). Missing a day starts over at day 1, and so does the day
+// after the last one.
+type DailyRules struct {
+	Days        []DailyReward `json:"days"`
+	Provisional bool          `json:"provisional,omitempty"`
+}
+
+type DailyReward struct {
+	Day   int   `json:"day"`
+	Coins int64 `json:"coins"`
+	Cash  int64 `json:"cash"`
+}
+
+// MailRules: letters the café receives. Welcome arrives once per account.
+type MailRules struct {
+	Welcome Letter `json:"welcome"`
+}
+
+type Letter struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	Coins int64  `json:"coins"`
+	Cash  int64  `json:"cash"`
 }
 
 // TableRules: every meal leaves its dishes on the table, which stays dirty
@@ -189,6 +218,8 @@ type Rules struct {
 	Offline           OfflineRules    `json:"offline"`
 	Expansions        ExpansionRules  `json:"expansions"`
 	Staff             StaffRules      `json:"staff"`
+	Daily             DailyRules      `json:"daily"`
+	Mail              MailRules       `json:"mail"`
 	Levels            []Level         `json:"levels"`
 	CustomerFrequency []Frequency     `json:"customerFrequency"`
 	Tips              []Tip           `json:"tips"`
@@ -253,8 +284,19 @@ func validate(r Rules) string {
 	}
 	s := r.Stove
 	if s.PrepareSeconds < 0 || s.PrepareSeconds > 60 || s.CleaningCoins < 0 || s.CleaningXP < 0 ||
-		s.SeasonBonusPercent < 0 || s.SeasonBonusPercent > 100 || s.SeasonXP < 0 {
+		s.SeasonBonusPercent < 0 || s.SeasonBonusPercent > 100 || s.SeasonXP < 0 || s.CancelRefundPercent < 0 || s.CancelRefundPercent > 100 {
 		return "invalid stove rules"
+	}
+	if len(r.Daily.Days) == 0 || len(r.Daily.Days) > 31 {
+		return "invalid daily bonus"
+	}
+	for i, day := range r.Daily.Days {
+		if day.Day != i+1 || day.Coins < 0 || day.Cash < 0 || day.Coins == 0 && day.Cash == 0 {
+			return "daily bonus days must be contiguous and pay something"
+		}
+	}
+	if w := r.Mail.Welcome; w.Title == "" || len(w.Title) > 80 || w.Body == "" || len(w.Body) > 600 || w.Coins < 0 || w.Cash < 0 {
+		return "invalid welcome letter"
 	}
 	if t := r.Tables; t.CleaningSeconds < 1 || t.CleaningSeconds > 30 || t.CleaningXP < 0 {
 		return "invalid table rules"
@@ -369,6 +411,31 @@ func CheapestRecipe(level int) (Recipe, bool) {
 }
 
 func Stove() StoveRules { return rules.Stove }
+
+// CancelRefund is what cancelling a batch that cost this much returns.
+func CancelRefund(cost int64, preparing bool) int64 {
+	if cost <= 0 {
+		return 0
+	}
+	if preparing {
+		return cost
+	}
+	return cost * int64(rules.Stove.CancelRefundPercent) / 100
+}
+
+func Daily() DailyRules {
+	d := rules.Daily
+	d.Days = append([]DailyReward{}, d.Days...)
+	return d
+}
+
+// DailyRewardFor is the reward of a day of the streak (1 is the first).
+func DailyRewardFor(day int) DailyReward {
+	days := rules.Daily.Days
+	return days[min(max(day, 1), len(days))-1]
+}
+
+func Mail() MailRules { return rules.Mail }
 
 func PrepareDuration() time.Duration { return time.Duration(rules.Stove.PrepareSeconds) * time.Second }
 
@@ -494,6 +561,7 @@ func Public() Rules {
 	snapshot.Staff.Profiles = append([]StaffProfile{}, rules.Staff.Profiles...)
 	snapshot.Staff.HireCoins = append([]int64{}, rules.Staff.HireCoins...)
 	snapshot.Expansions = Expansions()
+	snapshot.Daily = Daily()
 	return snapshot
 }
 

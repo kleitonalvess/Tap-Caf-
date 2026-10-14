@@ -23,6 +23,18 @@ export function resourcePercentage(value: ResourceValue): number {
   return Math.min(100, Math.max(0, value.current * 100 / value.maximum));
 }
 
+/** Share of the current level already earned, 0–100. The server keeps total XP
+ * (requirements are cumulative); without the level table this falls back to
+ * total ÷ the next requirement. The last level shows a full bar. */
+export function levelProgress(state: Pick<PlayerState, 'level' | 'experience'>, levels?: readonly { requiredXp: number }[]): number {
+  if (!levels?.length) return resourcePercentage(state.experience);
+  const floor = levels[state.level - 1]?.requiredXp;
+  const next = levels[state.level]?.requiredXp;
+  if (floor === undefined || next === undefined || next <= floor) return 100;
+  const earned = (state.experience.current - floor) * 100 / (next - floor);
+  return Number.isFinite(earned) ? Math.min(100, Math.max(0, earned)) : 0;
+}
+
 /** Unloaded HUDs are hidden; this only keeps isolated screens deterministic. */
 export function emptyPlayerState(): PlayerState {
   return {

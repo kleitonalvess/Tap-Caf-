@@ -196,6 +196,27 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 	room("after the absence")
 	log("acknowledge", outcome(cafe.AcknowledgeAway(s, owner)))
 	room("acknowledged")
+
+	// Sprint 11: daily bonus, mail and the refund of a cancelled batch.
+	for _, at := range []time.Time{t0, t0.Add(time.Minute), t0.Add(24 * time.Hour), t0.Add(72 * time.Hour)} {
+		claim, err := cafe.ClaimDaily(s, owner, at)
+		log("daily", map[string]any{"err": outcome(err), "reward": claim.Reward, "day": claim.Daily.Day, "claimable": claim.Daily.Claimable, "gold": claim.State.Gold, "cash": claim.State.Cash})
+	}
+	mail, err := cafe.SnapshotMail(s, owner)
+	log("mail", map[string]any{"err": outcome(err), "letters": len(mail.Letters), "unread": mail.Unread})
+	if len(mail.Letters) > 0 {
+		letter, err := cafe.ClaimLetter(s, owner, mail.Letters[0].ID, t0)
+		log("letter", map[string]any{"err": outcome(err), "title": letter.Letter.Title, "claimed": letter.Letter.Claimed, "gold": letter.State.Gold})
+		_, err = cafe.ClaimLetter(s, owner, mail.Letters[0].ID, t0)
+		log("letter again", outcome(err))
+	}
+	if stoves, err := cafe.SnapshotCooking(s, owner, t0); err == nil && len(stoves.Stoves) > 0 {
+		stove := stoves.Stoves[0].ID
+		cancelled := t0.Add(3 * time.Hour)
+		log("cook to cancel", outcome(cafe.StartCooking(s, owner, stove, "pao_de_queijo", cancelled)))
+		log("cancel while cooking", outcome(cafe.CancelCooking(s, owner, stove, cancelled.Add(gamerules.PrepareDuration()+time.Second))))
+		room("refunded")
+	}
 	world("final")
 	return lines
 }

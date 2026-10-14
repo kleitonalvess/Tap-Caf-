@@ -14,6 +14,9 @@ export interface StoveCooking {
   /** Servings the batch yields, seasoning included. */
   servings?: number;
   seasoned?: boolean;
+  fresh?: boolean;
+  /** What the batch cost (0 for the emergency help); cancelling returns part of it. */
+  costCoins?: number;
 }
 
 export interface OwnedStove {
@@ -44,6 +47,13 @@ export function stoveStatus(job: StoveCooking, serverNowMs: number): StoveStatus
   if (serverNowMs >= cookingTime(job.readyAt)) return 'ready';
   if (serverNowMs >= cookingTime(job.startedAt)) return 'cooking';
   return 'preparing';
+}
+
+/** Coins a cancel returns, as the server computes it: everything while the batch
+ * is being prepared, the configured share (rounded down) once it cooks. */
+export function cancelRefund(cost: number, preparing: boolean, percent: number): number {
+  if (!(cost > 0)) return 0;
+  return preparing ? cost : Math.floor(cost * Math.max(0, Math.min(100, percent)) / 100);
 }
 
 /** Fraction of the spoil window already used by a ready dish (0 fresh, 1 spoiled). */

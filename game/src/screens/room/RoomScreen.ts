@@ -52,6 +52,11 @@ import { PartyBadge, PartyLights } from './PartyLights';
 import { StreetClient, farmCaption, farmStatus, formatClock, partyCaption, partyStatus, type StreetState } from '../../game/street';
 import { FESTA_DO_BAIRRO } from '../../audio/music';
 import { WelcomeBackModal } from './WelcomeBackModal';
+import { ConfirmDialog } from './ConfirmDialog';
+import { DailyBonusModal } from './DailyBonusModal';
+import { MailModal } from './MailModal';
+import { claimDaily, claimLetter, loadDaily, loadMail, type DailyState } from '../../game/rewards';
+import { isOffline } from '../../game/backend';
 import { acknowledgeAway, awayAddition, type AwaySummary } from '../../game/away';
 import type { MusicTrack } from '../../audio/AudioEngine';
 import { RecipeArtLibrary } from '../../game/recipe-art';
@@ -91,7 +96,7 @@ import { createProceduralWallView, type WallWallpaper } from './ProceduralWallVi
 import { TOP_BAR_ICON_FRAMES, TopBars, type TopBarsTextures } from './TopBars';
 import { FloatingRewards, LevelUpToast } from './FloatingRewards';
 import type { PlayerState } from '../../game/player-state';
-import { cookingTime, staleness, stoveStatus, type CookingClient, type CookingSnapshot, type StoveCooking, type StoveStatus } from '../../game/cooking';
+import { cancelRefund, cookingTime, staleness, stoveStatus, type CookingClient, type CookingSnapshot, type StoveCooking, type StoveStatus } from '../../game/cooking';
 import {
   PAN_KEY_STEP,
   RoomCamera,
@@ -133,6 +138,14 @@ const SCENE_CAMERA_TOP_INSET = 150;
 
 /** A diagonal até (25,25) usa apenas o terreno verde contínuo abaixo da arte. */
 const SCENE_DIAGONAL_PAN_TILE = 25;
+/** Bottom-bar systems not built yet: the toast names each one. */
+const SOON_SYSTEMS: Record<string, string> = {
+  trophy: 'Conquistas: desafios com prêmio a cada marca alcançada.',
+  gift: 'Presentes: troque presentes com os vizinhos todos os dias.',
+  'yellow-box': 'Caixas misteriosas: itens surpresa para o seu café.',
+  map: 'Mapa do bairro: visite a rua e os cafés vizinhos.',
+  mortar: 'Temperos: condimentos especiais que rendem mais porções.',
+};
 const MOBILE_LANDSCAPE_HUD_SCALE = 1.15;
 const ACTION_BAR_UI_SCALE = 1.15;
 /** Isolated renderer preview only; gameplay duration always comes from the server. */
@@ -294,6 +307,14 @@ export class RoomScreen implements Screen {
   private partyOn = false;
   private streetSecond = -1;
   private welcomeBack?: WelcomeBackModal;
+  private readonly confirmDialog: ConfirmDialog;
+  private dailyModal?: DailyBonusModal;
+  private mailModal?: MailModal;
+  /** Unclaimed bonus to show once nothing else is open (after the away summary). */
+  private pendingDaily?: DailyState;
+  /** Next São Paulo midnight: a long session asks again for the new day's bonus. */
+  private dailyNextAt = 0;
+  private mailBadge?: { view: Container; label: Text };
   /** Absence summary waiting for the other windows to close; `to` of the last one shown. */
   private pendingAway?: AwaySummary;
   private shownAway?: AwaySummary;
@@ -584,9 +605,10 @@ export class RoomScreen implements Screen {
     }
 
     if (options.topBarsTextures) {
-      this.topBars = new TopBars(options.topBarsTextures, options.playerState);
+      this.topBars = new TopBars(options.topBarsTextures, options.playerState, options.rules?.levels);
       this.topBarsBaseWidth = options.topBarsTextures.back.width;
       this.view.addChild(this.topBars.view);
+      if (isOffline()) this.topBars.setNote('Offline · salvo neste navegador');
     }
     // Same coin and XP icons as the top bars, cut from their shared atlas.
     const rewardIcon = (index: 0 | 1 | 2) => options.topBarsTextures && new Texture({
@@ -677,10 +699,22 @@ export class RoomScreen implements Screen {
         holder.on('pointerdown', (event) => { event.stopPropagation(); });
         holder.on('pointertap', (event) => {
           event.stopPropagation();
-          if (name === 'shirt') this.openWardrobeScreen();
-          if (name === 'house') this.openStoreBar();
-          if (name === 'waiter') this.openStaffScreen();
+          this.onActionIcon(name);
         });
+        if (isMail) {
+          // Unread letters, over the envelope's corner.
+          const badge = new Container();
+          badge.label = 'room-action-bar-mail-badge';
+          badge.addChild(new Graphics().circle(0, 0, 15 * growth).fill(0xd23b2a).stroke({ color: 0xffffff, width: 3 * growth }));
+          const label = new Text({ text: '', style: new TextStyle({ fontFamily: FONT_FAMILY, fontSize: 18 * growth, fontWeight: '700', fill: 0xffffff }) });
+          label.anchor.set(0.5);
+          badge.addChild(label);
+          badge.position.set(icon.width * 0.38, -icon.height * 0.36);
+          badge.eventMode = 'none';
+          badge.visible = false;
+          holder.addChild(badge);
+          this.mailBadge = { view: badge, label };
+        }
         this.actionBarLayer.addChild(holder);
       });
 
@@ -886,6 +920,28 @@ export class RoomScreen implements Screen {
       });
       this.view.addChild(this.welcomeBack.view);
       if (options.roomSnapshot.awaySummary) this.queueAway(options.roomSnapshot.awaySummary);
+      // Daily bonus and mail: the owner's own rewards, credited by the server.
+      this.dailyModal = new DailyBonusModal({
+        onClaim: () => claimDaily(),
+        onClaimed: (claim) => {
+          this.dailyNextAt = claim.daily.nextAt;
+          this.collectReward(claim.reward, claim.state);
+        },
+        ...(options.audio ? { audio: options.audio } : {}),
+      });
+      this.view.addChild(this.dailyModal.view);
+      this.mailModal = new MailModal({
+        onClaim: (letter) => claimLetter(letter.id),
+        onClaimed: (claim) => {
+          this.setMailBadge(this.mailModal?.unread ?? 0);
+          this.collectReward(claim.letter, claim.state);
+        },
+        ...(options.audio ? { audio: options.audio } : {}),
+      });
+      this.view.addChild(this.mailModal.view);
+      this.checkDaily();
+      void loadMail().then((mail) => { if (!this.destroyed) this.setMailBadge(mail.unread); })
+        .catch((error: unknown) => console.warn('[correio] indisponível', error));
     }
     // Farm and disco actions (owner only); visitors just see the cards and the party.
     if (options.roomSnapshot && options.roomSnapshot.canEdit !== false && this.rules?.street) {
@@ -921,6 +977,10 @@ export class RoomScreen implements Screen {
       });
       this.view.addChild(this.levelUpModal.view);
     }
+    this.confirmDialog = new ConfirmDialog(options.audio);
+    this.view.addChild(this.confirmDialog.view);
+    // Short notices go over the windows: a level-up while one is open falls back to them.
+    this.view.addChild(this.levelUpToast.view);
     this.updateMobileHudLayout();
     if (options.cookingSnapshot) this.acceptCookingSnapshot(options.cookingSnapshot, true);
     if (this.realtime) {
@@ -1401,12 +1461,25 @@ export class RoomScreen implements Screen {
 
   /** Inicia o processo de cozimento de uma receita no fogão da sala. */
   startCooking(recipe: CookRecipeEvent): void {
-    if (this.roomSnapshot?.canEdit === false || this.realtime && !this.realtime.connected) return;
-    const stove = this.selectedStove ?? this.model.items.find((item) => item.kind === 'stove');
-    if (!stove) return;
-    if (this.startingCook || this.cancellingCook || this.servingProcess || this.cookingProcess?.stove === stove || (stove.instanceId && this.occupiedStoves.has(stove.instanceId))) return;
+    if (this.roomSnapshot?.canEdit === false) return;
+    if (this.realtime && !this.realtime.connected) {
+      this.showCookingProblem('Sem conexão com o café', 'Aguarde reconectar e tente de novo.');
+      return;
+    }
+    if (this.startingCook || this.cancellingCook || this.servingProcess) {
+      this.showCookingProblem('Aguarde um instante', 'Termine a ação no fogão antes de cozinhar outro prato.');
+      return;
+    }
+    const stove = this.stoveIsFree(this.selectedStove) ? this.selectedStove : this.freeStove();
+    if (!stove) {
+      this.showCookingProblem('Nenhum fogão livre', 'Sirva ou espere um prato ficar pronto para cozinhar outro.');
+      return;
+    }
     const approach = this.findCookingApproach(stove);
-    if (!approach) return;
+    if (!approach) {
+      this.showCookingProblem('Fogão inacessível', 'Libere um espaço ao lado do fogão para o seu personagem chegar.');
+      return;
+    }
 
     if (this.cookingClient) {
       if (!stove.instanceId) return;
@@ -1423,6 +1496,21 @@ export class RoomScreen implements Screen {
     }
     // Isolated room tests can still exercise the renderer without an HTTP server.
     this.showCooking(recipe, stove, undefined, false, approach);
+  }
+
+  private stoveIsFree(stove: RoomItem | undefined): stove is RoomItem {
+    return Boolean(stove && stove.kind === 'stove' && this.model.items.includes(stove) && this.cookingProcess?.stove !== stove &&
+      !(stove.instanceId && this.occupiedStoves.has(stove.instanceId)));
+  }
+
+  /** The first stove without a dish, in the room's order. */
+  private freeStove(): RoomItem | undefined {
+    return this.model.items.find((item) => this.stoveIsFree(item));
+  }
+
+  private showCookingProblem(title: string, detail: string): void {
+    this.audio?.play('buzzer');
+    this.levelUpToast.showMessage(title, detail);
   }
 
   private beginServerPlacement(): void {
@@ -1735,7 +1823,7 @@ export class RoomScreen implements Screen {
       const bonus = this.rules ? Math.max(1, Math.ceil((this.rules.recipes.find((recipe) => recipe.id === job.recipeId)?.servings ?? 1) * this.rules.stove.seasonBonusPercent / 100)) : 1;
       actions.push({ kind: 'season', caption: `Temperar (+${bonus} ${bonus === 1 ? 'porção' : 'porções'})`, onTap: () => this.seasonStove(stove) });
     }
-    if (owner) actions.push({ kind: 'cancel', caption: 'Cancelar', onTap: () => this.cancelStoveCooking(stove) });
+    if (owner) actions.push({ kind: 'cancel', caption: 'Cancelar', onTap: () => this.confirmCancel(stove, job) });
     return actions;
   }
 
@@ -1806,7 +1894,22 @@ export class RoomScreen implements Screen {
     });
   }
 
-  private cancelStoveCooking(stove: RoomItem): void {
+  /** Cancelling throws the dish away: ask first, saying how many coins come back. */
+  private confirmCancel(stove: RoomItem, job: StoveCooking | undefined): void {
+    this.closeStoveActions();
+    const percent = this.rules?.stove.cancelRefundPercent ?? 0;
+    const preparing = job ? stoveStatus(job, this.cookingClient?.serverNowMs() ?? Date.now()) === 'preparing' : false;
+    const refund = cancelRefund(job?.costCoins ?? 0, preparing, percent);
+    const message = refund > 0
+      ? `O prato vai para o lixo e ${refund} ${refund === 1 ? 'moeda volta' : 'moedas voltam'} para você (${preparing ? 'o custo todo, porque ainda está no preparo' : `${percent}% do custo`}).`
+      : 'O prato vai para o lixo e as moedas gastas nele não voltam.';
+    this.confirmDialog.ask({
+      title: 'Cancelar o preparo?', message, confirm: 'Cancelar preparo', cancel: 'Continuar', danger: true,
+      onConfirm: () => this.cancelStoveCooking(stove, refund),
+    });
+  }
+
+  private cancelStoveCooking(stove: RoomItem, refund = 0): void {
     if (this.cancellingCook) return;
     this.closeStoveActions();
     if (!this.cookingClient || !stove.instanceId) {
@@ -1819,6 +1922,11 @@ export class RoomScreen implements Screen {
       if (this.destroyed) return;
       this.acceptCookingSnapshot(snapshot, false);
       if (this.cookingProcess?.stove === stove) this.clearCookingProcess();
+      if (refund > 0) {
+        const view = this.playerView.view;
+        this.floatingRewards.spawn(view.x, view.y, view.zIndex, refund, 0);
+        this.levelUpToast.showMessage('Preparo cancelado', `${refund} ${refund === 1 ? 'moeda devolvida' : 'moedas devolvidas'}`);
+      }
     }).catch((error: unknown) => {
       this.cancellingCook = false;
       console.warn('[cooking] não foi possível cancelar', error);
@@ -1984,6 +2092,7 @@ export class RoomScreen implements Screen {
   /** The book reads recipes from the server rules and the owner's coins and level. */
   private openRecipeBook(): void {
     if (!this.cookModal) return;
+    if (!this.stoveIsFree(this.selectedStove)) this.selectedStove = this.freeStove() ?? this.selectedStove;
     if (!this.rules) {
       this.showNotice('Receitas indisponíveis. Recarregue o jogo.');
       return;
@@ -2115,7 +2224,77 @@ export class RoomScreen implements Screen {
 
   private get isModalOpen(): boolean {
     return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen || this.staffModal?.isOpen ||
-      this.levelUpModal?.isOpen || this.expansionModal?.isOpen || this.streetModal?.isOpen || this.welcomeBack?.isOpen);
+      this.levelUpModal?.isOpen || this.expansionModal?.isOpen || this.streetModal?.isOpen || this.welcomeBack?.isOpen ||
+      this.confirmDialog?.isOpen || this.dailyModal?.isOpen || this.mailModal?.isOpen);
+  }
+
+  /** Bottom bar: open the system, or say it is not here yet (or not for visitors). */
+  private onActionIcon(name: string): void {
+    const soon = SOON_SYSTEMS[name];
+    if (soon) {
+      this.audio?.play('click');
+      this.levelUpToast.showMessage('Em breve!', soon);
+      return;
+    }
+    const owner = this.roomSnapshot?.canEdit !== false;
+    if (!owner && (name === 'house' || name === 'waiter' || name === 'striped-chicken' || name === 'mail')) {
+      this.audio?.play('buzzer');
+      this.levelUpToast.showMessage('Apenas no seu próprio café', 'Volte ao seu café para usar a loja, a equipe, a fazenda e o correio.');
+      return;
+    }
+    if (name === 'shirt') this.openWardrobeScreen();
+    else if (name === 'house') this.openStoreBar();
+    else if (name === 'waiter') this.openStaffScreen();
+    else if (name === 'striped-chicken') this.onStreetTap('farm');
+    else if (name === 'mail') this.openMail();
+  }
+
+  private openMail(): void {
+    if (!this.mailModal || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.audio?.play('click');
+    this.closeStoveActions();
+    void loadMail().then((mail) => {
+      if (this.destroyed || this.isModalOpen || this.storeBar?.isOpen) return;
+      this.setMailBadge(mail.unread);
+      this.mailModal?.show(mail);
+    }).catch((error: unknown) => this.showNotice(error instanceof Error ? error.message : 'Correio indisponível.'));
+  }
+
+  private setMailBadge(unread: number): void {
+    if (!this.mailBadge) return;
+    this.mailBadge.view.visible = unread > 0;
+    this.mailBadge.label.text = unread > 9 ? '9+' : String(unread);
+  }
+
+  /** Asks for today's bonus; an unclaimed one waits for the entry windows to finish. */
+  private checkDaily(): void {
+    if (!this.dailyModal) return;
+    this.dailyNextAt = 0;
+    void loadDaily().then((daily) => {
+      if (this.destroyed) return;
+      this.dailyNextAt = daily.nextAt;
+      if (daily.claimable) this.pendingDaily = daily;
+    }).catch((error: unknown) => console.warn('[bônus diário] indisponível', error));
+  }
+
+  /** Once a day, after "Bem-vindo de volta!" and any level-up. */
+  private showPendingDaily(): void {
+    if (this.dailyNextAt > 0 && Date.now() >= this.dailyNextAt) this.checkDaily();
+    const daily = this.pendingDaily;
+    if (!daily || !this.dailyModal || this.pendingAway || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.pendingDaily = undefined;
+    this.closeStoveActions();
+    this.dailyModal.show(daily);
+  }
+
+  /** A reward the server already credited, collected in a window that shows it:
+   * the coins float over the player and the HUD takes the new values. */
+  private collectReward(reward: { coins: number }, state: PlayerState): void {
+    if (reward.coins > 0) {
+      const view = this.playerView.view;
+      this.floatingRewards.spawn(view.x, view.y, view.zIndex, reward.coins, 0);
+    }
+    this.setPlayerState(state);
   }
 
   private queueAway(summary: AwaySummary): void {
@@ -3043,7 +3222,11 @@ export class RoomScreen implements Screen {
     this.outsideNpcManager?.update(deltaMs);
     this.updateStreet();
     this.showPendingAway();
+    this.showPendingDaily();
     this.welcomeBack?.update(deltaMs);
+    this.confirmDialog.update(deltaMs);
+    this.dailyModal?.update(deltaMs);
+    this.mailModal?.update(deltaMs);
     this.streetScenery?.update(deltaMs);
     this.partyLights.update(deltaMs);
     this.partyBadge.update(deltaMs);
@@ -3125,6 +3308,9 @@ export class RoomScreen implements Screen {
     this.expansionModal?.setStageScale(scale);
     this.streetModal?.setStageScale(scale);
     this.welcomeBack?.setStageScale(scale);
+    this.confirmDialog.setStageScale(scale);
+    this.dailyModal?.setStageScale(scale);
+    this.mailModal?.setStageScale(scale);
     this.audioControl?.setStageScale(scale);
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
@@ -3185,6 +3371,9 @@ export class RoomScreen implements Screen {
     this.expansionModal?.destroy();
     this.streetModal?.destroy();
     this.welcomeBack?.destroy();
+    this.confirmDialog.destroy();
+    this.dailyModal?.destroy();
+    this.mailModal?.destroy();
     this.partyLights.destroy();
     this.partyBadge.destroy();
     this.audio?.setOverride?.(null);

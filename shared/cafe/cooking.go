@@ -42,6 +42,9 @@ type CookingView struct {
 	Seasoned bool `json:"seasoned,omitempty"`
 	// Cooked with fresh farm ingredients: every serving pays the bonus.
 	Fresh bool `json:"fresh,omitempty"`
+	// What the batch cost (0 for the emergency help and for batches started
+	// before the cost was stored); cancelling returns part of it (CancelRefund).
+	CostCoins int64 `json:"costCoins"`
 }
 
 type StoveView struct {
@@ -169,6 +172,7 @@ func SnapshotCooking(s Store, userID string, now time.Time) (CookingSnapshot, er
 				ReadyAt:     FormatTime(job.GetTime("ready_at")),
 				SpoilsAt:    FormatTime(spoils), Status: status,
 				Servings: jobServings(job), Seasoned: job.GetString("seasoned_by") != "", Fresh: job.GetBool("fresh"),
+				CostCoins: job.GetInt64("cost_coins"),
 			}
 		}
 		result.Stoves = append(result.Stoves, view)
@@ -262,7 +266,7 @@ func StartCooking(s Store, userID, stoveID, recipeID string, now time.Time) erro
 		setAll(job, map[string]any{
 			"user": userID, "stove": stoveID, "recipe_id": recipe.ID,
 			"preparing_at": now, "started_at": started, "ready_at": ready,
-			"spoils_at": ready.Add(recipe.SpoilDuration()),
+			"spoils_at": ready.Add(recipe.SpoilDuration()), "cost_coins": cost,
 		})
 		// Fresh farm ingredients go into the next batch, whatever the recipe.
 		if room, err := tx.First("player_rooms", Where{"user": userID}); err == nil && room.GetInt("fresh_charges") > 0 {
@@ -366,6 +370,17 @@ func CancelCooking(s Store, userID, stoveID string, now time.Time) error {
 		}
 		if !now.Before(job.GetTime("ready_at")) {
 			return ErrCookingCannotCancel
+		}
+		// The coins come back in full during preparation and in part while it cooks.
+		if refund := gamerules.CancelRefund(job.GetInt64("cost_coins"), now.Before(job.GetTime("started_at"))); refund > 0 {
+			state, err := tx.First(PlayerCollection, Where{"user": userID})
+			if err != nil {
+				return err
+			}
+			state.Set("gold", state.GetInt64("gold")+refund)
+			if err := tx.Save(state); err != nil {
+				return err
+			}
 		}
 		// A canceled fresh batch gives the ingredients back, up to the farm's limit.
 		if job.GetBool("fresh") {

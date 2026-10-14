@@ -19,7 +19,8 @@ export interface ExpansionRules { startTiles: number; rewardCoins: number; steps
 
 export interface GameRules {
   recipes: RecipeRule[];
-  stove: { prepareSeconds: number; cleaningCoins: number; cleaningXp: number; seasonBonusPercent: number; seasonXp: number };
+  /** cancelRefundPercent: share of the cost returned when a batch is cancelled while it cooks (all of it while preparing). */
+  stove: { prepareSeconds: number; cleaningCoins: number; cleaningXp: number; seasonBonusPercent: number; seasonXp: number; cancelRefundPercent?: number };
   customers: { patienceSeconds: number; cookingArrivalFactor: number };
   levels?: { level: number; requiredXp: number; rewardCoins: number }[];
   /** How many employees a café keeps from each level (game-config amountLocks). */
