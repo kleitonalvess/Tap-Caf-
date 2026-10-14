@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { awayLines, formatAway, type AwaySummary } from '../../game/src/game/away';
+import { awayAddition, awayLines, formatAway, type AwaySummary } from '../../game/src/game/away';
 
 const base: AwaySummary = {
-  from: 0, to: 2 * 3600_000 + 15 * 60_000, simulatedMs: 2 * 3600_000 + 15 * 60_000, served: 0, coins: 0, tips: 0, freshCoins: 0, xp: 0,
+  from: 0, to: 2 * 3600_000 + 15 * 60_000, simulatedMs: 2 * 3600_000 + 15 * 60_000, cappedMs: 0, served: 0, coins: 0, tips: 0, freshCoins: 0, xp: 0,
   levelFrom: 3, levelTo: 3, popularityFrom: 800, popularityTo: 800, plates: 0, cleared: 0, waiters: 0, cleaners: 0,
   servingsLeft: 0, readyDishes: 0, spoiledDishes: 0,
 };
@@ -38,5 +38,12 @@ describe('welcome back summary', () => {
       '1 prato pronto espera no fogão: sirva antes que estrague!',
       '2 pratos estragaram no fogão.',
     ]);
+  });
+
+  it('shows only what a merged absence added to the one already collected', () => {
+    const first = { ...base, to: 3600_000, simulatedMs: 3600_000, served: 3, coins: 15, tips: 3, xp: 3, levelTo: 3, popularityTo: 803 };
+    const merged = { ...first, to: 3 * 3600_000, simulatedMs: 2 * 3600_000, served: 5, coins: 25, tips: 5, xp: 5, popularityTo: 805 };
+    const added = awayAddition(merged, first);
+    expect(added).toMatchObject({ from: 3600_000, to: 3 * 3600_000, simulatedMs: 3600_000, cappedMs: 0, served: 2, coins: 10, tips: 2, xp: 2, popularityFrom: 803, popularityTo: 805 });
   });
 });

@@ -203,3 +203,32 @@ func TestNearestEmployeeClearsTheDirtyTable(t *testing.T) {
 		t.Fatalf("near job=%+v far job=%+v claimed=%v", near.job, far.job, r.claimed)
 	}
 }
+
+func TestStuckEmployeeDoesNotHoldTheDelivery(t *testing.T) {
+	r, now := staffRoom(&economyStore{}, "waiter", "waiter")
+	far := place(r, "staff:a", 1, 6)
+	stuck := place(r, "staff:b", 7, 4) // beside the counter, but waiting on a blocked step
+	stuck.path, stuck.waits, stuck.due = []Tile{{X: 7, Y: 5}}, 1, now.Add(time.Hour)
+	customer := seatedCustomer(r, now)
+	customer.Kind = "npc"
+	r.tick(now.Add(1100 * time.Millisecond))
+	if far.job == nil || far.job.kind != "deliver" || customer.servedBy != far.ID {
+		t.Fatalf("far job=%+v stuck job=%+v servedBy=%q", far.job, stuck.job, customer.servedBy)
+	}
+}
+
+func TestEmployeeGivesUpAnOccupiedTile(t *testing.T) {
+	r, now := staffRoom(&economyStore{}, "waiter")
+	a := place(r, "staff:a", 5, 5)
+	a.path = []Tile{{X: 5, Y: 6}}
+	blocker(r, "npc:x", 5, 6)
+	for try := 1; try <= blockedRetries; try++ {
+		if r.nextStep(a, now) || len(a.path) == 0 {
+			t.Fatalf("try %d: path=%v", try, a.path)
+		}
+		now = a.due
+	}
+	if r.nextStep(a, now) || len(a.path) != 0 {
+		t.Fatalf("still waiting on the occupied tile: %v", a.path)
+	}
+}

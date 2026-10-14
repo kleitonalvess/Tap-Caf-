@@ -381,13 +381,13 @@ func cancelCooking(app core.App, userID, stoveID string, now types.DateTime) err
 		if !now.Before(job.GetDateTime("ready_at")) {
 			return errCookingCannotCancel
 		}
-		// A canceled fresh batch gives the ingredients back.
+		// A canceled fresh batch gives the ingredients back, up to the farm's limit.
 		if job.GetBool("fresh") {
 			room, err := txApp.FindFirstRecordByData("player_rooms", "user", userID)
 			if err != nil {
 				return err
 			}
-			room.Set("fresh_charges", room.GetInt("fresh_charges")+1)
+			room.Set("fresh_charges", min(room.GetInt("fresh_charges")+1, gamerules.Street().Farm.MaxCharges))
 			if err := txApp.Save(room); err != nil {
 				return err
 			}

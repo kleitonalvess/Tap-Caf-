@@ -840,9 +840,14 @@ func (r *room) nextStep(a *entity, now time.Time) bool {
 	if !external && !r.canWalk(dest, a) {
 		alternative := findPath(from, a.path[len(a.path)-1], func(t Tile) bool { return r.canWalk(t, a) }, r.grid.width*r.grid.height*4)
 		if len(alternative) == 0 {
-			a.waits++
-			a.due = now.Add(time.Second)
-			return false
+			// Customers wait for the tile to clear. Players and staff give up
+			// after blockedRetries: an employee waiting forever would still
+			// look free to nearestIdle and keep the others from working.
+			if a.Kind == "npc" {
+				a.due = now.Add(time.Second)
+				return false
+			}
+			return r.waitBlocked(a, now)
 		}
 		a.path = alternative
 		dest = alternative[0]
@@ -871,6 +876,16 @@ func (r *room) nextStep(a *entity, now time.Time) bool {
 // corner before dropping its path; its state machine then picks a new goal,
 // so two actors never wait on each other forever.
 const blockedRetries = 3
+
+// standStill drops a player's walk that is only waiting on a blocked step:
+// an action asked from where they stand replaces it, so the adjacency checks
+// see a standing player and the old walk does not resume afterwards.
+func standStill(a *entity) {
+	if a != nil && a.Move == nil && a.waits > 0 {
+		a.path = nil
+		a.waits = 0
+	}
+}
 
 func (r *room) waitBlocked(a *entity, now time.Time) bool {
 	if a.waits >= blockedRetries {
@@ -946,6 +961,7 @@ func (r *room) command(p *Peer, c gamewire.Command) {
 			fail("Somente o dono pode servir.")
 			return
 		}
+		standStill(a)
 		if message := r.startServingAction(a, c.StoveID, now); message != "" {
 			fail(message)
 			return
@@ -1038,6 +1054,7 @@ func (r *room) validateOperation(op gamewire.Operation) string {
 	if json.Unmarshal(op.Body, &body) != nil {
 		return "Pedido inválido."
 	}
+	standStill(r.actors["human:"+op.User])
 	if op.Action == "move" || op.Action == "store" || op.Action == "purchase" {
 		var item roomcatalog.Item
 		if op.Action == "purchase" {
@@ -1239,7 +1256,7 @@ func (r *room) tick(now time.Time) {
 		} else if len(a.path) > 0 && !now.Before(a.due) {
 			changed = r.nextStep(a, now)
 			// A player gives up after waiting blockedRetries seconds, not on the first try.
-			if !changed && a.Kind == "human" && (len(a.path) == 0 || a.waits > blockedRetries) {
+			if !changed && a.Kind == "human" && len(a.path) == 0 {
 				a.path = nil
 				a.waits = 0
 				changed = true

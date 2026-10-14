@@ -52,7 +52,7 @@ import { PartyBadge, PartyLights } from './PartyLights';
 import { StreetClient, farmCaption, farmStatus, formatClock, partyCaption, partyStatus, type StreetState } from '../../game/street';
 import { FESTA_DO_BAIRRO } from '../../audio/music';
 import { WelcomeBackModal } from './WelcomeBackModal';
-import { acknowledgeAway, type AwaySummary } from '../../game/away';
+import { acknowledgeAway, awayAddition, type AwaySummary } from '../../game/away';
 import type { MusicTrack } from '../../audio/AudioEngine';
 import { RecipeArtLibrary } from '../../game/recipe-art';
 import type { GameRules } from '../../game/game-rules';
@@ -296,7 +296,7 @@ export class RoomScreen implements Screen {
   private welcomeBack?: WelcomeBackModal;
   /** Absence summary waiting for the other windows to close; `to` of the last one shown. */
   private pendingAway?: AwaySummary;
-  private shownAwayTo = 0;
+  private shownAway?: AwaySummary;
   /** Last level celebrated; a level-up shows what opened since then. */
   private knownLevel = 1;
   /** Dishes on the waiters' trays, by actor id. */
@@ -2119,7 +2119,21 @@ export class RoomScreen implements Screen {
   }
 
   private queueAway(summary: AwaySummary): void {
-    if (!this.welcomeBack || summary.to <= this.shownAwayTo) return;
+    const shown = this.shownAway;
+    if (!this.welcomeBack || (shown && summary.to <= shown.to)) return;
+    // A summary that starts with the one already shown is that one merged with
+    // a newer absence: while it is open, it is replaced; after Coletar, only
+    // the newer part is shown.
+    if (shown && summary.from === shown.from) {
+      if (this.welcomeBack.isOpen) {
+        this.shownAway = summary;
+        this.welcomeBack.show(summary);
+        return;
+      }
+      this.shownAway = summary;
+      this.pendingAway = awayAddition(summary, shown);
+      return;
+    }
     this.pendingAway = summary;
   }
 
@@ -2128,7 +2142,8 @@ export class RoomScreen implements Screen {
     const summary = this.pendingAway;
     if (!summary || !this.welcomeBack || this.isModalOpen || this.storeBar?.isOpen) return;
     this.pendingAway = undefined;
-    this.shownAwayTo = summary.to;
+    // An addition keeps the merged summary it came from as the one shown.
+    if (!this.shownAway || summary.to > this.shownAway.to) this.shownAway = summary;
     this.closeStoveActions();
     this.welcomeBack.show(summary);
   }
@@ -2143,8 +2158,11 @@ export class RoomScreen implements Screen {
     }
   }
 
+  /** The server clock once one of the connections has synced it; the local clock until then. */
   private serverNow(): number {
-    return this.realtime?.serverNowMs() ?? this.cookingClient?.serverNowMs() ?? Date.now();
+    if (this.realtime?.hasClock) return this.realtime.serverNowMs();
+    if (this.cookingClient?.hasClock) return this.cookingClient.serverNowMs();
+    return Date.now();
   }
 
   private acceptStreet(street: StreetState): void {

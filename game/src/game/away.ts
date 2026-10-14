@@ -3,6 +3,8 @@ export interface AwaySummary {
   from: number;
   to: number;
   simulatedMs: number;
+  /** The part of the absence left out by the server's limit (0 when none). */
+  cappedMs: number;
   served: number;
   /** coins includes tips and freshCoins. */
   coins: number;
@@ -31,6 +33,27 @@ export function formatAway(ms: number): string {
   const rest = minutes % 60;
   if (hours < 48) return rest ? `${hours} h ${rest} min` : `${hours} h`;
   return `${Math.floor(hours / 24)} dias`;
+}
+
+/**
+ * What a merged summary (same start as one already shown) adds to it, so
+ * the earnings of the first absence are not shown or floated twice.
+ */
+export function awayAddition(merged: AwaySummary, shown: AwaySummary): AwaySummary {
+  return {
+    ...merged,
+    from: shown.to,
+    simulatedMs: Math.max(0, merged.simulatedMs - shown.simulatedMs),
+    cappedMs: Math.max(0, (merged.cappedMs ?? 0) - (shown.cappedMs ?? 0)),
+    served: Math.max(0, merged.served - shown.served),
+    coins: Math.max(0, merged.coins - shown.coins),
+    tips: Math.max(0, merged.tips - shown.tips),
+    freshCoins: Math.max(0, merged.freshCoins - shown.freshCoins),
+    xp: Math.max(0, merged.xp - shown.xp),
+    cleared: Math.max(0, merged.cleared - shown.cleared),
+    levelFrom: shown.levelTo,
+    popularityFrom: shown.popularityTo,
+  };
 }
 
 const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;

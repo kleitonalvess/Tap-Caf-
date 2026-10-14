@@ -45,10 +45,13 @@ type Street struct {
 // and, on waking, persistence replayed the absence (OfflineRules). It is kept
 // until the owner acknowledges it, accumulating several absences.
 type AwaySummary struct {
-	// Unix milliseconds: the absence and the part of it that was replayed (capped).
+	// Unix milliseconds: the absence, the part of it that was replayed, and
+	// the part left out by the OfflineRules cap (summed over merged absences,
+	// whose gaps were played live and are neither).
 	From      int64 `json:"from"`
 	To        int64 `json:"to"`
 	Simulated int64 `json:"simulatedMs"`
+	Capped    int64 `json:"cappedMs"`
 	Served    int   `json:"served"`
 	// Coins include Tips and FreshCoins.
 	Coins      int64 `json:"coins"`

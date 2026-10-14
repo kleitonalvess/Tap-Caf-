@@ -94,9 +94,11 @@ export class WelcomeBackModal {
     for (const child of this.content.removeChildren()) child.destroy({ children: true });
     this.texts.length = 0;
     this.content.addChild(this.text('Bem-vindo de volta!', 52, 78, 0xd2541b));
-    const capped = summary.simulatedMs < summary.to - summary.from - 1000;
+    // Only the server knows whether its limit cut the absence short (merged
+    // absences have live gaps that were not replayed and were not cut either).
+    const capped = (summary.cappedMs ?? 0) > 0;
     this.content.addChild(this.text(
-      `Enquanto você esteve fora (${formatAway(summary.to - summary.from)})${capped ? `, contamos as primeiras ${formatAway(summary.simulatedMs)}` : ''}:`,
+      `Enquanto você esteve fora (${formatAway(summary.to - summary.from)})${capped ? `, contamos ${formatAway(summary.simulatedMs)} de expediente, o limite por ausência` : ''}:`,
       160, 28, DARK_BROWN, '600'));
     let y = 224;
     for (const line of awayLines(summary).slice(0, 8)) {

@@ -156,3 +156,24 @@ func TestStreetOperationsReturnTheWorld(t *testing.T) {
 		t.Fatalf("room snapshot street = %+v (%v)", snapshot.Street, err)
 	}
 }
+
+func TestCancelledFreshBatchKeepsTheFarmLimit(t *testing.T) {
+	app, owner, stove := newKitchen(t)
+	t0 := types.NowDateTime()
+	if _, err := harvestFarm(app, owner, t0.Add(-gamerules.FarmCooldown())); err != nil {
+		t.Fatal(err)
+	}
+	if err := startCooking(app, owner, stove, "pao_de_queijo", t0); err != nil {
+		t.Fatal(err)
+	}
+	// The farm grew back while the fresh batch cooked.
+	if _, err := harvestFarm(app, owner, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := cancelCooking(app, owner, stove, t0.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if got, limit := roomRecord(t, app, owner).GetInt("fresh_charges"), gamerules.Street().Farm.MaxCharges; got != limit {
+		t.Fatalf("charges after cancelling = %d, limit %d", got, limit)
+	}
+}

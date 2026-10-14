@@ -154,7 +154,12 @@ func snapshotRoom(app core.App, userID string) (roomSnapshot, error) {
 	result.TilesX = room.GetInt("tiles_x")
 	result.TilesY = room.GetInt("tiles_y")
 	result.Street = streetState(room)
-	result.AwaySummary = awaySummary(room)
+	// While the room sleeps, the owner's welcome brings the summary merged
+	// with the absence that is about to be replayed; sending the stored one
+	// here as well would show the same earnings twice.
+	if room.GetDateTime("slept_at").IsZero() {
+		result.AwaySummary = awaySummary(room)
+	}
 	units, err := app.FindRecordsByFilter("player_inventory", "user={:user}", "id", 10000, 0, dbx.Params{"user": userID})
 	if err != nil {
 		return result, err

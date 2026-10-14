@@ -162,7 +162,9 @@ func (r *room) nearestIdle(a *entity, u Unit, eligible func(*entity) bool) bool 
 		return false
 	}
 	for _, o := range r.actors {
-		if o == a || o.Kind != "staff" || o.job != nil || !eligible(o) {
+		// Only someone free right now competes: an employee walking or waiting
+		// on a blocked step would leave the job unclaimed.
+		if o == a || o.Kind != "staff" || o.job != nil || o.Move != nil || len(o.path) > 0 || !eligible(o) {
 			continue
 		}
 		if d, ok := r.reach(o, u); ok && (d < mine || d == mine && o.ID < a.ID) {

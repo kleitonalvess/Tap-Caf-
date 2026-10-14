@@ -109,3 +109,16 @@ func TestOnlyDirtyTablesLetOneCustomerInAtATime(t *testing.T) {
 		t.Fatal("clean tables should admit the second customer")
 	}
 }
+
+func TestBlockedPlayerCleansFromWhereTheyStand(t *testing.T) {
+	r, _ := economyRoom(&economyStore{})
+	now := time.Now()
+	owner := &entity{Actor: gamewire.Actor{ID: "human:owner", Kind: "human", X: 3, Y: 4, State: "idle"}}
+	owner.path, owner.waits = []Tile{{X: 4, Y: 4}}, 1 // waiting on a blocked step beside the table
+	r.actors[owner.ID] = owner
+	r.world.Dirt = []gamewire.Dirt{{TableID: "table", Plates: 1, Since: now.UnixMilli()}}
+	op := gamewire.Operation{Owner: "owner", User: "owner", Action: "table_clean", Body: json.RawMessage(`{"tableId":"table"}`)}
+	if message := r.validateOperation(op); message != "" || len(owner.path) != 0 {
+		t.Fatalf("blocked player beside the table: %q, path=%v", message, owner.path)
+	}
+}

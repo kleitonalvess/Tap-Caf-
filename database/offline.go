@@ -52,6 +52,15 @@ func diningSeats(units []*core.Record) []diningSeat {
 	return seats
 }
 
+func hasDoor(units []*core.Record) bool {
+	for _, u := range units {
+		if item, ok := roomcatalog.ByID(u.GetInt("item_id")); ok && item.Kind == "door" {
+			return true
+		}
+	}
+	return false
+}
+
 // catchUp replays an absence deterministically, as of the instants when each
 // meal would have happened. Without staff every clean seat serves one meal and
 // its table stays dirty; with a waiter or a cleaner the tables are cleared and
@@ -66,7 +75,7 @@ func catchUp(tx core.App, owner string, from, to time.Time) (gamewire.AwaySummar
 	if limit := from.Add(time.Duration(rules.MaxAwaySeconds) * time.Second); until.After(limit) {
 		until = limit
 	}
-	summary := gamewire.AwaySummary{From: from.UnixMilli(), To: to.UnixMilli(), Simulated: until.Sub(from).Milliseconds()}
+	summary := gamewire.AwaySummary{From: from.UnixMilli(), To: to.UnixMilli(), Simulated: until.Sub(from).Milliseconds(), Capped: to.Sub(until).Milliseconds()}
 	state, err := tx.FindFirstRecordByData(playerstate.Collection, "user", owner)
 	if err != nil {
 		return summary, err
@@ -88,6 +97,10 @@ func catchUp(tx core.App, owner string, from, to time.Time) (gamewire.AwaySummar
 		return summary, err
 	}
 	seats := diningSeats(units)
+	if !hasDoor(units) {
+		// No door, no customers: the live room never spawns them either.
+		seats = nil
+	}
 	dirt, err := roomDirt(tx, owner)
 	if err != nil {
 		return summary, err
@@ -200,6 +213,7 @@ func mergeAway(seen *gamewire.AwaySummary, next gamewire.AwaySummary) gamewire.A
 	merged := next
 	merged.From, merged.LevelFrom, merged.PopularityFrom = seen.From, seen.LevelFrom, seen.PopularityFrom
 	merged.Simulated += seen.Simulated
+	merged.Capped += seen.Capped
 	merged.Served += seen.Served
 	merged.Coins += seen.Coins
 	merged.Tips += seen.Tips
@@ -260,12 +274,16 @@ func wakeRoom(app core.App, owner string, now time.Time) (*gamewire.AwaySummary,
 	return result, err
 }
 
-// acknowledgeAway clears the summary once the owner has seen it.
+// acknowledgeAway clears the summary once the owner has seen it. The read
+// runs inside the write transaction: a stale read saved back over a wake that
+// committed meanwhile would restore slept_at and replay the absence again.
 func acknowledgeAway(app core.App, owner string) error {
-	room, err := app.FindFirstRecordByData("player_rooms", "user", owner)
-	if err != nil {
-		return err
-	}
-	room.Set("away_summary", nil)
-	return app.Save(room)
+	return app.RunInTransaction(func(tx core.App) error {
+		room, err := tx.FindFirstRecordByData("player_rooms", "user", owner)
+		if err != nil {
+			return err
+		}
+		room.Set("away_summary", nil)
+		return tx.Save(room)
+	})
 }

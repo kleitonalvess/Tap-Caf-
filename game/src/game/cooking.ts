@@ -62,6 +62,9 @@ export class CookingClient {
     return this.serverAnchorMs + (performance.now() - this.localAnchorMs);
   }
 
+  /** False until a kitchen snapshot has synced the clock. */
+  get hasClock(): boolean { return this.serverAnchorMs > 0; }
+
   private async request(path: string, options: RequestInit = {}): Promise<Response> {
     let response: Response;
     try {

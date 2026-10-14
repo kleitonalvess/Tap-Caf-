@@ -6,6 +6,7 @@ import (
 
 	"coffe-mania/shared/gamerules"
 	"coffe-mania/shared/gamewire"
+	"coffe-mania/shared/roomcatalog"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -110,8 +111,8 @@ func TestAbsenceIsReplayedOnceAndCapped(t *testing.T) {
 		t.Fatalf("wake: %v", err)
 	}
 	rules := gamerules.Offline()
-	if first.Simulated != int64(rules.MaxAwaySeconds)*1000 {
-		t.Fatalf("replayed %d ms of a 72 h absence", first.Simulated)
+	if first.Simulated != int64(rules.MaxAwaySeconds)*1000 || first.Simulated+first.Capped != first.To-first.From {
+		t.Fatalf("replayed %d ms and capped %d ms of a 72 h absence", first.Simulated, first.Capped)
 	}
 	// Three seats turning over every SeatCycleSeconds for 8 h would be 2880 meals:
 	// the 100 servings run out, and nothing is credited twice.
@@ -137,7 +138,8 @@ func TestAwaySummaryAccumulatesUntilSeen(t *testing.T) {
 	}
 	addFood(t, app, owner, 3)
 	second, err := wakeRoom(app, owner, sleptAgo(t, app, owner, time.Hour))
-	if err != nil || second == nil || second.Served != 5 || second.From != first.From {
+	// The time awake between the absences was played live: it is not a cap.
+	if err != nil || second == nil || second.Served != 5 || second.From != first.From || second.Capped != 0 {
 		t.Fatalf("second absence: %+v (%v)", second, err)
 	}
 	snapshot, err := snapshotRoom(app, owner)
@@ -171,5 +173,42 @@ func TestLongAbsenceSendsCustomersHome(t *testing.T) {
 	}
 	if left, _ := app.CountRecords("room_npcs", dbx.HashExp{"user": owner}); left != 0 {
 		t.Fatalf("%d customers still waiting after an hour", left)
+	}
+}
+
+func TestSleepingRoomLeavesTheSummaryToTheWelcome(t *testing.T) {
+	app, owner, _ := newKitchen(t)
+	addFood(t, app, owner, 2)
+	first, err := wakeRoom(app, owner, sleptAgo(t, app, owner, time.Hour))
+	if err != nil || first == nil {
+		t.Fatalf("first absence: %+v (%v)", first, err)
+	}
+	// Not acknowledged, and the café fell asleep again.
+	now := sleptAgo(t, app, owner, time.Hour)
+	if snapshot, err := snapshotRoom(app, owner); err != nil || snapshot.AwaySummary != nil {
+		t.Fatalf("snapshot of a sleeping room = %+v (%v)", snapshot.AwaySummary, err)
+	}
+	merged, err := wakeRoom(app, owner, now)
+	if err != nil || merged == nil || merged.From != first.From {
+		t.Fatalf("welcome summary: %+v (%v)", merged, err)
+	}
+	if snapshot, _ := snapshotRoom(app, owner); snapshot.AwaySummary == nil || snapshot.AwaySummary.To != merged.To {
+		t.Fatalf("snapshot after waking = %+v", snapshot.AwaySummary)
+	}
+}
+
+func TestCafeWithoutADoorStaysClosedOffline(t *testing.T) {
+	app, owner, _ := newKitchen(t)
+	for _, unit := range placedUnits(t, app, owner) {
+		if item, ok := roomcatalog.ByID(unit.GetInt("item_id")); ok && item.Kind == "door" {
+			if err := app.Delete(unit); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	addFood(t, app, owner, 4)
+	summary, err := wakeRoom(app, owner, sleptAgo(t, app, owner, time.Hour))
+	if err != nil || summary == nil || summary.Served != 0 || summary.ServingsLeft != 4 {
+		t.Fatalf("summary = %+v (%v)", summary, err)
 	}
 }

@@ -31,6 +31,18 @@ const PANEL_HEIGHT = 620;
 const DARK_BROWN = 0x603a1e;
 const LIGHT_BROWN = 0xc69a60;
 const COLORS: Readonly<Record<StreetBuildingId, number>> = { farm: 0x3f9a4a, disco: 0x9b3fd1 };
+const BUTTON_WIDTH = 460;
+
+/** What the window shows for a building at an instant. */
+interface StreetView {
+  title: string;
+  description: string;
+  line: string;
+  good: boolean;
+  caption: string;
+  enabled: boolean;
+  action: () => Promise<void>;
+}
 
 /** The Farm and the Disco: what each building does, its timer and the action button (owner only). */
 export class StreetModal {
@@ -42,6 +54,10 @@ export class StreetModal {
   private busy = false;
   private message = '';
   private lastSecond = -1;
+  /** The countdown texts are updated in place; the rest is rebuilt only when this changes. */
+  private layout = '';
+  private lineText?: Text;
+  private captionText?: Text;
   private resolution = 1;
   private disposed = false;
 
@@ -89,11 +105,25 @@ export class StreetModal {
     for (const text of this.texts) text.resolution = this.resolution;
   }
 
-  /** Redraws once per second so the countdown and the button stay current. */
+  /**
+   * Once per second the countdown and the caption change in place; the button
+   * is rebuilt only when it changes state, so a press that spans the tick of
+   * the clock still lands on the same button.
+   */
   update(): void {
     if (!this.view.visible || this.busy) return;
-    const second = Math.floor(this.options.serverNow() / 1000);
-    if (second !== this.lastSecond) this.render();
+    const now = this.options.serverNow();
+    const second = Math.floor(now / 1000);
+    if (second === this.lastSecond) return;
+    const view = this.describe(now);
+    if (this.layoutOf(view) !== this.layout || !this.lineText || !this.captionText) {
+      this.render();
+      return;
+    }
+    this.lastSecond = second;
+    this.lineText.text = view.line;
+    this.captionText.text = view.caption;
+    this.fitCaption(this.captionText);
   }
 
   private text(value: string, x: number, y: number, size: number, color = DARK_BROWN, weight: '400' | '600' | '700' = '700', wrap = 0): Text {
@@ -131,14 +161,19 @@ export class StreetModal {
     return g;
   }
 
+  private fitCaption(label: Text): void {
+    label.scale.set(1);
+    if (label.width > BUTTON_WIDTH - 24) label.scale.set((BUTTON_WIDTH - 24) / label.width);
+  }
+
   private button(caption: string, enabled: boolean, onTap: () => void): Container {
-    const width = 460;
     const button = new Container();
     button.label = `street-action-${this.building}`;
-    button.position.set((PANEL_WIDTH - width) / 2, PANEL_HEIGHT - 150);
-    button.addChild(new Graphics().roundRect(0, 0, width, 72, 20).fill(enabled ? COLORS[this.building] : 0xb9b2a8).stroke({ color: 0x3d2a14, width: 3 }));
-    const label = this.text(caption, width / 2, 16, 32, 0xffffff);
-    if (label.width > width - 24) label.scale.set((width - 24) / label.width);
+    button.position.set((PANEL_WIDTH - BUTTON_WIDTH) / 2, PANEL_HEIGHT - 150);
+    button.addChild(new Graphics().roundRect(0, 0, BUTTON_WIDTH, 72, 20).fill(enabled ? COLORS[this.building] : 0xb9b2a8).stroke({ color: 0x3d2a14, width: 3 }));
+    const label = this.text(caption, BUTTON_WIDTH / 2, 16, 32, 0xffffff);
+    this.fitCaption(label);
+    this.captionText = label;
     button.addChild(label);
     if (enabled) {
       button.eventMode = 'static';
@@ -168,39 +203,54 @@ export class StreetModal {
     }
   }
 
+  private describe(now: number): StreetView {
+    const rules = this.options.rules;
+    const street = this.options.street();
+    if (this.building === 'farm') {
+      const status = farmStatus(street, now, rules.farmMaxCharges);
+      return {
+        title: 'Fazenda de Ingredientes',
+        description: `Colha ingredientes frescos a cada ${Math.round(rules.farmCooldownSeconds / 60)} min. A próxima receita que você cozinhar rende +${rules.farmBonusPercent}% de moedas e XP em cada porção.`,
+        line: status.full
+          ? `Ingredientes frescos guardados: ${status.charges}. Cozinhe para usá-los!`
+          : status.canHarvest ? 'A colheita está pronta!' : `Próxima colheita em ${formatClock(status.readyInMs)}`,
+        good: status.canHarvest,
+        caption: this.busy ? 'Colhendo…' : status.full ? 'Cozinhe para usar' : status.canHarvest ? 'Colher ingredientes' : `Aguarde ${formatClock(status.readyInMs)}`,
+        enabled: status.canHarvest && !this.busy,
+        action: this.options.harvest,
+      };
+    }
+    const status = partyStatus(street, now);
+    return {
+      title: 'Discoteca · Festa do Bairro',
+      description: `Por ${rules.partyMinutes} min os clientes chegam ${String(rules.partyArrivalFactor).replace('.', ',')}× mais rápido, quem se serve sozinho dá gorjeta e a gorjeta do garçom vale ${rules.partyTipMultiplier}×.`,
+      line: status.active ? `A festa termina em ${formatClock(status.endsInMs)}` : status.canStart ? 'Tudo pronto para a festa!' : `Próxima festa em ${formatClock(status.readyInMs)}`,
+      good: status.canStart || status.active,
+      caption: this.busy ? 'Chamando a vizinhança…' : status.active ? 'A festa está rolando!' : status.canStart ? 'Começar a festa' : `Aguarde ${formatClock(status.readyInMs)}`,
+      enabled: status.canStart && !this.busy,
+      action: this.options.startParty,
+    };
+  }
+
+  private layoutOf(view: StreetView): string {
+    return `${this.building}|${this.busy}|${this.message}|${view.good}|${view.enabled}`;
+  }
+
   private render(): void {
     for (const child of this.content.removeChildren()) child.destroy({ children: true });
     this.texts.length = 0;
     const now = this.options.serverNow();
     this.lastSecond = Math.floor(now / 1000);
-    const rules = this.options.rules;
-    const street = this.options.street();
+    const view = this.describe(now);
+    this.layout = this.layoutOf(view);
     const icon = this.icon(this.building);
     icon.position.set(PANEL_WIDTH / 2, 132);
     this.content.addChild(icon);
-    if (this.building === 'farm') {
-      const status = farmStatus(street, now, rules.farmMaxCharges);
-      this.content.addChild(this.text('Fazenda de Ingredientes', PANEL_WIDTH / 2, 208, 48));
-      this.content.addChild(this.text(
-        `Colha ingredientes frescos a cada ${Math.round(rules.farmCooldownSeconds / 60)} min. A próxima receita que você cozinhar rende +${rules.farmBonusPercent}% de moedas e XP em cada porção.`,
-        PANEL_WIDTH / 2, 272, 26, 0x8a5a2b, '600', PANEL_WIDTH - 140));
-      const line = status.full
-        ? `Ingredientes frescos guardados: ${status.charges}. Cozinhe para usá-los!`
-        : status.canHarvest ? 'A colheita está pronta!' : `Próxima colheita em ${formatClock(status.readyInMs)}`;
-      this.content.addChild(this.text(line, PANEL_WIDTH / 2, 372, 30, status.canHarvest ? 0x2e7d32 : 0xd2541b));
-      const caption = this.busy ? 'Colhendo…' : status.full ? 'Cozinhe para usar' : status.canHarvest ? 'Colher ingredientes' : `Aguarde ${formatClock(status.readyInMs)}`;
-      this.content.addChild(this.button(caption, status.canHarvest && !this.busy, () => void this.run(this.options.harvest)));
-    } else {
-      const status = partyStatus(street, now);
-      this.content.addChild(this.text('Discoteca · Festa do Bairro', PANEL_WIDTH / 2, 208, 48));
-      this.content.addChild(this.text(
-        `Por ${rules.partyMinutes} min os clientes chegam ${String(rules.partyArrivalFactor).replace('.', ',')}× mais rápido, quem se serve sozinho dá gorjeta e a gorjeta do garçom vale ${rules.partyTipMultiplier}×.`,
-        PANEL_WIDTH / 2, 272, 26, 0x8a5a2b, '600', PANEL_WIDTH - 140));
-      const line = status.active ? `A festa termina em ${formatClock(status.endsInMs)}` : status.canStart ? 'Tudo pronto para a festa!' : `Próxima festa em ${formatClock(status.readyInMs)}`;
-      this.content.addChild(this.text(line, PANEL_WIDTH / 2, 372, 30, status.canStart || status.active ? 0x2e7d32 : 0xd2541b));
-      const caption = this.busy ? 'Chamando a vizinhança…' : status.active ? 'A festa está rolando!' : status.canStart ? 'Começar a festa' : `Aguarde ${formatClock(status.readyInMs)}`;
-      this.content.addChild(this.button(caption, status.canStart && !this.busy, () => void this.run(this.options.startParty)));
-    }
+    this.content.addChild(this.text(view.title, PANEL_WIDTH / 2, 208, 48));
+    this.content.addChild(this.text(view.description, PANEL_WIDTH / 2, 272, 26, 0x8a5a2b, '600', PANEL_WIDTH - 140));
+    this.lineText = this.text(view.line, PANEL_WIDTH / 2, 372, 30, view.good ? 0x2e7d32 : 0xd2541b);
+    this.content.addChild(this.lineText);
+    this.content.addChild(this.button(view.caption, view.enabled, () => void this.run(view.action)));
     if (this.message) this.content.addChild(this.text(this.message, PANEL_WIDTH / 2, PANEL_HEIGHT - 66, 22, 0xc0392b, '600', PANEL_WIDTH - 120));
   }
 

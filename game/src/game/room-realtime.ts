@@ -70,6 +70,8 @@ export class RoomRealtime {
   onEvent(listener: (event: RoomEvent) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   onStatus(listener: (connected: boolean) => void): () => void { this.statuses.add(listener); return () => this.statuses.delete(listener); }
   serverNowMs(): number { return this.serverAnchor + performance.now() - this.localAnchor; }
+  /** False until the first event has synced the clock. */
+  get hasClock(): boolean { return this.serverAnchor > 0; }
   async connect(): Promise<void> {
     if (this.stopped) return;
     const generation = ++this.generation;
