@@ -5,10 +5,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/pocketbase/pocketbase/core"
 )
 
 const Collection = "npc_appearance_catalog"
@@ -37,8 +36,32 @@ func Entries() ([]Entry, error) {
 	return entries, err
 }
 
-// Read enabled options from the DB, never silently reopen a restricted slot.
-func Load(app core.App) (Snapshot, error) {
+// Row is one enabled option of the allowlist: an item, or a skin or hair colour.
+type Row struct {
+	Kind   string
+	ItemID int
+	Colour string
+}
+
+// Defaults enables every catalogue entry, as the first migration does; the
+// standalone build has no admin to restrict them.
+func Defaults() ([]Row, error) {
+	entries, err := Entries()
+	if err != nil {
+		return nil, err
+	}
+	// Same order as the server's query (by item_id).
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].ItemID < entries[j].ItemID })
+	rows := make([]Row, 0, len(entries))
+	for _, entry := range entries {
+		rows = append(rows, Row{Kind: entry.Kind, ItemID: entry.ItemID, Colour: entry.Colour})
+	}
+	return rows, nil
+}
+
+// FromRows builds the policy from the enabled options, ordered by item id;
+// it never silently reopens a restricted slot.
+func FromRows(rows []Row) (Snapshot, error) {
 	data := Snapshot{Version: 1, ItemIDs: []int{}, SkinColours: []int{}, HairColours: []int{}}
 	entries, err := Entries()
 	if err != nil {
@@ -52,25 +75,21 @@ func Load(app core.App) (Snapshot, error) {
 			slots[entry.Slot] = false
 		}
 	}
-	rows, err := app.FindRecordsByFilter(Collection, "enabled = true", "item_id", 0, 0)
-	if err != nil {
-		return data, err
-	}
 	for _, row := range rows {
-		switch row.GetString("kind") {
+		switch row.Kind {
 		case "item":
-			entry, exists := known[row.GetInt("item_id")]
+			entry, exists := known[row.ItemID]
 			if !exists {
-				return data, fmt.Errorf("unknown NPC wardrobe item %d", row.GetInt("item_id"))
+				return data, fmt.Errorf("unknown NPC wardrobe item %d", row.ItemID)
 			}
 			data.ItemIDs = append(data.ItemIDs, entry.ItemID)
 			slots[entry.Slot] = true
 		case "skin_colour", "hair_colour":
-			colour, err := strconv.ParseUint(strings.TrimPrefix(row.GetString("colour"), "#"), 16, 24)
+			colour, err := strconv.ParseUint(strings.TrimPrefix(row.Colour, "#"), 16, 24)
 			if err != nil {
 				return data, fmt.Errorf("invalid NPC colour: %w", err)
 			}
-			if row.GetString("kind") == "skin_colour" {
+			if row.Kind == "skin_colour" {
 				data.SkinColours = append(data.SkinColours, int(colour))
 			} else {
 				data.HairColours = append(data.HairColours, int(colour))

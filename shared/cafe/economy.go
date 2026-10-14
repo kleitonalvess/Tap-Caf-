@@ -1,40 +1,33 @@
-package main
+package cafe
 
 import (
-	"database/sql"
 	"errors"
 	"time"
 
-	"coffe-mania/database/playerstate"
 	"coffe-mania/shared/gamerules"
 	"coffe-mania/shared/gamewire"
-	"github.com/pocketbase/pocketbase/core"
 )
 
-var errFoodGone = errors.New("Prato indisponível.")
+var ErrFoodGone = errors.New("Prato indisponível.")
 
-// serveCustomer takes one serving and credits the owner in one transaction, so a
+// ServeCustomer takes one serving and credits the owner in one transaction, so a
 // customer can never eat without paying or pay for a serving that was not taken.
-func serveCustomer(app core.App, owner, foodID, tableID string) (gamewire.Payment, error) {
-	return serveCustomerBy(app, owner, foodID, tableID, false)
+// A waiter's delivery adds the customer's tip to the coins (Payment.Coins is
+// the total, Payment.Tip its share).
+func ServeCustomer(s Store, owner, foodID, tableID string, waiter bool, now time.Time) (gamewire.Payment, error) {
+	return ServeServing(s, owner, foodID, tableID, waiter, now)
 }
 
-// serveCustomerBy credits one serving; a waiter's delivery adds the customer's
-// tip to the coins (Payment.Coins is the total, Payment.Tip its share).
-func serveCustomerBy(app core.App, owner, foodID, tableID string, waiter bool) (gamewire.Payment, error) {
-	return serveServing(app, owner, foodID, tableID, waiter, time.Now())
-}
-
-// serveServing credits one serving as of the given instant (the offline
+// ServeServing credits one serving as of the given instant (the offline
 // catch-up replays past meals). Tips: a waiter's delivery always tips; during a
 // party the tip is multiplied and self-served customers tip too. A fresh
 // serving (farm ingredients) adds its bonus to coins and XP.
-func serveServing(app core.App, owner, foodID, tableID string, waiter bool, at time.Time) (gamewire.Payment, error) {
+func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.Time) (gamewire.Payment, error) {
 	var payment gamewire.Payment
-	err := app.RunInTransaction(func(tx core.App) error {
-		food, err := tx.FindRecordById("room_food", foodID)
-		if errors.Is(err, sql.ErrNoRows) || err == nil && food.GetString("user") != owner {
-			return errFoodGone
+	err := s.Transaction(func(tx Store) error {
+		food, err := tx.Get("room_food", foodID)
+		if errors.Is(err, ErrNotFound) || err == nil && food.GetString("user") != owner {
+			return ErrFoodGone
 		}
 		if err != nil {
 			return err
@@ -53,16 +46,16 @@ func serveServing(app core.App, owner, foodID, tableID string, waiter bool, at t
 		if err != nil {
 			return err
 		}
-		state, err := tx.FindFirstRecordByData(playerstate.Collection, "user", owner)
+		state, err := tx.First(PlayerCollection, Where{"user": owner})
 		if err != nil {
 			return err
 		}
 		// An unknown recipe still feeds the customer; it just pays nothing.
 		recipe, _ := gamerules.RecipeByID(food.GetString("recipe_id"))
 		party := false
-		if room, err := tx.FindFirstRecordByData("player_rooms", "user", owner); err == nil {
+		if room, err := tx.First("player_rooms", Where{"user": owner}); err == nil {
 			party = partyActive(room, at)
-		} else if !errors.Is(err, sql.ErrNoRows) {
+		} else if !errors.Is(err, ErrNotFound) {
 			return err
 		}
 		var tip int64
@@ -76,7 +69,7 @@ func serveServing(app core.App, owner, foodID, tableID string, waiter bool, at t
 		if fresh > 0 {
 			freshCoins, freshXP = gamerules.FreshBonus(recipe.PricePerServing), gamerules.FreshBonus(recipe.XPPerServing)
 		}
-		progress := playerstate.Award(state, recipe.PricePerServing+tip+freshCoins, recipe.XPPerServing+freshXP)
+		progress := Award(state, recipe.PricePerServing+tip+freshCoins, recipe.XPPerServing+freshXP)
 		if err = tx.Save(state); err != nil {
 			return err
 		}
@@ -94,15 +87,15 @@ func serveServing(app core.App, owner, foodID, tableID string, waiter bool, at t
 	return payment, err
 }
 
-// recordVerdict applies a customer's verdict that did not come with a payment.
-func recordVerdict(app core.App, owner string, satisfied bool) (int, error) {
+// RecordVerdict applies a customer's verdict that did not come with a payment.
+func RecordVerdict(s Store, owner string, satisfied bool) (int, error) {
 	var popularity int
-	err := app.RunInTransaction(func(tx core.App) error {
-		state, err := tx.FindFirstRecordByData(playerstate.Collection, "user", owner)
+	err := s.Transaction(func(tx Store) error {
+		state, err := tx.First(PlayerCollection, Where{"user": owner})
 		if err != nil {
 			return err
 		}
-		popularity = playerstate.ApplyVerdict(state, satisfied)
+		popularity = ApplyVerdict(state, satisfied)
 		return tx.Save(state)
 	})
 	return popularity, err

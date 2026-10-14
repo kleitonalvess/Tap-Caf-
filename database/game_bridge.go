@@ -15,9 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"coffe-mania/database/npcappearance"
 	"coffe-mania/database/playerstate"
-	"coffe-mania/shared/gamerules"
+	"coffe-mania/shared/cafe"
 	"coffe-mania/shared/gamewire"
 	"github.com/google/uuid"
 	"github.com/pocketbase/dbx"
@@ -79,219 +78,6 @@ func proxyRoomOperationAs(r *core.RequestEvent, owner, user, action string, body
 		return apis.NewApiError(503, "O serviço do quarto está indisponível. Tente novamente.", nil)
 	}
 	return r.JSON(result.Status, json.RawMessage(result.Body))
-}
-func publicWorld(app core.App, owner string) (gamewire.World, error) {
-	snapshot, err := snapshotRoom(app, owner)
-	if err != nil {
-		return gamewire.World{}, err
-	}
-	street := snapshot.Street
-	w := gamewire.World{RoomID: owner, Revision: snapshot.Revision, TilesX: snapshot.TilesX, TilesY: snapshot.TilesY, Units: []gamewire.Unit{}, Foods: []gamewire.Food{}, Dirt: []gamewire.Dirt{}, Staff: []gamewire.StaffMember{}, Street: &street}
-	for _, u := range snapshot.Inventory {
-		if u.Placed {
-			w.Units = append(w.Units, gamewire.Unit{ID: u.UnitID, ItemID: u.ItemID, Placed: true, X: u.TX, Y: u.TY, Rotation: u.Rotation, StoveID: u.StoveID})
-		}
-	}
-	cooking, err := snapshotCooking(app, owner, types.NowDateTime())
-	if err != nil {
-		return w, err
-	}
-	w.Cooking, _ = json.Marshal(cooking)
-	foods, err := app.FindRecordsByFilter("room_food", "user={:owner}", "created", 0, 0, dbx.Params{"owner": owner})
-	if err != nil {
-		return w, err
-	}
-	for _, food := range foods {
-		w.Foods = append(w.Foods, gamewire.Food{ID: food.Id, Recipe: food.GetString("recipe_id"), Servings: max(1, food.GetInt("servings")), CounterID: food.GetString("counter"), Fresh: food.GetInt("fresh_servings")})
-	}
-	if w.Dirt, err = roomDirt(app, owner); err != nil {
-		return w, err
-	}
-	if w.Staff, err = roomStaff(app, owner); err != nil {
-		return w, err
-	}
-	return w, nil
-}
-func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
-	fail := func(status int, message string) gamewire.Result {
-		data, _ := json.Marshal(map[string]string{"message": message})
-		return gamewire.Result{Status: status, Body: data}
-	}
-	// Visitors may only season a friend's stove.
-	if op.Owner == "" || op.User == "" || op.Owner != op.User && op.Action != "cook_season" {
-		return fail(403, "Somente o dono pode alterar o quarto.")
-	}
-	var body any
-	var err error
-	switch op.Action {
-	case "purchase", "move", "store":
-		var command roomCommand
-		if json.Unmarshal(op.Body, &command) != nil || command.Revision == nil || !requestKeyPattern.MatchString(command.RequestID) || (op.Action != "store" && (command.TX == nil || command.TY == nil || command.Rotation == nil)) {
-			return fail(400, "Pedido inválido.")
-		}
-		body, err = mutateRoom(app, op.Owner, op.Action, command)
-	case "cook_start", "cook_serve", "cook_cancel", "cook_clean", "cook_season":
-		var command struct {
-			StoveID  string `json:"stoveId"`
-			RecipeID string `json:"recipeId"`
-		}
-		if json.Unmarshal(op.Body, &command) != nil || command.StoveID == "" {
-			return fail(400, "Pedido inválido.")
-		}
-		switch op.Action {
-		case "cook_start":
-			err = startCooking(app, op.Owner, command.StoveID, command.RecipeID, types.NowDateTime())
-		case "cook_serve":
-			err = serveCooking(app, op.Owner, command.StoveID, types.NowDateTime())
-		case "cook_cancel":
-			err = cancelCooking(app, op.Owner, command.StoveID, types.NowDateTime())
-		case "cook_clean":
-			err = cleanStove(app, op.Owner, command.StoveID, types.NowDateTime())
-		case "cook_season":
-			err = seasonCooking(app, op.Owner, op.User, command.StoveID, types.NowDateTime())
-		}
-		if err == nil {
-			body, err = snapshotCooking(app, op.Owner, types.NowDateTime())
-		}
-	case "table_clean":
-		var command struct {
-			TableID string `json:"tableId"`
-		}
-		if json.Unmarshal(op.Body, &command) != nil || command.TableID == "" {
-			return fail(400, "Pedido inválido.")
-		}
-		var plates int
-		plates, err = cleanTable(app, op.Owner, command.TableID, true)
-		body = map[string]any{"tableId": command.TableID, "plates": plates, "xp": gamerules.Tables().CleaningXP}
-	case "staff_hire", "staff_role", "staff_dismiss":
-		var command struct {
-			ProfileID string `json:"profileId"`
-			StaffID   string `json:"staffId"`
-			Role      string `json:"role"`
-		}
-		if json.Unmarshal(op.Body, &command) != nil {
-			return fail(400, "Pedido inválido.")
-		}
-		switch op.Action {
-		case "staff_hire":
-			err = hireStaff(app, op.Owner, command.ProfileID, command.Role)
-		case "staff_role":
-			err = setStaffRole(app, op.Owner, command.StaffID, command.Role)
-		case "staff_dismiss":
-			err = dismissStaff(app, op.Owner, command.StaffID)
-		}
-		if err == nil {
-			body, err = snapshotStaff(app, op.Owner)
-		}
-	case "farm_harvest":
-		body, err = harvestFarm(app, op.Owner, types.NowDateTime())
-	case "party_start":
-		body, err = startParty(app, op.Owner, types.NowDateTime())
-	case "room_expand":
-		var command struct {
-			Tiles int    `json:"tiles"`
-			Pay   string `json:"pay"`
-		}
-		if json.Unmarshal(op.Body, &command) != nil || command.Tiles < 1 {
-			return fail(400, "Pedido inválido.")
-		}
-		body, err = expandRoom(app, op.Owner, command.Tiles, command.Pay)
-	default:
-		return fail(400, "Operação desconhecida.")
-	}
-	if err != nil {
-		switch {
-		case errors.Is(err, errRoomOwned), errors.Is(err, errStoveNotOwned):
-			return fail(404, "Item indisponível.")
-		case errors.Is(err, errStaffMissing):
-			return fail(404, err.Error())
-		case errors.Is(err, errStaffProfile), errors.Is(err, errStaffRole), errors.Is(err, errExpansionPay):
-			return fail(400, err.Error())
-		case errors.Is(err, errStaffSlots), errors.Is(err, errStaffHired), errors.Is(err, errStaffCoins),
-			errors.Is(err, errExpansionMax), errors.Is(err, errExpansionStep), errors.Is(err, errExpansionLevel),
-			errors.Is(err, errExpansionCoins), errors.Is(err, errExpansionCash),
-			errors.Is(err, errFarmGrowing), errors.Is(err, errFarmFull), errors.Is(err, errPartyOn), errors.Is(err, errPartyResting):
-			return fail(409, err.Error())
-		case errors.Is(err, errRoomPosition):
-			return fail(400, err.Error())
-		case errors.Is(err, errStoveOccupied):
-			return fail(409, "Fogão ocupado.")
-		case errors.Is(err, errDishNotReady):
-			return fail(409, "O prato ainda não está pronto.")
-		case errors.Is(err, errCookingCannotCancel):
-			return fail(409, "Este preparo não pode mais ser cancelado.")
-		case errors.Is(err, errUnknownRecipe):
-			return fail(400, err.Error())
-		case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy),
-			errors.Is(err, errCounterBusy), errors.Is(err, errRecipeLocked), errors.Is(err, errCookingCoins), errors.Is(err, errStoveDirty),
-			errors.Is(err, errDishSpoiled), errors.Is(err, errNothingToClean), errors.Is(err, errCleaningCoins), errors.Is(err, errNoCounter),
-			errors.Is(err, errSeasonClosed), errors.Is(err, errAlreadySeasoned), errors.Is(err, errTableClean), errors.Is(err, errTableDirty):
-			return fail(409, err.Error())
-		default:
-			return fail(500, "Não foi possível salvar a operação.")
-		}
-	}
-	data, _ := json.Marshal(body)
-	w, err := publicWorld(app, op.Owner)
-	if err != nil {
-		return fail(503, "Operação salva; tente novamente para atualizar o quarto.")
-	}
-	status := 200
-	if op.Action == "cook_start" || op.Action == "staff_hire" {
-		status = 201
-	}
-	return gamewire.Result{Status: status, Body: data, World: &w}
-}
-func saveDormantRoom(app core.App, owner string, state gamewire.Sleep) error {
-	if len(state.NPCs) > 32 {
-		return errors.New("too many NPCs")
-	}
-	return app.RunInTransaction(func(tx core.App) error {
-		room, err := tx.FindFirstRecordByData("player_rooms", "user", owner)
-		if err != nil {
-			return err
-		}
-		existing, err := tx.FindRecordsByFilter("room_npcs", "user={:owner}", "", 0, 0, dbx.Params{"owner": owner})
-		if err != nil {
-			return err
-		}
-		byID := map[string]*core.Record{}
-		for _, r := range existing {
-			byID[r.GetString("npc_id")] = r
-		}
-		collection, err := tx.FindCollectionByNameOrId("room_npcs")
-		if err != nil {
-			return err
-		}
-		seen := map[string]bool{}
-		for _, npc := range state.NPCs {
-			if !strings.HasPrefix(npc.ID, "npc:") || seen[npc.ID] || len(npc.Path) > 256 {
-				return errors.New("invalid NPC")
-			}
-			seen[npc.ID] = true
-			record := byID[npc.ID]
-			delete(byID, npc.ID)
-			if record == nil {
-				record = core.NewRecord(collection)
-				record.Set("user", owner)
-				record.Set("npc_id", npc.ID)
-			}
-			record.Set("state", npc)
-			if err = tx.Save(record); err != nil {
-				return err
-			}
-		}
-		for _, r := range byID {
-			if err = tx.Delete(r); err != nil {
-				return err
-			}
-		}
-		room.Set("active", false)
-		room.Set("human_count", 0)
-		// The offline catch-up starts here when the room wakes (wakeRoom).
-		room.Set("slept_at", types.NowDateTime())
-		return tx.Save(room)
-	})
 }
 func registerGameBridge(e *core.ServeEvent) error {
 	secret, err := gamewire.Secret(true)
@@ -357,44 +143,12 @@ func registerGameBridge(e *core.ServeEvent) error {
 		return r.Next()
 	})
 	group.GET("/{owner}/load", func(r *core.RequestEvent) error {
-		owner := r.Request.PathValue("owner")
-		if err := ensureRoom(r.App, owner); err != nil {
-			return err
-		}
-		// Waking replays the absence first, so the world below already has it.
-		away, err := wakeRoom(r.App, owner, time.Now())
+		// Waking replays the absence first, so the seed's world already has it.
+		seed, err := cafe.LoadSeed(pb(r.App), r.Request.PathValue("owner"), time.Now())
 		if err != nil {
 			return err
 		}
-		world, err := publicWorld(r.App, owner)
-		if err != nil {
-			return err
-		}
-		rows, err := r.App.FindRecordsByFilter("room_npcs", "user={:owner}", "id", 32, 0, dbx.Params{"owner": owner})
-		if err != nil {
-			return err
-		}
-		npcs := []gamewire.Actor{}
-		for _, row := range rows {
-			var npc gamewire.Actor
-			if err = row.UnmarshalJSONField("state", &npc); err != nil {
-				return err
-			}
-			npcs = append(npcs, npc)
-		}
-		policy, err := npcappearance.Load(r.App)
-		if err != nil {
-			return err
-		}
-		looks, err := npcappearance.GenerateLooks(policy, 16)
-		if err != nil {
-			return err
-		}
-		state, err := playerstate.GetOrCreate(r.App, owner)
-		if err != nil {
-			return err
-		}
-		return r.JSON(200, gamewire.Seed{World: world, NPCs: npcs, Looks: looks, PopularityTenths: state.GetInt("satisfaction_current_tenths"), Away: away})
+		return r.JSON(200, seed)
 	})
 	group.POST("/{owner}/active", func(r *core.RequestEvent) error {
 		var body struct {

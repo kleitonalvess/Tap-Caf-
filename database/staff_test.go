@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"coffe-mania/database/appearance"
 	"coffe-mania/database/playerstate"
+	"coffe-mania/shared/appearance"
 	"coffe-mania/shared/gamewire"
 
 	"github.com/pocketbase/pocketbase/core"

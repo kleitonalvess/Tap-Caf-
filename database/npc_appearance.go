@@ -3,7 +3,7 @@ package main
 import (
 	"net/http"
 
-	"coffe-mania/database/npcappearance"
+	"coffe-mania/database/pbstore"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -14,7 +14,7 @@ func registerNpcAppearanceRoutes(e *core.ServeEvent) {
 			clearSessionCookie(r)
 			return r.UnauthorizedError("Entre para jogar.", nil)
 		}
-		policy, err := npcappearance.Load(r.App)
+		policy, err := pbstore.NPCPolicy(r.App)
 		if err != nil {
 			return r.InternalServerError("Não foi possível carregar o catálogo dos NPCs.", err)
 		}

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"coffe-mania/database/appearance"
+	"coffe-mania/shared/appearance"
 )
 
 //go:embed wardrobe.json

@@ -2,207 +2,16 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"strings"
 
-	"coffe-mania/database/npcappearance"
-	"coffe-mania/database/playerstate"
-	"coffe-mania/shared/gamerules"
+	"coffe-mania/shared/cafe"
 	"coffe-mania/shared/gamewire"
 
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
-
-var errStaffSlots = errors.New("Todas as vagas de funcionário estão ocupadas. Suba de nível para abrir mais.")
-var errStaffProfile = errors.New("Funcionário indisponível.")
-var errStaffHired = errors.New("Esse funcionário já trabalha no seu café.")
-var errStaffRole = errors.New("Função inválida.")
-var errStaffCoins = errors.New("Moedas insuficientes para contratar.")
-var errStaffMissing = errors.New("Funcionário não encontrado.")
-
-type staffView struct {
-	ID           string `json:"id"`
-	Profile      string `json:"profile"`
-	Name         string `json:"name"`
-	Role         string `json:"role"`
-	FriendUserID string `json:"friendUserId,omitempty"`
-}
-
-// staffSnapshot is what the Funcionários window shows: slots open at the
-// owner's level, who works in the café and every profile that can be hired.
-// HireCoins is what the next hire costs; PaidSlots were already paid for.
-type staffSnapshot struct {
-	Level         int                      `json:"level"`
-	Slots         int                      `json:"slots"`
-	NextSlotLevel int                      `json:"nextSlotLevel,omitempty"`
-	HireCoins     int64                    `json:"hireCoins"`
-	PaidSlots     int                      `json:"paidSlots"`
-	SlotFees      []int64                  `json:"slotFees"`
-	Staff         []staffView              `json:"staff"`
-	Profiles      []gamerules.StaffProfile `json:"profiles"`
-}
-
-func staffRecords(app core.App, owner string) ([]*core.Record, error) {
-	return app.FindRecordsByFilter("room_staff", "user={:owner}", "created,id", 0, 0, dbx.Params{"owner": owner})
-}
-
-// roomStaff lists the employees for the room simulation, in hiring order.
-func roomStaff(app core.App, owner string) ([]gamewire.StaffMember, error) {
-	records, err := staffRecords(app, owner)
-	if err != nil {
-		return nil, err
-	}
-	staff := []gamewire.StaffMember{}
-	for _, record := range records {
-		staff = append(staff, gamewire.StaffMember{
-			ID: record.Id, Profile: record.GetString("profile"), Name: record.GetString("name"),
-			Role: record.GetString("role"), Appearance: record.GetString("appearance"),
-		})
-	}
-	return staff, nil
-}
-
-func snapshotStaff(app core.App, owner string) (staffSnapshot, error) {
-	state, err := playerstate.GetOrCreate(app, owner)
-	if err != nil {
-		return staffSnapshot{}, err
-	}
-	if err := ensureRoom(app, owner); err != nil {
-		return staffSnapshot{}, err
-	}
-	room, err := app.FindFirstRecordByData("player_rooms", "user", owner)
-	if err != nil {
-		return staffSnapshot{}, err
-	}
-	level := max(1, state.GetInt("level"))
-	rules := gamerules.Staff()
-	snapshot := staffSnapshot{Level: level, Slots: gamerules.EmployeeSlots(level), SlotFees: rules.HireCoins, Staff: []staffView{}, Profiles: rules.Profiles}
-	if next, ok := gamerules.NextEmployeeSlotLevel(level); ok {
-		snapshot.NextSlotLevel = next
-	}
-	records, err := staffRecords(app, owner)
-	if err != nil {
-		return staffSnapshot{}, err
-	}
-	snapshot.PaidSlots = max(room.GetInt("staff_slots"), len(records))
-	if len(records) >= snapshot.PaidSlots {
-		snapshot.HireCoins = gamerules.HireCost(snapshot.PaidSlots + 1)
-	}
-	for _, record := range records {
-		snapshot.Staff = append(snapshot.Staff, staffView{
-			ID: record.Id, Profile: record.GetString("profile"), Name: record.GetString("name"),
-			Role: record.GetString("role"), FriendUserID: record.GetString("friend_user"),
-		})
-	}
-	return snapshot, nil
-}
-
-// hireStaff takes a free slot for a predefined character. The look is drawn
-// once from the customer wardrobe policy and kept with the employee. A slot
-// never filled before charges its one-time fee (the first one is free).
-func hireStaff(app core.App, owner, profileID, role string) error {
-	profile, ok := gamerules.StaffProfileByID(profileID)
-	if !ok {
-		return errStaffProfile
-	}
-	if role == "" {
-		role = profile.Role
-	}
-	if !gamerules.ValidRole(role) {
-		return errStaffRole
-	}
-	policy, err := npcappearance.Load(app)
-	if err != nil {
-		return err
-	}
-	looks, err := npcappearance.GenerateLooks(policy, 1)
-	if err != nil {
-		return err
-	}
-	if err := ensureRoom(app, owner); err != nil {
-		return err
-	}
-	return app.RunInTransaction(func(tx core.App) error {
-		room, err := tx.FindFirstRecordByData("player_rooms", "user", owner)
-		if err != nil {
-			return err
-		}
-		state, err := playerstate.GetOrCreate(tx, owner)
-		if err != nil {
-			return err
-		}
-		records, err := staffRecords(tx, owner)
-		if err != nil {
-			return err
-		}
-		if len(records) >= gamerules.EmployeeSlots(max(1, state.GetInt("level"))) {
-			return errStaffSlots
-		}
-		for _, record := range records {
-			if record.GetString("profile") == profileID {
-				return errStaffHired
-			}
-		}
-		if paid := max(room.GetInt("staff_slots"), len(records)); len(records) >= paid {
-			cost := gamerules.HireCost(paid + 1)
-			if state.GetInt64("gold") < cost {
-				return errStaffCoins
-			}
-			if cost > 0 {
-				state.Set("gold", state.GetInt64("gold")-cost)
-				if err = tx.Save(state); err != nil {
-					return err
-				}
-			}
-			room.Set("staff_slots", paid+1)
-			if err = tx.Save(room); err != nil {
-				return err
-			}
-		}
-		collection, err := tx.FindCollectionByNameOrId("room_staff")
-		if err != nil {
-			return err
-		}
-		member := core.NewRecord(collection)
-		member.Load(map[string]any{"user": owner, "profile": profileID, "name": profile.Name, "role": role, "appearance": looks[0]})
-		return tx.Save(member)
-	})
-}
-
-func ownedStaff(app core.App, owner, staffID string) (*core.Record, error) {
-	record, err := app.FindRecordById("room_staff", staffID)
-	if err != nil || record.GetString("user") != owner {
-		return nil, errStaffMissing
-	}
-	return record, nil
-}
-
-func setStaffRole(app core.App, owner, staffID, role string) error {
-	if !gamerules.ValidRole(role) {
-		return errStaffRole
-	}
-	record, err := ownedStaff(app, owner, staffID)
-	if err != nil {
-		return err
-	}
-	record.Set("role", role)
-	return app.Save(record)
-}
-
-func dismissStaff(app core.App, owner, staffID string) error {
-	record, err := ownedStaff(app, owner, staffID)
-	if err != nil {
-		return err
-	}
-	return app.Delete(record)
-}
-
-// staffActions maps each REST path to its room operation (owner only).
-var staffActions = map[string]string{"hire": "staff_hire", "role": "staff_role", "dismiss": "staff_dismiss"}
 
 func registerStaffRoutes(e *core.ServeEvent) {
 	g := e.Router.Group("/api/coffe/staff")
@@ -221,7 +30,7 @@ func registerStaffRoutes(e *core.ServeEvent) {
 		}
 		return r.JSON(http.StatusOK, snapshot)
 	})
-	for path, action := range staffActions {
+	for path, action := range cafe.StaffActions {
 		action := action
 		g.POST("/"+path, func(r *core.RequestEvent) error {
 			user := sessionRecord(r)

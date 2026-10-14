@@ -143,7 +143,7 @@ Cada item fica em `game/public/assets/items/<classname>/`, com imagens e `item.j
 npm run assets:room
 ```
 
-O comando valida os manifestos e sincroniza os catálogos do cliente e de `shared/roomcatalog/`. Reinicie os serviços para recompilar o catálogo incorporado ao Go. Aparência e texturas do avatar ficam em `game/public/assets/avatar/`; os catálogos de validação do servidor ficam em `database/appearance/` e `database/npcappearance/`.
+O comando valida os manifestos e sincroniza os catálogos do cliente e de `shared/roomcatalog/`. Reinicie os serviços para recompilar o catálogo incorporado ao Go. Aparência e texturas do avatar ficam em `game/public/assets/avatar/`; os catálogos de validação ficam em `shared/appearance/` e `shared/npcappearance/` (o servidor e o modo standalone usam os mesmos).
 
 `npm run typecheck` verifica os tipos. `npm run build` gera o cliente em `game/dist/`, mas não é necessário para o modo dev. A versão do jogo é `0.0.4.19` em `VERSION`, nos campos `gameVersion`, em `shared/buildinfo/version.go` e em `game/src/core/version.ts`. O campo npm `version` usa `0.0.4-19` por compatibilidade com SemVer.
 
