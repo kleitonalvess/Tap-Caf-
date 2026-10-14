@@ -1,3 +1,4 @@
+import { apiFetch } from './backend';
 /** The buildings across the street, as the server derives them from absolute instants (unix ms). */
 export interface StreetState {
   farmReadyAt?: number;
@@ -64,7 +65,7 @@ export class StreetClient {
   private async post(path: string): Promise<StreetState> {
     let response: Response;
     try {
-      response = await fetch(path, {
+      response = await apiFetch(path, {
         method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000),
         headers: { 'Content-Type': 'application/json' }, body: '{}',
       });

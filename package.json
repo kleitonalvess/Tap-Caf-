@@ -17,7 +17,10 @@
     "dev:servers": "node scripts/dev.mjs --servers-only",
     "dev:game": "npm run dev --workspace game",
     "typecheck": "npm run typecheck --workspace game",
-    "build": "npm run build --workspace game",
+    "build": "node scripts/build-wasm.mjs && npm run build --workspace game",
+    "wasm": "node scripts/build-wasm.mjs",
+    "build:standalone": "node scripts/build-wasm.mjs && npm run build:standalone --workspace game",
+    "preview:standalone": "npm run preview:standalone --workspace game",
     "assets:room": "node scripts/sync-room-catalog.mjs",
     "tools": "node scripts/serve-tools.mjs",
     "test": "vitest run"

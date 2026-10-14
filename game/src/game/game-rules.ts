@@ -1,3 +1,4 @@
+import { apiFetch } from './backend';
 /** Rules published by the server (shared/gamerules); the client only reads them. */
 export interface RecipeRule {
   id: string;
@@ -36,7 +37,7 @@ export interface GameRules {
 }
 
 export async function loadGameRules(signal?: AbortSignal): Promise<GameRules> {
-  const response = await fetch('/api/coffe/rules', {
+  const response = await apiFetch('/api/coffe/rules', {
     credentials: 'same-origin',
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000),
   });

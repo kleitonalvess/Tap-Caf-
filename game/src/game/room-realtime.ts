@@ -3,6 +3,7 @@ import type { RoomUnit } from './room-inventory';
 import type { StreetState } from './street';
 import type { AwaySummary } from './away';
 import type { Tile } from '../world/iso';
+import { apiFetch, openRoomSocket, type RoomSocket } from './backend';
 
 /** fresh: servings made with farm ingredients (they pay a bonus). */
 export interface SharedFood { id: string; recipeId: string; servings?: number; counterId?: string; fresh?: number }
@@ -54,7 +55,7 @@ export class RoomRealtime {
   pingMs: number | null = null;
   selfId = '';
   readonly actors = new Map<string, SharedActor>();
-  private socket?: WebSocket;
+  private socket?: RoomSocket;
   private timer?: ReturnType<typeof setTimeout>;
   private stopped = false;
   private generation = 0;
@@ -76,14 +77,14 @@ export class RoomRealtime {
     if (this.stopped) return;
     const generation = ++this.generation;
     try {
-      const response = await fetch('/api/coffe/game-ticket', { method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      const response = await apiFetch('/api/coffe/game-ticket', { method: 'POST', credentials: 'same-origin', cache: 'no-store',
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roomId: this.roomId }), signal: AbortSignal.timeout(10000) });
       if (response.status === 401) { this.destroy(); window.location.replace('/'); return; }
       if (!response.ok) throw new Error('Quarto indisponível.');
       const { ticket } = await response.json() as { ticket: string };
       if (this.stopped || generation !== this.generation) return;
       const address = new URL('/game/ws', window.location.href); address.protocol = address.protocol === 'https:' ? 'wss:' : 'ws:';
-      const socket = new WebSocket(address.href); this.socket = socket;
+      const socket = openRoomSocket(address.href); this.socket = socket;
       let joined = false;
       const timeout = setTimeout(() => { if (!joined) socket.close(); }, 15000);
       socket.onopen = () => socket.send(JSON.stringify({ type: 'join', ticket }));

@@ -1,3 +1,4 @@
+import { apiFetch } from './backend';
 /** What the café did while the owner was away (shared/gamewire AwaySummary). */
 export interface AwaySummary {
   from: number;
@@ -87,7 +88,7 @@ export function awayLines(summary: AwaySummary): AwayLine[] {
 
 export async function acknowledgeAway(): Promise<void> {
   try {
-    await fetch('/api/coffe/room/away/ack', {
+    await apiFetch('/api/coffe/room/away/ack', {
       method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000),
       headers: { 'Content-Type': 'application/json' }, body: '{}',
     });

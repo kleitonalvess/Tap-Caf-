@@ -27,9 +27,10 @@ type MemoryStore struct {
 	// The wardrobe policy has its own lock: transactions may draw looks.
 	policyMu sync.Mutex
 	policy   *npcappearance.Snapshot
-	// OnCommit runs after every committed change, outside the lock: the
-	// standalone build saves the café there (one save per game transaction).
-	OnCommit func()
+	// OnCommit runs after every committed change, outside the lock, with the
+	// collections it wrote: the standalone build saves the café there (one save
+	// per game transaction) and refreshes the HUD when player_state changed.
+	OnCommit func(collections []string)
 }
 
 type memRow struct {
@@ -54,17 +55,19 @@ func (s *MemoryStore) Transaction(fn func(Store) error) error {
 	s.mu.Lock()
 	tx := &memTx{store: s, changed: map[string]map[string]*memRow{}, seq: s.seq}
 	err := fn(tx)
-	committed := false
+	var written []string
 	if err == nil && len(tx.changed) > 0 {
 		for name, rows := range tx.changed {
 			s.collections[name] = rows
+			written = append(written, name)
 		}
 		s.seq = tx.seq
-		committed = true
+		sort.Strings(written)
 	}
+	onCommit := s.OnCommit
 	s.mu.Unlock()
-	if committed && s.OnCommit != nil {
-		s.OnCommit()
+	if len(written) > 0 && onCommit != nil {
+		onCommit(written)
 	}
 	return err
 }

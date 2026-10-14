@@ -1,3 +1,4 @@
+import { apiFetch } from './backend';
 /** Sessão validada pelo backend Go; o token fica exclusivamente no cookie HttpOnly. */
 export interface PlayerSession {
   playerId: string;
@@ -9,7 +10,7 @@ const endpoint = '/api/coffe/session';
 
 async function request(path = '', options: RequestInit = {}): Promise<Response> {
   try {
-    return await fetch(endpoint + path, {
+    return await apiFetch(endpoint + path, {
       ...options, credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000),
     });
   } catch {

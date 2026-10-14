@@ -1,3 +1,4 @@
+import { apiFetch } from './backend';
 /** Server-owned values. Percentages are derived, never persisted independently. */
 export interface ResourceValue {
   current: number;
@@ -38,7 +39,7 @@ export function emptyPlayerState(): PlayerState {
 export async function loadPlayerState(signal?: AbortSignal): Promise<PlayerState> {
   let response: Response;
   try {
-    response = await fetch('/api/coffe/player-state', {
+    response = await apiFetch('/api/coffe/player-state', {
       credentials: 'same-origin', cache: 'no-store',
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000),
     });

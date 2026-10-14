@@ -5,6 +5,7 @@ import type { PlayerState } from './player-state';
 import type { StreetState } from './street';
 import type { AwaySummary } from './away';
 import type { RoomItem, RoomItemKind } from '../world/RoomModel';
+import { apiFetch } from './backend';
 
 export interface RoomCatalogItem {
   id: number; classname: string; name: string; type: number; kind: RoomItemKind;
@@ -128,7 +129,7 @@ export class RoomInventoryClient {
   private pending?: { signature: string; body: string; path: string };
   constructor(readonly roomId?: string) {}
   async refresh(): Promise<RoomSnapshot> {
-    return this.read(await fetch('/api/coffe/room' + (this.roomId ? '?room=' + encodeURIComponent(this.roomId) : ''), { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(10000) }));
+    return this.read(await apiFetch('/api/coffe/room' + (this.roomId ? '?room=' + encodeURIComponent(this.roomId) : ''), { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(10000) }));
   }
   private async read(response: Response): Promise<RoomSnapshot> {
     if (response.status === 401) { window.location.replace('/'); throw new Error('Sua sessão expirou.'); }
@@ -150,7 +151,7 @@ export class RoomInventoryClient {
     let response: Response | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        response = await fetch(command.path, { method: 'POST', credentials: 'same-origin', cache: 'no-store',
+        response = await apiFetch(command.path, { method: 'POST', credentials: 'same-origin', cache: 'no-store',
           headers: { 'Content-Type': 'application/json' }, body: command.body, signal: AbortSignal.timeout(10000) });
         break;
       } catch { if (attempt === 1) throw new Error('Falha de conexão. Repita esta colocação para verificar a compra sem pagar novamente.'); }

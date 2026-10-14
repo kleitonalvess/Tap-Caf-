@@ -1,3 +1,4 @@
+import { apiFetch } from './backend';
 /** The café's employees: predefined characters today, hired friends later. */
 export type StaffRole = 'waiter' | 'cleaner';
 
@@ -61,7 +62,7 @@ export class StaffClient {
   private async request(path: string, body?: Record<string, string>): Promise<StaffSnapshot> {
     let response: Response;
     try {
-      response = await fetch(endpoint + path, {
+      response = await apiFetch(endpoint + path, {
         method: body ? 'POST' : 'GET',
         credentials: 'same-origin',
         cache: 'no-store',

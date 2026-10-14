@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { buildWasm } from './build-wasm.mjs';
 import { startNgrok } from './ngrok-tunnel.mjs';
 
 const root = resolve(import.meta.dirname, '..');
@@ -123,6 +124,9 @@ async function main() {
   await compile(go, './database', databaseBinary);
   if (stopping) return;
   await compile(go, './game-server', gameBinary);
+  if (stopping) return;
+  // The browser's café (offline mode, and the fallback when the servers are down).
+  await buildWasm({ go, quiet: true }).catch((error) => console.warn(`Modo offline indisponível: ${error.message}`));
   if (stopping) return;
   const databaseDir = resolve(root, process.env.COFFE_DATABASE_DIR ?? 'database/pb_data');
   launch(databaseBinary, ['serve', `--http=127.0.0.1:${databasePort}`, `--dir=${databaseDir}`], join(root, 'database'), {}, true);

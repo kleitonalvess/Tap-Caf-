@@ -1,6 +1,8 @@
 import { loadPlayerState, type PlayerState } from './player-state';
+import { apiFetch, openRealtime, type RealtimeSource } from './backend';
 
-const TOPIC = 'player_state/*';
+export const PLAYER_STATE_TOPIC = 'player_state/*';
+const TOPIC = PLAYER_STATE_TOPIC;
 
 /** Native PocketBase SSE, with cookie-authenticated subscriptions. Notifications
  * invalidate the snapshot, avoiding a second mapping of raw DB fields in the UI.
@@ -8,7 +10,7 @@ const TOPIC = 'player_state/*';
  */
 export function subscribePlayerState(onState: (state: PlayerState) => void): () => void {
   let stopped = false;
-  let source: EventSource | undefined;
+  let source: RealtimeSource | undefined;
   let controller: AbortController | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let retryMs = 1000;
@@ -32,7 +34,7 @@ export function subscribePlayerState(onState: (state: PlayerState) => void): () 
   function connect(): void {
     if (stopped) return;
     disconnect();
-    const connection = new EventSource('/api/realtime', { withCredentials: true });
+    const connection = openRealtime('/api/realtime');
     const abort = new AbortController();
     source = connection;
     controller = abort;
@@ -64,7 +66,7 @@ export function subscribePlayerState(onState: (state: PlayerState) => void): () 
         try {
           const { clientId } = JSON.parse((event as MessageEvent<string>).data) as { clientId: string };
           if (!clientId) throw new Error('Identificador realtime ausente.');
-          const response = await fetch('/api/realtime', {
+          const response = await apiFetch('/api/realtime', {
             method: 'POST', credentials: 'same-origin', cache: 'no-store',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ clientId, subscriptions: [TOPIC] }),

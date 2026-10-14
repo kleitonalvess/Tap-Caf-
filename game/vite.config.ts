@@ -7,6 +7,9 @@ export default defineConfig(({ mode }) => {
   const backendURL = env.COFFE_BACKEND_URL ?? `http://127.0.0.1:${env.COFFE_DATABASE_PORT ?? '8090'}`;
   const gameURL = env.COFFE_GAME_URL ?? `http://127.0.0.1:${env.COFFE_GAME_PORT ?? '8091'}`;
   const tunnelHost = env.COFFE_NGROK_ORIGIN ? new URL(env.COFFE_NGROK_ORIGIN).host : undefined;
+  // Static build for hosts without servers (GitHub Pages, Vercel): the café runs
+  // in the browser (Go/WASM) and the page works from any subfolder.
+  const standalone = mode === 'standalone' || env.VITE_STANDALONE === 'true';
   const backendProxy = (): ProxyOptions => ({
     target: backendURL,
     changeOrigin: false,
@@ -19,10 +22,12 @@ export default defineConfig(({ mode }) => {
   });
   return {
     root: fileURLToPath(new URL('.', import.meta.url)),
-    base: '/',
+    base: standalone ? './' : '/',
+    define: { 'import.meta.env.VITE_STANDALONE': JSON.stringify(standalone ? 'true' : 'false') },
     plugins: [{
       name: 'coffe-play-auth',
       configureServer(server) {
+        if (standalone) return;
         server.middlewares.use(async (req, res, next) => {
           const url = new URL(req.url ?? '/', 'http://localhost');
           if (tunnelHost && req.headers.host === tunnelHost && (url.pathname === '/_' || url.pathname.startsWith('/_/'))) {
@@ -43,8 +48,8 @@ export default defineConfig(({ mode }) => {
               res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('Servidor indisponível.');
             }
           } catch {
-            res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
-            res.end('Backend indisponível. Inicie os serviços com npm run dev.');
+            // Without the servers the start page opens the café in the browser.
+            res.writeHead(303, { Location: '/' }); res.end();
           }
         });
       },
@@ -61,6 +66,9 @@ export default defineConfig(({ mode }) => {
         '/_': backendProxy(),
       },
     },
-    build: { target: 'es2022', assetsInlineLimit: 0 },
+    // The standalone build never talks to the servers, not even through the preview.
+    preview: { port: Number(env.COFFE_PREVIEW_PORT ?? 4173), proxy: standalone ? {} : undefined },
+    worker: { format: 'es' },
+    build: { target: 'es2022', assetsInlineLimit: 0, outDir: standalone ? 'dist-standalone' : 'dist' },
   };
 });

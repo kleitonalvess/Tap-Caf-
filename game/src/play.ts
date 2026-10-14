@@ -35,6 +35,7 @@ import {
 } from './game/asset-manifest';
 import { loadRoomItemArt, roomModelItems, RoomInventoryClient } from './game/room-inventory';
 import { resolveSession } from './game/session';
+import { isOffline } from './game/backend';
 import { loadPlayerState } from './game/player-state';
 import { loadNpcAppearancePolicy } from './game/npc-appearance';
 import { CookingClient } from './game/cooking';
@@ -117,7 +118,9 @@ async function boot(): Promise<void> {
     saveAudioPreferences(safeStorage(), soundPlayerId, soundPreferences);
     applySoundPreferences();
     console.info('[session]', session.displayName);
-    const roomId = new URLSearchParams(window.location.search).get('room') ?? session.playerId;
+    // The browser's café has a single room: the player's.
+    const roomId = isOffline() ? session.playerId : new URLSearchParams(window.location.search).get('room') ?? session.playerId;
+    if (isOffline()) showOfflineBadge(uiLayer);
     const roomAddress = new URL(window.location.href); roomAddress.searchParams.set('room', roomId); window.history.replaceState(null, '', roomAddress);
     const cookingClient = new CookingClient(roomId);
     const roomClient = new RoomInventoryClient(roomId);
@@ -326,6 +329,15 @@ async function boot(): Promise<void> {
       },
     });
   }
+}
+
+/** The save lives in this browser, not on a server: say so where the player looks. */
+function showOfflineBadge(layer: HTMLElement): void {
+  const badge = document.createElement('div');
+  badge.className = 'offline-badge';
+  badge.textContent = 'Offline · salvo neste navegador';
+  badge.title = 'O café roda no seu navegador. O progresso fica salvo neste aparelho, separado das contas do servidor.';
+  layer.appendChild(badge);
 }
 
 function safeStorage(): Storage | undefined {

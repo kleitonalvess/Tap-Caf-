@@ -1,3 +1,4 @@
+import { apiFetch } from './backend';
 const endpoint = '/api/coffe/room/tables/clean';
 
 export interface TableCleaned { tableId: string; plates: number; xp: number }
@@ -9,7 +10,7 @@ export interface TableCleaned { tableId: string; plates: number; xp: number }
 export async function cleanTable(tableId: string): Promise<TableCleaned> {
   let response: Response;
   try {
-    response = await fetch(endpoint, {
+    response = await apiFetch(endpoint, {
       method: 'POST',
       credentials: 'same-origin',
       cache: 'no-store',

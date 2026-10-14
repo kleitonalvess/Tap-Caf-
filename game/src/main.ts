@@ -1,14 +1,27 @@
 import { renderLoginPage, renderSessionError } from './auth/LoginPage';
 import { resolveSession } from './game/session';
+import { offlineRequested } from './standalone/mode';
 
 async function start(): Promise<void> {
   const host = document.getElementById('app');
   if (!host) throw new Error('#app não encontrado');
-  const playing = window.location.pathname === '/play' || window.location.pathname === '/play/';
   document.body.classList.add('auth-page');
+  if (offlineRequested(window.location.search)) {
+    await playOffline(host);
+    return;
+  }
+  const playing = window.location.pathname === '/play' || window.location.pathname === '/play/';
   host.innerHTML = '<p class="auth-check" role="status">Verificando sessão…</p>';
+  let session;
   try {
-    const session = await resolveSession();
+    session = await resolveSession();
+  } catch (error) {
+    // The servers do not answer: the same café runs in this browser instead.
+    console.warn('[sessão] servidor indisponível; abrindo o café offline', error);
+    await playOffline(host, error);
+    return;
+  }
+  try {
     if (playing) {
       if (!session) {
         const room = new URLSearchParams(window.location.search).get('room');
@@ -35,6 +48,22 @@ async function start(): Promise<void> {
   } catch (error) {
     renderSessionError(host, error);
   }
+}
+
+/** Plays with the café in the browser (Go/WASM in a worker, save in IndexedDB). */
+async function playOffline(host: HTMLElement, cause?: unknown): Promise<void> {
+  host.innerHTML = '<p class="auth-check" role="status">Abrindo o café offline…</p>';
+  try {
+    const { startLocalBackend } = await import('./standalone/local-backend');
+    await startLocalBackend();
+  } catch (error) {
+    console.error('[offline] o café não abriu', error);
+    renderSessionError(host, cause ?? error);
+    return;
+  }
+  document.body.classList.remove('auth-page');
+  host.replaceChildren();
+  await import('./play');
 }
 
 void start();

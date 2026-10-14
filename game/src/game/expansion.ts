@@ -1,5 +1,6 @@
 import type { ExpansionRules, ExpansionStep } from './game-rules';
 import type { RoomSnapshot } from './room-inventory';
+import { apiFetch } from './backend';
 
 /** Coins once the step's level is reached, or cash (Grana) at any level. */
 export type ExpansionPay = 'coins' | 'cash';
@@ -56,7 +57,7 @@ export class ExpansionClient {
   async expand(tiles: number, pay: ExpansionPay): Promise<ExpansionResult> {
     let response: Response;
     try {
-      response = await fetch('/api/coffe/room/expand', {
+      response = await apiFetch('/api/coffe/room/expand', {
         method: 'POST',
         credentials: 'same-origin',
         cache: 'no-store',

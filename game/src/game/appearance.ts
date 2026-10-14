@@ -1,11 +1,12 @@
 import { serializeAppearance } from '../avatar/appearance';
 import type { Look } from '../avatar/wardrobe';
 import type { PlayerState } from './player-state';
+import { apiFetch } from './backend';
 
 export async function saveAppearance(look: Look): Promise<PlayerState> {
   let response: Response;
   try {
-    response = await fetch('/api/coffe/appearance', {
+    response = await apiFetch('/api/coffe/appearance', {
       method: 'POST', credentials: 'same-origin', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ appearance: serializeAppearance(look) }),

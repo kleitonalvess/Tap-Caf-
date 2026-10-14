@@ -1,3 +1,4 @@
+import { apiFetch } from './backend';
 /** O servidor define posse, ocupação e relógio; o cliente só apresenta o progresso. */
 export type StoveStatus = 'preparing' | 'cooking' | 'ready' | 'spoiled';
 
@@ -68,7 +69,7 @@ export class CookingClient {
   private async request(path: string, options: RequestInit = {}): Promise<Response> {
     let response: Response;
     try {
-      response = await fetch(endpoint + path + (!path && this.roomId ? '?room=' + encodeURIComponent(this.roomId) : ''), {
+      response = await apiFetch(endpoint + path + (!path && this.roomId ? '?room=' + encodeURIComponent(this.roomId) : ''), {
         ...options,
         credentials: 'same-origin',
         cache: 'no-store',
