@@ -74,8 +74,9 @@ func tableIsDirty(tx core.App, owner, tableID string) (bool, error) {
 	return err == nil, err
 }
 
-// cleanTable clears every plate on the table and rewards the owner.
-func cleanTable(app core.App, owner, tableID string) (int, error) {
+// cleanTable clears every plate on the table; reward grants the owner the
+// cleaning XP when the owner did it in person.
+func cleanTable(app core.App, owner, tableID string, reward bool) (int, error) {
 	cleared := 0
 	err := app.RunInTransaction(func(tx core.App) error {
 		if !placedTable(tx, owner, tableID) {
@@ -94,7 +95,7 @@ func cleanTable(app core.App, owner, tableID string) (int, error) {
 			}
 		}
 		cleared = len(plates)
-		if xp := gamerules.Tables().CleaningXP; xp > 0 {
+		if xp := gamerules.Tables().CleaningXP; reward && xp > 0 {
 			state, err := playerstate.GetOrCreate(tx, owner)
 			if err != nil {
 				return err

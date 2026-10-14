@@ -85,7 +85,7 @@ func publicWorld(app core.App, owner string) (gamewire.World, error) {
 	if err != nil {
 		return gamewire.World{}, err
 	}
-	w := gamewire.World{RoomID: owner, Revision: snapshot.Revision, TilesX: snapshot.TilesX, TilesY: snapshot.TilesY, Units: []gamewire.Unit{}, Foods: []gamewire.Food{}, Dirt: []gamewire.Dirt{}}
+	w := gamewire.World{RoomID: owner, Revision: snapshot.Revision, TilesX: snapshot.TilesX, TilesY: snapshot.TilesY, Units: []gamewire.Unit{}, Foods: []gamewire.Food{}, Dirt: []gamewire.Dirt{}, Staff: []gamewire.StaffMember{}}
 	for _, u := range snapshot.Inventory {
 		if u.Placed {
 			w.Units = append(w.Units, gamewire.Unit{ID: u.UnitID, ItemID: u.ItemID, Placed: true, X: u.TX, Y: u.TY, Rotation: u.Rotation, StoveID: u.StoveID})
@@ -104,6 +104,9 @@ func publicWorld(app core.App, owner string) (gamewire.World, error) {
 		w.Foods = append(w.Foods, gamewire.Food{ID: food.Id, Recipe: food.GetString("recipe_id"), Servings: max(1, food.GetInt("servings")), CounterID: food.GetString("counter")})
 	}
 	if w.Dirt, err = roomDirt(app, owner); err != nil {
+		return w, err
+	}
+	if w.Staff, err = roomStaff(app, owner); err != nil {
 		return w, err
 	}
 	return w, nil
@@ -157,8 +160,28 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 			return fail(400, "Pedido inválido.")
 		}
 		var plates int
-		plates, err = cleanTable(app, op.Owner, command.TableID)
+		plates, err = cleanTable(app, op.Owner, command.TableID, true)
 		body = map[string]any{"tableId": command.TableID, "plates": plates, "xp": gamerules.Tables().CleaningXP}
+	case "staff_hire", "staff_role", "staff_dismiss":
+		var command struct {
+			ProfileID string `json:"profileId"`
+			StaffID   string `json:"staffId"`
+			Role      string `json:"role"`
+		}
+		if json.Unmarshal(op.Body, &command) != nil {
+			return fail(400, "Pedido inválido.")
+		}
+		switch op.Action {
+		case "staff_hire":
+			err = hireStaff(app, op.Owner, command.ProfileID, command.Role)
+		case "staff_role":
+			err = setStaffRole(app, op.Owner, command.StaffID, command.Role)
+		case "staff_dismiss":
+			err = dismissStaff(app, op.Owner, command.StaffID)
+		}
+		if err == nil {
+			body, err = snapshotStaff(app, op.Owner)
+		}
 	default:
 		return fail(400, "Operação desconhecida.")
 	}
@@ -166,6 +189,12 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 		switch {
 		case errors.Is(err, errRoomOwned), errors.Is(err, errStoveNotOwned):
 			return fail(404, "Item indisponível.")
+		case errors.Is(err, errStaffMissing):
+			return fail(404, err.Error())
+		case errors.Is(err, errStaffProfile), errors.Is(err, errStaffRole):
+			return fail(400, err.Error())
+		case errors.Is(err, errStaffSlots), errors.Is(err, errStaffHired), errors.Is(err, errStaffCoins):
+			return fail(409, err.Error())
 		case errors.Is(err, errRoomPosition):
 			return fail(400, err.Error())
 		case errors.Is(err, errStoveOccupied):
@@ -191,7 +220,7 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 		return fail(503, "Operação salva; tente novamente para atualizar o quarto.")
 	}
 	status := 200
-	if op.Action == "cook_start" {
+	if op.Action == "cook_start" || op.Action == "staff_hire" {
 		status = 201
 	}
 	return gamewire.Result{Status: status, Body: data, World: &w}
@@ -390,6 +419,26 @@ func registerGameBridge(e *core.ServeEvent) error {
 			return err
 		}
 		return r.JSON(200, payment)
+	})
+	// Staff clear tables without the owner's reward; the room has already
+	// checked that the employee stands beside the table.
+	group.POST("/{owner}/clean-table", func(r *core.RequestEvent) error {
+		var body struct {
+			TableID string `json:"tableId"`
+		}
+		if r.BindBody(&body) != nil || body.TableID == "" {
+			return r.BadRequestError("Inválido.", nil)
+		}
+		plates, err := cleanTable(r.App, r.Request.PathValue("owner"), body.TableID, false)
+		switch {
+		case errors.Is(err, errTableClean):
+			return r.JSON(409, map[string]string{"message": err.Error()})
+		case errors.Is(err, errRoomOwned):
+			return r.NotFoundError("Mesa indisponível.", nil)
+		case err != nil:
+			return err
+		}
+		return r.JSON(200, map[string]int{"plates": plates})
 	})
 	group.POST("/{owner}/feedback", func(r *core.RequestEvent) error {
 		var body struct {

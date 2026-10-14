@@ -73,6 +73,32 @@ type Tip struct {
 	Coins int64 `json:"coins"`
 }
 
+// StaffRules: predefined characters the owner may hire (friends later), the
+// cost and the length of the staff actions in the room.
+type StaffRules struct {
+	HireCoins     int64          `json:"hireCoins"`
+	PickupSeconds int            `json:"pickupSeconds"`
+	BusSeconds    int            `json:"busSeconds"`
+	Profiles      []StaffProfile `json:"profiles"`
+}
+
+type StaffProfile struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Role suggested when hiring; the owner may switch it at any time.
+	Role    string `json:"role"`
+	Tagline string `json:"tagline"`
+}
+
+// Staff roles: waiters carry servings from the counters and clear plates;
+// cleaners only clear tables.
+const (
+	RoleWaiter  = "waiter"
+	RoleCleaner = "cleaner"
+)
+
+func ValidRole(role string) bool { return role == RoleWaiter || role == RoleCleaner }
+
 type EmployeeLock struct {
 	Employees int `json:"employees"`
 	Level     int `json:"level"`
@@ -91,6 +117,7 @@ type Rules struct {
 	Customers         CustomerRules   `json:"customers"`
 	Stove             StoveRules      `json:"stove"`
 	Tables            TableRules      `json:"tables"`
+	Staff             StaffRules      `json:"staff"`
 	Levels            []Level         `json:"levels"`
 	CustomerFrequency []Frequency     `json:"customerFrequency"`
 	Tips              []Tip           `json:"tips"`
@@ -160,6 +187,17 @@ func validate(r Rules) string {
 	}
 	if t := r.Tables; t.CleaningSeconds < 1 || t.CleaningSeconds > 30 || t.CleaningXP < 0 {
 		return "invalid table rules"
+	}
+	if s := r.Staff; s.HireCoins < 0 || s.PickupSeconds < 1 || s.PickupSeconds > 30 || s.BusSeconds < 1 || s.BusSeconds > 30 ||
+		len(s.Profiles) < len(r.EmployeeLocks) {
+		return "invalid staff rules"
+	}
+	profiles := map[string]bool{}
+	for _, p := range r.Staff.Profiles {
+		if !recipeIDPattern.MatchString(p.ID) || profiles[p.ID] || p.Name == "" || len(p.Name) > 60 || !ValidRole(p.Role) {
+			return "invalid staff profile " + p.ID
+		}
+		profiles[p.ID] = true
 	}
 	const week = 7 * 24 * 60 * 60
 	seen := map[string]bool{}
@@ -243,6 +281,42 @@ func CookingArrivalFactor() float64 { return rules.Customers.CookingArrivalFacto
 
 func Tables() TableRules { return rules.Tables }
 
+func Staff() StaffRules { return rules.Staff }
+
+func StaffProfileByID(id string) (StaffProfile, bool) {
+	for _, p := range rules.Staff.Profiles {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return StaffProfile{}, false
+}
+
+// EmployeeSlots is how many staff members a café of this level may keep.
+func EmployeeSlots(level int) int {
+	slots := 0
+	for _, lock := range rules.EmployeeLocks {
+		if level >= lock.Level {
+			slots = lock.Employees
+		}
+	}
+	return slots
+}
+
+// NextEmployeeSlotLevel is the level that opens one more slot (false at the cap).
+func NextEmployeeSlotLevel(level int) (int, bool) {
+	for _, lock := range rules.EmployeeLocks {
+		if lock.Level > level {
+			return lock.Level, true
+		}
+	}
+	return 0, false
+}
+
+func PickupDuration() time.Duration { return time.Duration(rules.Staff.PickupSeconds) * time.Second }
+
+func BusDuration() time.Duration { return time.Duration(rules.Staff.BusSeconds) * time.Second }
+
 // TableCleaning is how long clearing a dirty table animates.
 func TableCleaning() time.Duration { return time.Duration(rules.Tables.CleaningSeconds) * time.Second }
 
@@ -251,6 +325,7 @@ func Public() Rules {
 	snapshot := rules
 	snapshot.Levels = append([]Level{}, rules.Levels...)
 	snapshot.Recipes = Recipes()
+	snapshot.Staff.Profiles = append([]StaffProfile{}, rules.Staff.Profiles...)
 	return snapshot
 }
 

@@ -59,7 +59,7 @@ import {
   tileToScreenY,
   type Tile,
 } from '../../world/iso';
-import { bakeAvatars, type AvatarAtlasBundle, type BakedAvatarBundle } from '../../avatar/bake';
+import { CLEANER_CLIPS, PLAYER_ROOM_CLIPS, ROOM_CLIPS, WAITER_CLIPS, bakeAvatars, type AvatarAtlasBundle, type BakedAvatarBundle } from '../../avatar/bake';
 import { restoreAppearance } from '../../avatar/appearance';
 import { NpcLookPicker } from '../../avatar/NpcLookPicker';
 import { releaseNpcAvatar, type NpcAvatarSource } from '../../avatar/NpcAvatarSource';
@@ -72,6 +72,8 @@ import { NpcEmotion } from './NpcEmotion';
 import { RoomDepthSorter, setItemOverlayDepth } from './RoomDepthSorter';
 import { StreetScenery } from './StreetScenery';
 import { TableDirt } from './TableDirt';
+import { StaffModal } from './StaffModal';
+import { StaffClient } from '../../game/staff';
 import { OutsideNpcManager, type PreparedNpcView } from './OutsideNpcManager';
 import { createProceduralWallView, type WallWallpaper } from './ProceduralWallView';
 import { TOP_BAR_ICON_FRAMES, TopBars, type TopBarsTextures } from './TopBars';
@@ -102,6 +104,11 @@ const MAX_ITEM_HEIGHT = 150 * ROOM_ASSET_SCALE;
 
 /** Folga em volta da sala, para ela não encostar na borda da tela. */
 const CAMERA_PADDING = 60 * ROOM_ASSET_SCALE;
+
+/** Tray position relative to a waiter's feet (world px), tuned on the WAITOR_WALK frames. */
+const TRAY_OFFSET_X = 22;
+const TRAY_HEIGHT = 92;
+const TRAY_DISH_SIZE = 54;
 
 /** Mantém as bordas laterais da textura longe do pan habitual. */
 const SCENE_CAMERA_INSET = 900;
@@ -182,6 +189,7 @@ interface ActorRenderer {
   sync(): void;
   update?(deltaMs: number): void;
   setActionClip?(clip: number | null, elapsedMs?: number): void;
+  setBaseClips?(walk: number, idle: number): void;
   destroy(): void;
 }
 
@@ -261,6 +269,9 @@ export class RoomScreen implements Screen {
   readonly cookModal?: CookScreenModal;
   readonly wardrobeModal?: WardrobeScreenModal;
   readonly settingsModal?: SettingsModal;
+  private staffModal?: StaffModal;
+  /** Dishes on the waiters' trays, by actor id. */
+  private readonly trayDishes = new Map<string, Sprite>();
   readonly storeBar?: StoreActionBar;
 
   /** Barras de recursos fora da câmera. */
@@ -633,6 +644,7 @@ export class RoomScreen implements Screen {
           event.stopPropagation();
           if (name === 'shirt') this.openWardrobeScreen();
           if (name === 'house') this.openStoreBar();
+          if (name === 'waiter') this.openStaffScreen();
         });
         this.actionBarLayer.addChild(holder);
       });
@@ -800,6 +812,16 @@ export class RoomScreen implements Screen {
       },
     });
     this.view.addChild(this.settingsModal.view);
+    // Only the owner manages the café's employees.
+    if (options.roomSnapshot && options.roomSnapshot.canEdit !== false && options.realtime) {
+      this.staffModal = new StaffModal({
+        client: new StaffClient(),
+        locks: options.rules?.employeeLocks ?? [],
+        portrait: (staffId) => this.staffPortrait(staffId),
+        ...(options.audio ? { audio: options.audio } : {}),
+      });
+      this.view.addChild(this.staffModal.view);
+    }
     this.updateMobileHudLayout();
     if (options.cookingSnapshot) this.acceptCookingSnapshot(options.cookingSnapshot, true);
     if (this.realtime) {
@@ -839,7 +861,8 @@ export class RoomScreen implements Screen {
         entry = { actor, view, state, appearanceRevision: 0 }; this.liveActors.set(state.id, entry);
         if (!own) void this.refreshLiveAppearance(state.id, state.appearance ?? '');
       } else {
-        const changed = entry.state.appearance !== state.appearance; entry.state = state;
+        // A new role needs the other clip set (tray or bucket), so it bakes again.
+        const changed = entry.state.appearance !== state.appearance || entry.state.role !== state.role; entry.state = state;
         if (changed && state.id !== this.realtime.selfId) void this.refreshLiveAppearance(state.id, state.appearance ?? '');
       }
       entry.state = state;
@@ -923,7 +946,10 @@ export class RoomScreen implements Screen {
     entry.appearanceController?.abort();
     const controller = new AbortController(); entry.appearanceController = controller;
     try {
-      const bundle = await this.npcAvatarSource.bakeAppearance(appearance, entry.state.kind === 'human', controller.signal);
+      const state = entry.state;
+      const clips = state.kind === 'human' ? PLAYER_ROOM_CLIPS : state.kind === 'staff'
+        ? state.role === 'cleaner' ? CLEANER_CLIPS : WAITER_CLIPS : ROOM_CLIPS;
+      const bundle = await this.npcAvatarSource.bakeAppearance(appearance, clips, controller.signal);
       if (this.destroyed || this.liveActors.get(id) !== entry || entry.appearanceRevision !== revision) { releaseNpcAvatar(bundle); return; }
       if (entry.view instanceof AvatarActorView) {
         entry.view.setAppearance(bundle.baked, bundle.texture);
@@ -944,9 +970,13 @@ export class RoomScreen implements Screen {
       if (this.realtime!.connected) entry.actor.syncAuthoritative(state.tx, state.ty, state.direction, state.outside, state.move, now);
       else { entry.actor.speedX = 0; entry.actor.speedY = 0; }
       if (state.state === 'entering' && entry.actor.tileX >= 1 && entry.actor.tileY >= 1) entry.actor.outside = false;
-      const action = state.state === 'eating' ? CLIP.EAT : state.state === 'seated' ? CLIP.SIT :
-        state.state === 'cooking' || state.state === 'serving' ? CLIP.COOKING : state.state === 'cleaning' ? CLIP.CLEAN : null;
-      entry.view.setActionClip?.(action, state.action ? now - state.action.startedAt : undefined);
+      if (state.kind === 'staff') {
+        this.applyStaffClips(entry.view, state, now);
+      } else {
+        const action = state.state === 'eating' ? CLIP.EAT : state.state === 'seated' ? CLIP.SIT :
+          state.state === 'cooking' || state.state === 'serving' ? CLIP.COOKING : state.state === 'cleaning' ? CLIP.CLEAN : null;
+        entry.view.setActionClip?.(action, state.action ? now - state.action.startedAt : undefined);
+      }
       this.advanceActorView(entry.view, deltaMs);
       this.updateLiveEmotion(id, state, entry.view.view, now);
       this.updatePatience(id, state, entry.view.view, now);
@@ -962,6 +992,7 @@ export class RoomScreen implements Screen {
         setItemOverlayDepth(meal, table);
       } else { this.mealViews.get(id)?.destroy(); this.mealViews.delete(id); }
     }
+    this.updateTrayDishes();
     this.updateTableDirt(deltaMs, now);
     this.updateSharedStoves(now);
   }
@@ -1092,6 +1123,54 @@ export class RoomScreen implements Screen {
     return true;
   }
 
+  /**
+   * Staff clips: waiters walk with the tray (and stand holding it while they
+   * carry a dish), cleaners carry bucket and brush; work uses the original
+   * WAITOR_WORKING and CLEAN clips.
+   */
+  private applyStaffClips(view: ActorRenderer, state: SharedActor, now: number): void {
+    const cleaner = state.role === 'cleaner';
+    view.setBaseClips?.(cleaner ? CLIP.CLEANER_WALK : CLIP.WAITOR_WALK, cleaner ? CLIP.CLEANER_IDLE : CLIP.IDLE);
+    const elapsed = state.action ? now - state.action.startedAt : undefined;
+    if (state.state === 'cleaning') view.setActionClip?.(CLIP.CLEAN, elapsed);
+    else if (state.state === 'picking' || state.state === 'busing') view.setActionClip?.(CLIP.WAITOR_WORKING, elapsed);
+    else if (state.state === 'carrying') view.setActionClip?.(CLIP.WAITOR_WALK, 0);
+    else view.setActionClip?.(null);
+  }
+
+  /** The dish a waiter carries rides on the tray: a child of the actor view, so it shares its depth. */
+  private updateTrayDishes(): void {
+    const present = new Set<string>();
+    for (const [id, entry] of this.liveActors) {
+      const food = entry.state.kind === 'staff' ? entry.state.food : undefined;
+      if (!food) continue;
+      present.add(id);
+      const view = entry.view.view;
+      const texture = this.recipeArt.get(food.recipeId).stage2;
+      let dish = this.trayDishes.get(id);
+      if (dish && (dish.destroyed || dish.parent !== view || dish.texture !== texture)) {
+        if (!dish.destroyed) dish.destroy();
+        dish = undefined;
+      }
+      if (!dish) {
+        dish = new Sprite(texture);
+        dish.label = 'tray-dish';
+        dish.anchor.set(0.5, 0.75);
+        dish.eventMode = 'none';
+        this.trayDishes.set(id, dish);
+        view.addChild(dish);
+      }
+      // The actor view is scaled; the dish keeps a fixed world size.
+      const scale = view.scale.x || 1;
+      dish.width = TRAY_DISH_SIZE / scale;
+      dish.height = TRAY_DISH_SIZE / scale;
+      // Facing right (directions 1–3) the tray is on the right of the body.
+      const side = entry.actor.direction >= 1 && entry.actor.direction <= 3 ? 1 : entry.actor.direction >= 5 ? -1 : 0;
+      dish.position.set(side * TRAY_OFFSET_X / scale, -TRAY_HEIGHT / scale);
+    }
+    for (const [id, dish] of this.trayDishes) if (!present.has(id)) { if (!dish.destroyed) dish.destroy(); this.trayDishes.delete(id); }
+  }
+
   /** Dirty plates sit on their table once nobody is eating there; cleared ones sparkle away. */
   private updateTableDirt(deltaMs: number, now: number): void {
     const eating = new Set<string>();
@@ -1180,7 +1259,7 @@ export class RoomScreen implements Screen {
       return;
     }
     if (!meter) { meter = new PatienceMeter(); this.patienceMeters.set(id, meter); this.world.addChild(meter.view); }
-    meter.update(patienceLeft(state.patience, now), actorView, now, this.kitchenIdle(now));
+    meter.update(patienceLeft(state.patience, now), actorView, now, state.browsing === true || this.kitchenIdle(now));
     meter.view.renderable = !this.storeBar?.isOpen;
   }
 
@@ -1893,7 +1972,27 @@ export class RoomScreen implements Screen {
   }
 
   private get isModalOpen(): boolean {
-    return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen);
+    return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen || this.staffModal?.isOpen);
+  }
+
+  /** Funcionários: slots by level, hire, switch role and dismiss (owner only). */
+  openStaffScreen(): void {
+    if (!this.staffModal || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.drag = null;
+    this.pinch = null;
+    this.touchPoints.clear();
+    this.hovered = null;
+    this.highlight.clear();
+    this.closeStoveActions();
+    if (this.cookCallout) this.cookCallout.view.visible = false;
+    this.staffModal.open();
+  }
+
+  closeStaffScreen(): void { this.staffModal?.close(); }
+
+  private staffPortrait(staffId: string): Texture | undefined {
+    const view = this.liveActors.get('staff:' + staffId)?.view;
+    return view instanceof AvatarActorView ? view.portraitTexture() : undefined;
   }
 
   /** Atores em cena, o jogador primeiro. Usado nos testes. */
@@ -2747,6 +2846,7 @@ export class RoomScreen implements Screen {
   setStageScale(scale: number): void {
     this.wardrobeModal?.setStageScale(scale);
     this.settingsModal?.setStageScale(scale);
+    this.staffModal?.setStageScale(scale);
     this.audioControl?.setStageScale(scale);
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
@@ -2802,6 +2902,8 @@ export class RoomScreen implements Screen {
     this.cookModal?.destroy();
     this.wardrobeModal?.destroy();
     this.settingsModal?.destroy();
+    this.staffModal?.destroy();
+    this.trayDishes.forEach((dish) => { if (!dish.destroyed) dish.destroy(); }); this.trayDishes.clear();
     this.outsideNpcManager?.destroy();
     this.npcAvatarSource?.destroy();
     this.npcAvatarIndices.clear();

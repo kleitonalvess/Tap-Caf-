@@ -16,6 +16,9 @@ export interface GameRules {
   recipes: RecipeRule[];
   stove: { prepareSeconds: number; cleaningCoins: number; cleaningXp: number; seasonBonusPercent: number; seasonXp: number };
   customers: { patienceSeconds: number; cookingArrivalFactor: number };
+  levels?: { level: number; requiredXp: number; rewardCoins: number }[];
+  /** How many employees a café keeps from each level (game-config amountLocks). */
+  employeeLocks?: { employees: number; level: number }[];
 }
 
 export async function loadGameRules(signal?: AbortSignal): Promise<GameRules> {

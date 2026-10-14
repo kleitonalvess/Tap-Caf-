@@ -118,7 +118,7 @@ func (r *room) adjacentUnit(a *entity, id, kind string) (Unit, bool) {
 
 // busyState is an actor action that blocks commands until it is due.
 func busyState(state string) bool {
-	return state == "cooking" || state == "serving" || state == "cleaning"
+	return state == "cooking" || state == "serving" || state == "cleaning" || state == "picking" || state == "busing"
 }
 
 func (r *room) startStoveAction(a *entity, stove Unit, kind string, start time.Time, duration time.Duration) {

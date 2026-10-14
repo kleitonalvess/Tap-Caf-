@@ -19,6 +19,9 @@ export class AvatarActorView {
 
   private clip: number = CLIP.IDLE;
   private actionClip: number | null = null;
+  /** Clips used without an action: staff walk with a tray or a bucket. */
+  private walkClip: number = CLIP.WALK;
+  private idleClip: number = CLIP.IDLE;
   private actionElapsedMs?: number;
   private frameIndex = 0;
   private elapsedMs = 0;
@@ -66,6 +69,18 @@ export class AvatarActorView {
     return clipFrames(this.clip)[this.frameIndex] ?? 0;
   }
 
+  setBaseClips(walk: number, idle: number): void {
+    this.walkClip = walk;
+    this.idleClip = idle;
+  }
+
+  /** First idle frame facing the camera, for the staff window. */
+  portraitTexture(): Texture | undefined {
+    const frame = clipFrames(this.idleClip)[0];
+    const found = frame === undefined ? undefined : lookupFrame(this.baked, this.idleClip, 1, frame);
+    return found ? this.cellTextures.get(`${found.cell.x},${found.cell.y}`) : undefined;
+  }
+
   /** Ação temporária comandada pela sala; caminhar continua tendo prioridade. */
   setActionClip(clip: number | null, elapsedMs?: number): void {
     this.actionClip = clip;
@@ -92,7 +107,7 @@ export class AvatarActorView {
   update(deltaMs: number): void {
     // A velocidade determina a alternância entre os clipes parado e andando.
 
-    const desejado = this.actor.moving ? CLIP.WALK : this.actionClip ?? CLIP.IDLE;
+    const desejado = this.actor.moving ? this.walkClip : this.actionClip ?? this.idleClip;
     if (desejado !== this.clip) {
       this.clip = desejado;
       this.frameIndex = 0;

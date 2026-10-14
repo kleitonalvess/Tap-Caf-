@@ -28,6 +28,9 @@ type Storage interface {
 	Consume(ctx context.Context, room, food, table string) (gamewire.Payment, error)
 	// Feedback records a customer verdict that came without a payment.
 	Feedback(context.Context, string, bool) error
+	// Clean clears a table's plates for the staff (no reward); an already
+	// clean or missing table is not an error.
+	Clean(ctx context.Context, room, table string) error
 }
 type Options struct {
 	Tick, Step, Grace            time.Duration
@@ -103,6 +106,11 @@ type entity struct {
 	visits int
 	// Deadline for a seated customer waiting for food; zero otherwise.
 	patienceUntil time.Time
+	// Customer: the waiter bringing the dish, and the wait left when it was paused.
+	servedBy       string
+	pausedPatience time.Duration
+	// Staff: the job in progress.
+	job *staffJob
 }
 type room struct {
 	manager       *Manager
@@ -128,6 +136,11 @@ type room struct {
 	sleepFailures int
 	// Owner popularity in tenths, mirrored from persistence to pace arrivals.
 	popularity int
+	// Last kitchenIdle result, to notice the first dish going on the fire.
+	kitchenWasIdle, kitchenKnown bool
+	// Servings promised to waiters (food id → count) and tables taken by staff.
+	reserved map[string]int
+	claimed  map[string]string
 }
 
 func (m *Manager) get(ctx context.Context, id string) (*room, error) {
@@ -165,6 +178,8 @@ func (m *Manager) get(ctx context.Context, id string) (*room, error) {
 			}
 			r.occupancy = map[Tile]map[string]bool{}
 			r.actorTiles = map[string][]Tile{}
+			r.reserved = map[string]int{}
+			r.claimed = map[string]string{}
 			r.frozenAt = time.Now()
 			for _, a := range seed.NPCs {
 				if len(r.actors) >= m.options.MaxNPCs {
@@ -188,6 +203,7 @@ func (m *Manager) get(ctx context.Context, id string) (*room, error) {
 				}
 				r.indexActor(r.actors[a.ID])
 			}
+			r.syncStaff(r.frozenAt)
 			s.room = r
 			go r.run()
 		}
@@ -513,6 +529,9 @@ func (r *room) sleep(now time.Time) error {
 	if r.frozenAt.IsZero() {
 		r.frozenAt = now
 	}
+	// Jobs in progress are dropped first: promised servings go back to the
+	// counters and served customers resume their saved wait.
+	r.dropAllJobs(now)
 	npcs := []gamewire.Actor{}
 	for _, a := range r.actors {
 		if a.Kind != "npc" {
@@ -1073,6 +1092,7 @@ func (r *room) updateWorld(w gamewire.World) {
 	foodsChanged := fmt.Sprint(w.Foods) != fmt.Sprint(r.world.Foods)
 	dirtChanged := fmt.Sprint(w.Dirt) != fmt.Sprint(r.world.Dirt)
 	r.world = w
+	r.syncStaff(time.Now())
 	doorChanged := false
 	for _, u := range changes {
 		if item, _ := roomcatalog.ByID(u.ItemID); item.Kind == "door" {
@@ -1128,6 +1148,7 @@ func (r *room) updateWorld(w gamewire.World) {
 	}
 }
 func (r *room) tick(now time.Time) {
+	r.watchKitchen(now)
 	updates := []gamewire.Actor{}
 	removed := []string{}
 	for _, a := range r.actors {
@@ -1187,6 +1208,10 @@ func (r *room) tick(now time.Time) {
 			if busyState(a.State) && !now.Before(a.due) {
 				a.State = "idle"
 				a.Action = nil
+				changed = true
+			}
+			if a.Kind == "staff" && !now.Before(a.due) {
+				r.advanceStaff(a, now)
 				changed = true
 			}
 			if a.Kind == "npc" && !now.Before(a.due) {

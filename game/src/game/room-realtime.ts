@@ -15,11 +15,15 @@ export interface SharedPayment {
 export interface SharedAction { kind: 'cooking' | 'serving' | 'cleaning' | 'seated' | 'eating'; stoveId?: string; startedAt: number; duration: number }
 export interface SharedEmotion { id: string; kind: 'satisfied' | 'dissatisfied' | 'neutral'; startedAt: number; duration: number }
 export interface SharedActor {
-  id: string; kind?: 'human' | 'npc'; name?: string; appearance?: string;
+  id: string; kind?: 'human' | 'npc' | 'staff'; name?: string; appearance?: string;
   tx: number; ty: number; direction: number; outside: boolean; state: string;
   move?: { from: Tile; to: Tile; startedAt: number; duration: number };
   chairId?: string; tableId?: string; food?: SharedFood; actionRemaining?: number;
   action?: SharedAction; emotion?: SharedEmotion; patience?: SharedPatience;
+  /** Came in while nothing could be served: leaving unserved costs nothing. */
+  browsing?: boolean;
+  /** Staff only. */
+  role?: 'waiter' | 'cleaner';
 }
 export interface SharedWorld {
   roomId: string; revision: number; tilesX: number; tilesY: number;

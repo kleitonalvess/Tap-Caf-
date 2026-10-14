@@ -47,7 +47,7 @@ func (r *room) spawnNPC(now time.Time) {
 			return
 		}
 	}
-	a := &entity{Actor: gamewire.Actor{ID: "npc:" + uuid.NewString(), Kind: "npc", Name: "Cliente", Appearance: look, X: start.X, Y: start.Y, Outside: true, State: "entering"}}
+	a := &entity{Actor: gamewire.Actor{ID: "npc:" + uuid.NewString(), Kind: "npc", Name: "Cliente", Appearance: look, X: start.X, Y: start.Y, Outside: true, State: "entering", Browsing: r.kitchenIdle(now)}}
 	a.path = append(line(start, turn), line(turn, entry)...)
 	a.path = append(a.path, Tile{X: door.X, Y: door.Y})
 	r.actors[a.ID] = a
@@ -134,6 +134,27 @@ func (r *room) shouldSpawn(now time.Time) bool {
 	return active < capacity && total < 2*r.manager.options.MaxNPCs
 }
 
+// watchKitchen gives customers who came in to browse a full wait once the
+// first dish goes on the fire, so starting to cook never costs popularity.
+func (r *room) watchKitchen(now time.Time) {
+	idle := r.kitchenIdle(now)
+	woke := r.kitchenKnown && r.kitchenWasIdle && !idle
+	r.kitchenWasIdle, r.kitchenKnown = idle, true
+	if !woke {
+		return
+	}
+	updates := []gamewire.Actor{}
+	for _, a := range r.actors {
+		if a.Kind == "npc" && a.Browsing && a.State == "seated" && a.Food == nil && !a.patienceUntil.IsZero() {
+			a.restorePatience(now.Add(gamerules.CustomerPatience()))
+			updates = append(updates, r.status(a, false))
+		}
+	}
+	if len(updates) > 0 {
+		r.broadcast(gamewire.Event{Type: "actors", Actors: updates}, "")
+	}
+}
+
 func (a *entity) restorePatience(until time.Time) {
 	duration := gamerules.CustomerPatience()
 	a.patienceUntil = until
@@ -178,30 +199,22 @@ func (r *room) advanceNPC(a *entity, now time.Time) bool {
 		a.visits++
 		a.due = now.Add(2 * time.Second)
 	case "seated":
+		// A waiter is bringing the dish: the wait is paused until the hand-over.
+		if a.servedBy != "" {
+			a.due = now.Add(time.Second)
+			return false
+		}
 		// Customers saved before patience existed get the full wait now.
 		if a.patienceUntil.IsZero() {
 			a.restorePatience(now.Add(gamerules.CustomerPatience()))
 		}
-		if a.TableID != "" && len(r.world.Foods) > 0 {
-			food := r.world.Foods[0]
+		// Without waiters on duty customers help themselves at the counter.
+		if food, ok := r.availableFood(); ok && a.TableID != "" && !r.waitersOnDuty() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			payment, err := r.manager.store.Consume(ctx, r.id, food.ID, a.TableID)
 			cancel()
 			if err == nil {
-				r.takeServing(food.ID, payment.ServingsLeft)
-				r.addDirt(a.TableID, now)
-				food.Servings = 0
-				food.CounterID = ""
-				a.Food = &food
-				a.clearPatience()
-				r.popularity = payment.PopularityTenths
-				a.State = "eating"
-				a.due = now.Add(8 * time.Second)
-				a.Action = &gamewire.ActorAction{Kind: "eating", StartedAt: now.UnixMilli(), Duration: 8000}
-				r.broadcast(gamewire.Event{Type: "food", Foods: r.world.Foods}, "")
-				// Shown when credited: the owner's HUD updates from the same transaction.
-				payment.ActorID = a.ID
-				r.broadcast(gamewire.Event{Type: "payment", Payment: &payment}, "")
+				r.startMeal(a, food, payment, now)
 				return false
 			}
 			if errors.Is(err, ErrFoodGone) {
@@ -225,6 +238,25 @@ func (r *room) advanceNPC(a *entity, now time.Time) bool {
 		r.exitNPC(a, now)
 	}
 	return false
+}
+
+// startMeal mirrors a credited serving: the counter loses it, the table gets the
+// plate, the customer eats and everyone sees the coins over the customer.
+func (r *room) startMeal(a *entity, food gamewire.Food, payment gamewire.Payment, now time.Time) {
+	r.takeServing(food.ID, payment.ServingsLeft)
+	r.addDirt(a.TableID, now)
+	food.Servings = 0
+	food.CounterID = ""
+	a.Food = &food
+	a.clearPatience()
+	r.popularity = payment.PopularityTenths
+	a.State = "eating"
+	a.due = now.Add(8 * time.Second)
+	a.Action = &gamewire.ActorAction{Kind: "eating", StartedAt: now.UnixMilli(), Duration: 8000}
+	r.broadcast(gamewire.Event{Type: "food", Foods: r.world.Foods}, "")
+	// Shown when credited: the owner's HUD updates from the same transaction.
+	payment.ActorID = a.ID
+	r.broadcast(gamewire.Event{Type: "payment", Payment: &payment}, "")
 }
 
 // takeServing mirrors persistence after a serving was taken or found missing.
@@ -287,10 +319,10 @@ func (r *room) exitNPC(a *entity, now time.Time) {
 	a.Action = nil
 	// A customer shows one verdict. Without the satisfied one from eating, this
 	// exit is a complaint and costs popularity exactly once (the flag is saved).
-	// With nothing to eat in the whole café the customer only browsed: a neutral
-	// face and no penalty, so an idle café keeps its rating.
+	// With nothing to eat in the whole café, or for a customer who came in while
+	// it was so, the visit was only browsing: a neutral face and no penalty.
 	if !a.EmotionShown {
-		if r.kitchenIdle(now) {
+		if a.Browsing || r.kitchenIdle(now) {
 			r.startEmotion(a, "neutral", now)
 		} else {
 			r.reportUnsatisfied()

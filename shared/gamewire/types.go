@@ -47,7 +47,17 @@ type World struct {
 	Units    []Unit          `json:"units"`
 	Foods    []Food          `json:"foods"`
 	Dirt     []Dirt          `json:"dirt"`
+	Staff    []StaffMember   `json:"staff"`
 	Cooking  json.RawMessage `json:"cooking,omitempty"`
+}
+
+// StaffMember is one hired employee as the room simulates it.
+type StaffMember struct {
+	ID         string `json:"id"`
+	Profile    string `json:"profile"`
+	Name       string `json:"name"`
+	Role       string `json:"role"`
+	Appearance string `json:"appearance"`
 }
 
 // Dirt is the dishes left on one table; a dirty table seats nobody.
@@ -100,6 +110,10 @@ type Actor struct {
 	Emotion         *Emotion     `json:"emotion,omitempty"`
 	EmotionShown    bool         `json:"emotionShown,omitempty"`
 	Patience        *Patience    `json:"patience,omitempty"`
+	// A customer who came in while nothing could be served: leaving unserved costs nothing.
+	Browsing bool `json:"browsing,omitempty"`
+	// Staff role ("waiter" or "cleaner"); empty for customers and players.
+	Role string `json:"role,omitempty"`
 	// Paths/timers are saved only on dormancy; they are never broadcast in hot updates.
 	Path              []Tile `json:"path,omitempty"`
 	Visits            int    `json:"visits,omitempty"`

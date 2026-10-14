@@ -69,14 +69,14 @@ func TestCleaningClearsEveryPlateOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cleared, err := cleanTable(app, owner, table)
+	cleared, err := cleanTable(app, owner, table, true)
 	if err != nil || cleared != 2 || len(plates(t, app, owner)) != 0 {
 		t.Fatalf("cleared=%d err=%v dirt=%+v", cleared, err, plates(t, app, owner))
 	}
-	if _, err = cleanTable(app, owner, table); !errors.Is(err, errTableClean) {
+	if _, err = cleanTable(app, owner, table, true); !errors.Is(err, errTableClean) {
 		t.Fatalf("cleaning a clean table: %v", err)
 	}
-	if _, err = cleanTable(app, "someone-else", table); !errors.Is(err, errRoomOwned) {
+	if _, err = cleanTable(app, "someone-else", table, true); !errors.Is(err, errRoomOwned) {
 		t.Fatalf("cleaning another player's table: %v", err)
 	}
 }

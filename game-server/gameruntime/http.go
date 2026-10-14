@@ -84,6 +84,14 @@ func (s *HTTPStorage) Consume(ctx context.Context, id, food, table string) (game
 	}
 	return out, err
 }
+func (s *HTTPStorage) Clean(ctx context.Context, id, table string) error {
+	err := s.request(ctx, "POST", id+"/clean-table", map[string]string{"tableId": table}, nil)
+	var status *statusError
+	if errors.As(err, &status) && (status.code == http.StatusConflict || status.code == http.StatusNotFound) {
+		return nil
+	}
+	return err
+}
 func (s *HTTPStorage) Feedback(ctx context.Context, id string, satisfied bool) error {
 	return s.request(ctx, "POST", id+"/feedback", map[string]bool{"satisfied": satisfied}, nil)
 }

@@ -197,3 +197,29 @@ func TestFoodChangesAreBroadcastAsACompleteList(t *testing.T) {
 		t.Fatal("emptied counters were not broadcast")
 	}
 }
+
+func TestBrowsingCustomerGetsAFreshWaitAndNeverComplains(t *testing.T) {
+	store := &economyStore{}
+	r, _ := economyRoom(store)
+	r.world.Foods = nil
+	now := time.Now()
+	r.watchKitchen(now)
+	customer := seatedCustomer(r, now)
+	customer.Kind = "npc"
+	customer.Browsing = true
+	patience := gamerules.CustomerPatience()
+	// The owner starts cooking 30 s later: the browser gets the whole wait again.
+	cooking := now.Add(30 * time.Second)
+	onTheFire(r, cooking.Add(time.Hour))
+	r.watchKitchen(cooking)
+	if got := customer.patienceUntil.Sub(cooking); got != patience {
+		t.Fatalf("patience after the first dish = %v, want %v", got, patience)
+	}
+	// Even if the dish is too slow, the browser leaves without a complaint.
+	r.advanceNPC(customer, cooking.Add(patience))
+	r.advanceNPC(customer, cooking.Add(patience+time.Second))
+	r.manager.wg.Wait()
+	if len(store.feedbacks) != 0 || customer.Emotion == nil || customer.Emotion.Kind != "neutral" {
+		t.Fatalf("browser verdicts=%v emotion=%+v", store.feedbacks, customer.Emotion)
+	}
+}

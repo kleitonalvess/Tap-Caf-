@@ -155,3 +155,28 @@ func TestTableRulesAreValid(t *testing.T) {
 		t.Fatal("table rules missing from the public rules")
 	}
 }
+
+func TestEmployeeSlotsFollowTheConfigLocks(t *testing.T) {
+	cases := map[int]int{1: 1, 6: 1, 7: 2, 14: 2, 15: 3, 46: 6, 47: 7, 260: 7}
+	for level, want := range cases {
+		if got := EmployeeSlots(level); got != want {
+			t.Fatalf("level %d: %d slots, want %d", level, got, want)
+		}
+	}
+	if next, ok := NextEmployeeSlotLevel(1); !ok || next != 7 {
+		t.Fatalf("next slot after level 1 = %d %v", next, ok)
+	}
+	if _, ok := NextEmployeeSlotLevel(47); ok {
+		t.Fatal("no slot after level 47")
+	}
+}
+
+func TestStaffProfilesIncludeTheVostuWaiter(t *testing.T) {
+	vostu, ok := StaffProfileByID("vostu")
+	if !ok || vostu.Role != RoleWaiter {
+		t.Fatalf("vostu = %+v %v", vostu, ok)
+	}
+	if len(Public().Staff.Profiles) < EmployeeSlots(MaxLevel()) {
+		t.Fatal("fewer profiles than slots")
+	}
+}

@@ -16,6 +16,7 @@ type economyStore struct {
 	payment   gamewire.Payment
 	consumed  []string
 	feedbacks []bool
+	cleaned   []string
 	slept     *gamewire.Sleep
 }
 
@@ -36,6 +37,12 @@ func (s *economyStore) Consume(_ context.Context, _ string, food, _ string) (gam
 	s.consumed = append(s.consumed, food)
 	return s.payment, nil
 }
+func (s *economyStore) Clean(_ context.Context, _ string, table string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleaned = append(s.cleaned, table)
+	return nil
+}
 func (s *economyStore) Feedback(_ context.Context, _ string, satisfied bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -53,7 +60,8 @@ func economyRoom(store Storage) (*room, *Peer) {
 	peer := &Peer{ID: "peer", Out: make(chan []byte, 32), Kick: func() {}}
 	r := &room{manager: New(store, Options{}), id: "owner", world: world, grid: newGrid(world),
 		actors: map[string]*entity{}, peers: map[string]*Peer{"peer": peer}, seats: map[string]string{},
-		occupancy: map[Tile]map[string]bool{}, actorTiles: map[string][]Tile{}, popularity: 800}
+		occupancy: map[Tile]map[string]bool{}, actorTiles: map[string][]Tile{}, popularity: 800,
+		reserved: map[string]int{}, claimed: map[string]string{}}
 	return r, peer
 }
 

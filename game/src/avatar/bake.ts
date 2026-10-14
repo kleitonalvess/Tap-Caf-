@@ -17,6 +17,9 @@ import { resolveLook, type Look } from './wardrobe';
 /** Shared actors walk, sit and eat; humans also cook and clear tables (bucket and brush). */
 export const ROOM_CLIPS: readonly number[] = [CLIP.IDLE, CLIP.WALK, CLIP.SIT, CLIP.EAT];
 export const PLAYER_ROOM_CLIPS: readonly number[] = [...ROOM_CLIPS, CLIP.COOKING, CLIP.CLEAN];
+/** Staff bake only their role: waiters walk with the tray, cleaners carry bucket and brush. */
+export const WAITER_CLIPS: readonly number[] = [CLIP.IDLE, CLIP.WAITOR_WALK, CLIP.WAITOR_WORKING];
+export const CLEANER_CLIPS: readonly number[] = [CLIP.CLEANER_IDLE, CLIP.CLEANER_WALK, CLIP.CLEAN];
 
 /** Lado da célula do atlas assado, em pixels. 256px garante alta nitidez com assets 2x. */
 export const DEFAULT_CELL = 256;
