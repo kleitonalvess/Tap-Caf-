@@ -139,6 +139,44 @@ export const FIM_DE_EXPEDIENTE: SongDefinition = {
   ],
 };
 
+/** Disco octave bass: root and its octave on every eighth (half a bar per chord when two). */
+function octaves(root: number, root2 = root): NoteEvent[] {
+  return [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5].map((beat) => {
+    const base = beat < 2 ? root : root2;
+    return n(beat, beat % 1 === 0 ? base : base + 12, 0.4, beat % 1 === 0 ? 0.9 : 0.6);
+  });
+}
+
+/**
+ * Original disco-funk in A minor for the party at the disco: four-on-the-floor
+ * kick, open hats on the off-beats, off-beat chord stabs and an octave bass.
+ * Played only while a party is on (AudioEngine.setOverride); level provisional.
+ */
+export const FESTA_DO_BAIRRO: SongDefinition = {
+  id: 'party',
+  name: 'Festa do Bairro',
+  bpm: 122,
+  level: 0.42,
+  swing: 0,
+  comp: [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5].map((beat) => ({ beat, beats: 0.3, velocity: beat % 2 === 1.5 ? 0.6 : 0.5 })),
+  drums: {
+    kick: [0, 1, 2, 3, 4, 5, 6, 7],
+    rim: [1, 3, 5, 7],
+    hat: [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5],
+    shaker: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5],
+  },
+  bars: [
+    { chords: [AM9], bass: octaves(45), melody: [n(0, 76, 0.5), n(0.5, 79, 0.5), n(1, 81, 1), n(2.5, 79, 0.5), n(3, 76, 1)] },
+    { chords: [DM9], bass: octaves(38), melody: [n(0.5, 74, 0.5), n(1, 77, 1), n(2, 76, 0.5), n(2.5, 74, 1.5)] },
+    { chords: [GM9, C13], bass: octaves(43, 36), melody: [n(0, 74, 0.5), n(0.5, 79, 1), n(2, 76, 0.5), n(2.5, 72, 1)] },
+    { chords: [FMA9, EM7B5], bass: octaves(41, 40), melody: [n(0, 72, 1), n(1, 69, 0.5), n(2, 71, 1.5)] },
+    { chords: [AM9], bass: octaves(45) },
+    { chords: [DM9], bass: octaves(38), melody: [n(2, 81, 0.5), n(2.5, 79, 0.5), n(3, 77, 1)] },
+    { chords: [GM9, C13], bass: octaves(43, 36) },
+    { chords: [FMA9, A7B13], bass: octaves(41, 45), melody: [n(2, 76, 2, 0.7)] },
+  ],
+};
+
 export const PROCEDURAL_SONGS: readonly SongDefinition[] = [BOSSA_DO_BALCAO, FIM_DE_EXPEDIENTE];
 
 const onGrid = (beat: number) => Number.isInteger(beat * 2);

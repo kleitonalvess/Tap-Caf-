@@ -297,7 +297,7 @@ function paintDisco(p: Painter): void {
   // Marquee over the door.
   p.box(1.2, v1, 2.8, v1 + 0.45, 120, 136, { left: '#d9a441', right: '#b07f2a', top: '#efe5ff' });
 
-  // "Em breve" easel by the door.
+  // "Festa hoje" easel by the door.
   const easel = p.pt(3.15, 3.35);
   g.fillStyle = '#5a3d1e';
   g.fillRect(easel.x - 20, easel.y - 6, 4, 8);
@@ -311,8 +311,8 @@ function paintDisco(p: Painter): void {
     face.fillStyle = '#1b1426';
     face.font = font(15);
     face.textAlign = 'center';
-    face.fillText('EM', 3.15 * HALF_W, -38);
-    face.fillText('BREVE', 3.15 * HALF_W, -19);
+    face.fillText('FESTA', 3.15 * HALF_W, -38);
+    face.fillText('HOJE!', 3.15 * HALF_W, -19);
   });
 
   // Rooftop: spotlights and the mirror ball.

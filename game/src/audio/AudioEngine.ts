@@ -59,6 +59,8 @@ export class AudioEngine {
   private readonly samples: Partial<Record<SoundEvent, readonly string[]>>;
   private sprites: { url: string; clips: Partial<Record<SoundEvent, SpriteClip[]>> } | null = null;
   private current: PlayingTrack | null = null;
+  /** A track that temporarily replaces the player's choice (the party music). */
+  private override: MusicTrack | null = null;
   private trackToken = 0;
   private musicRequested = false;
   private intensity = 0;
@@ -90,6 +92,16 @@ export class AudioEngine {
 
   startMusic(): void {
     this.musicRequested = true;
+    void this.applyTrack();
+  }
+
+  /**
+   * Plays a track instead of the player's choice until called with null (the
+   * party at the disco); the preference itself is never changed.
+   */
+  setOverride(track: MusicTrack | null): void {
+    if ((this.override?.id ?? null) === (track?.id ?? null)) return;
+    this.override = track;
     void this.applyTrack();
   }
 
@@ -198,7 +210,7 @@ export class AudioEngine {
   private async applyTrack(): Promise<void> {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.musicRequested || !this.music || !this.musicKit) return;
-    const track = this.tracks.find((candidate) => candidate.id === this.preferences.track) ?? this.tracks[0];
+    const track = this.override ?? this.tracks.find((candidate) => candidate.id === this.preferences.track) ?? this.tracks[0];
     if (this.current?.id === track.id) return;
     const token = ++this.trackToken;
     const at = ctx.currentTime + 0.05;

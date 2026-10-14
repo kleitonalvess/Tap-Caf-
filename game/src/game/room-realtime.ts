@@ -1,16 +1,19 @@
 import type { CookingSnapshot } from './cooking';
 import type { RoomUnit } from './room-inventory';
+import type { StreetState } from './street';
+import type { AwaySummary } from './away';
 import type { Tile } from '../world/iso';
 
-export interface SharedFood { id: string; recipeId: string; servings?: number; counterId?: string }
+/** fresh: servings made with farm ingredients (they pay a bonus). */
+export interface SharedFood { id: string; recipeId: string; servings?: number; counterId?: string; fresh?: number }
 /** Plates left on a table; a dirty table seats nobody until it is cleared. */
 export interface SharedDirt { tableId: string; plates: number; since: number }
 /** How long a seated customer still waits for food. */
 export interface SharedPatience { startedAt: number; duration: number }
 /** Credited by the server when the customer received the serving; the HUD refresh comes from the same save. */
 export interface SharedPayment {
-  /** coins is the total credited; tip is the part a waiter's delivery earned. */
-  actorId?: string; recipeId: string; coins: number; tip?: number; xp: number; level: number;
+  /** coins is the total credited; tip (waiter or party) and freshCoins (farm) are parts of it. */
+  actorId?: string; recipeId: string; coins: number; tip?: number; freshCoins?: number; freshXp?: number; freshLeft?: number; xp: number; level: number;
   levelUp?: boolean; levelReward?: number; servingsLeft: number; popularityTenths: number;
 }
 /** fetching: a customer without a waiter fetching a serving from the counter. */
@@ -29,16 +32,18 @@ export interface SharedActor {
 }
 export interface SharedWorld {
   roomId: string; revision: number; tilesX: number; tilesY: number;
-  units: RoomUnit[]; foods: SharedFood[]; dirt?: SharedDirt[]; cooking?: CookingSnapshot;
+  units: RoomUnit[]; foods: SharedFood[]; dirt?: SharedDirt[]; cooking?: CookingSnapshot; street?: StreetState;
 }
 export interface RoomEvent {
   type: 'welcome' | 'actors' | 'world' | 'food' | 'dirt' | 'payment' | 'ack' | 'error'; epoch: string; seq: number; serverNow: number;
   selfId?: string; world?: SharedWorld; actors?: SharedActor[]; removed?: string[];
   units?: RoomUnit[]; revision?: number;
-  /** Set on a world event when the café grew (expansion). */
-  tilesX?: number; tilesY?: number;
+  /** Set on a world event when the café grew (expansion) or a street building changed. */
+  tilesX?: number; tilesY?: number; street?: StreetState;
   foods?: SharedFood[]; dirt?: SharedDirt[]; cooking?: CookingSnapshot; payment?: SharedPayment;
   requestId?: string; message?: string;
+  /** Welcome to the owner only: what the café did while they were away. */
+  away?: AwaySummary;
 }
 
 export interface RoomLatency { type: 'latency'; rttMs: number }

@@ -56,15 +56,19 @@ export class FloatingRewards {
 
   constructor(private readonly world: Container, private readonly icons: RewardIcons = {}) {}
 
-  /** tip is the part of coins a waiter's delivery earned; it rises on its own line. */
-  spawn(x: number, y: number, depth: number, coins: number, xp: number, tip = 0): void {
+  /**
+   * tip (waiter or party) and fresh (farm ingredients) are parts of coins; each
+   * rises on its own line under the dish price.
+   */
+  spawn(x: number, y: number, depth: number, coins: number, xp: number, tip = 0, fresh = 0): void {
     const view = new Container();
     view.label = 'floating-reward';
     view.eventMode = 'none';
     let rowY = 0;
     const tipped = Math.max(0, Math.min(tip, coins));
-    if (coins - tipped > 0) {
-      const row = rewardRow(`+${coins - tipped}`, 0xffd23f, 0x824310, this.icons.coin);
+    const freshed = Math.max(0, Math.min(fresh, coins - tipped));
+    if (coins - tipped - freshed > 0) {
+      const row = rewardRow(`+${coins - tipped - freshed}`, 0xffd23f, 0x824310, this.icons.coin);
       row.y = rowY;
       view.addChild(row);
       rowY += 56;
@@ -72,6 +76,13 @@ export class FloatingRewards {
     if (tipped > 0) {
       const row = rewardRow(`+${tipped} gorjeta`, 0xb8f28c, 0x1f5a17, this.icons.coin);
       row.label = 'floating-tip';
+      row.y = rowY;
+      view.addChild(row);
+      rowY += 56;
+    }
+    if (freshed > 0) {
+      const row = rewardRow(`+${freshed} fresco`, 0x9be36b, 0x23511a, this.icons.coin);
+      row.label = 'floating-fresh';
       row.y = rowY;
       view.addChild(row);
       rowY += 56;

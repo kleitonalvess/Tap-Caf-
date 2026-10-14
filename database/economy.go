@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"time"
 
 	"coffe-mania/database/playerstate"
 	"coffe-mania/shared/gamerules"
@@ -21,6 +22,14 @@ func serveCustomer(app core.App, owner, foodID, tableID string) (gamewire.Paymen
 // serveCustomerBy credits one serving; a waiter's delivery adds the customer's
 // tip to the coins (Payment.Coins is the total, Payment.Tip its share).
 func serveCustomerBy(app core.App, owner, foodID, tableID string, waiter bool) (gamewire.Payment, error) {
+	return serveServing(app, owner, foodID, tableID, waiter, time.Now())
+}
+
+// serveServing credits one serving as of the given instant (the offline
+// catch-up replays past meals). Tips: a waiter's delivery always tips; during a
+// party the tip is multiplied and self-served customers tip too. A fresh
+// serving (farm ingredients) adds its bonus to coins and XP.
+func serveServing(app core.App, owner, foodID, tableID string, waiter bool, at time.Time) (gamewire.Payment, error) {
 	var payment gamewire.Payment
 	err := app.RunInTransaction(func(tx core.App) error {
 		food, err := tx.FindRecordById("room_food", foodID)
@@ -32,10 +41,13 @@ func serveCustomerBy(app core.App, owner, foodID, tableID string, waiter bool) (
 		}
 		// Dishes served before servings existed hold exactly one.
 		left := max(1, food.GetInt("servings")) - 1
+		fresh := food.GetInt("fresh_servings")
+		freshLeft := min(left, max(0, fresh-1))
 		if left == 0 {
 			err = tx.Delete(food)
 		} else {
 			food.Set("servings", left)
+			food.Set("fresh_servings", freshLeft)
 			err = tx.Save(food)
 		}
 		if err != nil {
@@ -47,11 +59,24 @@ func serveCustomerBy(app core.App, owner, foodID, tableID string, waiter bool) (
 		}
 		// An unknown recipe still feeds the customer; it just pays nothing.
 		recipe, _ := gamerules.RecipeByID(food.GetString("recipe_id"))
+		party := false
+		if room, err := tx.FindFirstRecordByData("player_rooms", "user", owner); err == nil {
+			party = partyActive(room, at)
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
 		var tip int64
-		if waiter {
+		switch {
+		case waiter && party:
+			tip = gamerules.WaiterTip(recipe.PricePerServing) * gamerules.Street().Disco.TipMultiplier
+		case waiter || party:
 			tip = gamerules.WaiterTip(recipe.PricePerServing)
 		}
-		progress := playerstate.Award(state, recipe.PricePerServing+tip, recipe.XPPerServing)
+		var freshCoins, freshXP int64
+		if fresh > 0 {
+			freshCoins, freshXP = gamerules.FreshBonus(recipe.PricePerServing), gamerules.FreshBonus(recipe.XPPerServing)
+		}
+		progress := playerstate.Award(state, recipe.PricePerServing+tip+freshCoins, recipe.XPPerServing+freshXP)
 		if err = tx.Save(state); err != nil {
 			return err
 		}
@@ -60,6 +85,7 @@ func serveCustomerBy(app core.App, owner, foodID, tableID string, waiter bool) (
 		}
 		payment = gamewire.Payment{
 			RecipeID: food.GetString("recipe_id"), Coins: progress.Coins, Tip: tip, XP: progress.XP,
+			FreshCoins: freshCoins, FreshXP: freshXP, FreshLeft: freshLeft,
 			Level: progress.Level, LevelUp: progress.LevelUp, LevelReward: progress.LevelReward,
 			ServingsLeft: left, PopularityTenths: progress.PopularityTenths,
 		}

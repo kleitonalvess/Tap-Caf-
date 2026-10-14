@@ -1,10 +1,15 @@
 {
-  "source": "ripped/game-config.xml.txt (referência modificada). Níveis, popularidade, frequência, gorjetas (tabela por nível, sem uso) e vagas de funcionários vêm do arquivo. Preços e níveis das expansões e o custo por vaga de funcionário foram definidos pelo responsável pelo projeto (o config só traz em <expansions><newsFeed> o prêmio de 250 moedas por cliques de amigos na publicação, aqui pago ao concluir cada expansão). Receitas, fogão, mesas, perfis e tempos dos funcionários, XP das expansões, atraso do autosserviço, gorjeta do garçom e paciência dos clientes são valores de design provisórios: o repositório não contém a lista original de receitas nem dados de sujeira (o config só nomeia dishPickupTime, adulterado).",
+  "source": "ripped/game-config.xml.txt (referência modificada). Níveis, popularidade, frequência, gorjetas (tabela por nível, sem uso) e vagas de funcionários vêm do arquivo. Preços e níveis das expansões e o custo por vaga de funcionário foram definidos pelo responsável pelo projeto (o config só traz em <expansions><newsFeed> o prêmio de 250 moedas por cliques de amigos na publicação, aqui pago ao concluir cada expansão). Receitas, fogão, mesas, perfis e tempos dos funcionários, XP das expansões, atraso do autosserviço, gorjeta do garçom, Fazenda e Discoteca (street), expediente offline (offline) e paciência dos clientes são valores de design provisórios: o repositório não contém a lista original de receitas nem dados de sujeira (o config só nomeia dishPickupTime, adulterado).",
   "popularity": { "min": 5, "max": 105, "satisfiedDelta": 0.1, "unsatisfiedDelta": 0.3 },
   "customers": { "patienceSeconds": 40, "cookingArrivalFactor": 1.5 },
   "stove": { "prepareSeconds": 2, "cleaningCoins": 0, "cleaningXp": 1, "seasonBonusPercent": 25, "seasonXp": 1 },
   "tables": { "cleaningSeconds": 2, "cleaningXp": 0 },
   "service": { "selfPickupMs": 3500, "waiterTipPercent": 10, "waiterTipMin": 1 },
+  "offline": { "minAwaySeconds": 120, "maxAwaySeconds": 28800, "seatCycleSeconds": 30, "deliverySeconds": 20 },
+  "street": {
+    "farm": { "cooldownSeconds": 1200, "bonusPercent": 20, "maxCharges": 1 },
+    "disco": { "durationSeconds": 300, "cooldownSeconds": 1800, "arrivalFactor": 1.5, "tipMultiplier": 2 }
+  },
   "expansions": {
     "startTiles": 8,
     "rewardCoins": 250,

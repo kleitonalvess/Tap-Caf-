@@ -143,6 +143,35 @@ func (r *room) approach(a *entity, u Unit) (Tile, []Tile, bool) {
 	return best, bestPath, found
 }
 
+// reach is how many steps a has to walk to stand beside u (false when unreachable).
+func (r *room) reach(a *entity, u Unit) (int, bool) {
+	if r.beside(a, u) {
+		return 0, true
+	}
+	_, path, ok := r.approach(a, u)
+	return len(path), ok
+}
+
+// nearestIdle reports whether a is the free employee (no job) closest to u
+// among those eligible for the work; ties go to the lower id. Everyone else
+// leaves the job to that one, who takes it on its next idle check (≤ 1 s),
+// so in a big café the counter or the dirty table gets the nearest hands.
+func (r *room) nearestIdle(a *entity, u Unit, eligible func(*entity) bool) bool {
+	mine, ok := r.reach(a, u)
+	if !ok {
+		return false
+	}
+	for _, o := range r.actors {
+		if o == a || o.Kind != "staff" || o.job != nil || !eligible(o) {
+			continue
+		}
+		if d, ok := r.reach(o, u); ok && (d < mine || d == mine && o.ID < a.ID) {
+			return false
+		}
+	}
+	return true
+}
+
 func (r *room) beside(a *entity, u Unit) bool {
 	for _, t := range footprint(u) {
 		if abs(a.X-t.X)+abs(a.Y-t.Y) == 1 {
@@ -202,7 +231,7 @@ func (r *room) assignDelivery(a *entity, now time.Time) bool {
 		return false
 	}
 	counter, ok := r.unit(food.CounterID)
-	if !ok {
+	if !ok || !r.nearestIdle(a, counter, func(o *entity) bool { return o.Role == gamerules.RoleWaiter }) {
 		return false
 	}
 	waiting := []*entity{}
@@ -255,7 +284,7 @@ func (r *room) assignTable(a *entity, now time.Time) bool {
 			continue
 		}
 		table, ok := r.unit(d.TableID)
-		if !ok || !r.walkTo(a, table, now) {
+		if !ok || !r.nearestIdle(a, table, func(*entity) bool { return true }) || !r.walkTo(a, table, now) {
 			continue
 		}
 		kind := "clean"

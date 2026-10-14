@@ -8,6 +8,9 @@ export class CounterDish {
   private readonly dish: Sprite;
   private readonly badge = new Container();
   private readonly count: Text;
+  private readonly leaf = new Graphics()
+    .ellipse(0, 0, 18, 10).fill(0x55b83a).stroke({ color: 0x2f6b1c, width: 3 })
+    .moveTo(-16, 0).lineTo(16, 0).stroke({ color: 0x2f6b1c, width: 2 });
 
   constructor(texture: Texture) {
     this.view.label = 'counter-dish';
@@ -24,10 +27,14 @@ export class CounterDish {
     this.count.anchor.set(0.5);
     this.badge.addChild(circle, this.count);
     this.badge.position.set(40, -46);
-    this.view.addChild(this.dish, this.badge);
+    this.leaf.position.set(-40, -50);
+    this.leaf.visible = false;
+    this.view.addChild(this.dish, this.badge, this.leaf);
   }
 
-  set(texture: Texture, servings: number): void {
+  /** fresh: servings made with farm ingredients; a leaf marks the dish while any are left. */
+  set(texture: Texture, servings: number, fresh = 0): void {
+    this.leaf.visible = fresh > 0;
     if (this.dish.texture !== texture) {
       this.dish.texture = texture;
       this.dish.width = 88;

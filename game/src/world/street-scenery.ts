@@ -27,12 +27,12 @@ export interface StreetBuildingDef {
 
 export const STREET_BUILDINGS: readonly StreetBuildingDef[] = [
   {
-    id: 'farm', name: 'Fazenda de Ingredientes', status: 'Em breve!',
+    id: 'farm', name: 'Fazenda de Ingredientes', status: 'Toque para colher',
     // Left lot, between the round tree (behind) and the pine at ty 4 (in front).
     tx: -17, ty: -1, sizeX: 4, sizeY: 3, height: 360,
   },
   {
-    id: 'disco', name: 'Discoteca', status: 'Em breve!',
+    id: 'disco', name: 'Discoteca', status: 'Festa do Bairro',
     // Corner lot beyond the side street, facing it.
     tx: 1, ty: -17, sizeX: 4, sizeY: 4, height: 470,
   },

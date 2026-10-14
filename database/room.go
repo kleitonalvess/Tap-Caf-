@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"coffe-mania/database/playerstate"
+	"coffe-mania/shared/gamewire"
 	"coffe-mania/shared/roomcatalog"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
@@ -43,6 +44,9 @@ type roomSnapshot struct {
 	Inventory   []roomUnit           `json:"inventory"`
 	Catalog     []roomcatalog.Item   `json:"catalog"`
 	PlayerState playerstate.Snapshot `json:"playerState"`
+	Street      gamewire.Street      `json:"street"`
+	// The owner's unacknowledged absence summary (never sent to visitors).
+	AwaySummary *gamewire.AwaySummary `json:"awaySummary,omitempty"`
 }
 type roomCommand struct {
 	ItemID    int    `json:"itemId,omitempty"`
@@ -149,6 +153,8 @@ func snapshotRoom(app core.App, userID string) (roomSnapshot, error) {
 	result.Revision = room.GetInt("revision")
 	result.TilesX = room.GetInt("tiles_x")
 	result.TilesY = room.GetInt("tiles_y")
+	result.Street = streetState(room)
+	result.AwaySummary = awaySummary(room)
 	units, err := app.FindRecordsByFilter("player_inventory", "user={:user}", "id", 10000, 0, dbx.Params{"user": userID})
 	if err != nil {
 		return result, err
@@ -387,6 +393,7 @@ func registerRoomRoutes(e *core.ServeEvent) {
 		}
 		if owner != user.Id {
 			snapshot.CanEdit = false
+			snapshot.AwaySummary = nil
 			placed := []roomUnit{}
 			for _, u := range snapshot.Inventory {
 				if u.Placed {
@@ -401,6 +408,22 @@ func registerRoomRoutes(e *core.ServeEvent) {
 			snapshot.PlayerState = playerstate.View(state)
 		}
 		return r.JSON(http.StatusOK, snapshot)
+	})
+	// The owner saw the "Bem-vindo de volta!" summary.
+	group.POST("/away/ack", func(r *core.RequestEvent) error {
+		user := sessionRecord(r)
+		if user == nil {
+			return r.UnauthorizedError("Entre para jogar.", nil)
+		}
+		if err := acknowledgeAway(r.App, user.Id); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return r.InternalServerError("Não foi possível salvar.", err)
+		}
+		return r.JSON(http.StatusOK, map[string]bool{"ok": true})
+	}).Bind(apis.BodyLimit(256)).BindFunc(func(r *core.RequestEvent) error {
+		if r.Request.Header.Get("Origin") == "" {
+			return r.ForbiddenError("Origem inválida.", nil)
+		}
+		return sameOrigin(r)
 	})
 	for _, operation := range []string{"purchase", "move", "store"} {
 		action := operation

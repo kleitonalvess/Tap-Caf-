@@ -51,6 +51,8 @@ type cookingView struct {
 	// Servings the dish will yield, including the seasoning bonus.
 	Servings int  `json:"servings"`
 	Seasoned bool `json:"seasoned,omitempty"`
+	// Cooked with fresh farm ingredients: every serving pays the bonus.
+	Fresh bool `json:"fresh,omitempty"`
 }
 
 type stoveView struct {
@@ -177,7 +179,7 @@ func snapshotCooking(app core.App, userID string, now types.DateTime) (cookingSn
 				StartedAt:   job.GetDateTime("started_at").String(),
 				ReadyAt:     job.GetDateTime("ready_at").String(),
 				SpoilsAt:    spoils.String(), Status: status,
-				Servings: jobServings(job), Seasoned: job.GetString("seasoned_by") != "",
+				Servings: jobServings(job), Seasoned: job.GetString("seasoned_by") != "", Fresh: job.GetBool("fresh"),
 			}
 		}
 		result.Stoves = append(result.Stoves, view)
@@ -274,6 +276,16 @@ func startCooking(app core.App, userID, stoveID, recipeID string, now types.Date
 			"preparing_at": now, "started_at": started, "ready_at": ready,
 			"spoils_at": ready.Add(recipe.SpoilDuration()),
 		})
+		// Fresh farm ingredients go into the next batch, whatever the recipe.
+		if room, err := txApp.FindFirstRecordByData("player_rooms", "user", userID); err == nil && room.GetInt("fresh_charges") > 0 {
+			room.Set("fresh_charges", room.GetInt("fresh_charges")-1)
+			if err := txApp.Save(room); err != nil {
+				return err
+			}
+			job.Set("fresh", true)
+		} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
 		return txApp.Save(job)
 	})
 }
@@ -335,15 +347,20 @@ func serveCooking(app core.App, userID, stoveID string, now types.DateTime) erro
 		if err != nil {
 			return err
 		}
+		fresh := 0
+		if job.GetBool("fresh") {
+			fresh = jobServings(job)
+		}
 		if food != nil {
 			food.Set("servings", max(1, food.GetInt("servings"))+jobServings(job))
+			food.Set("fresh_servings", food.GetInt("fresh_servings")+fresh)
 		} else {
 			foods, err := txApp.FindCollectionByNameOrId("room_food")
 			if err != nil {
 				return err
 			}
 			food = core.NewRecord(foods)
-			food.Load(map[string]any{"user": userID, "recipe_id": recipeID, "job_id": job.Id, "servings": jobServings(job), "counter": counter})
+			food.Load(map[string]any{"user": userID, "recipe_id": recipeID, "job_id": job.Id, "servings": jobServings(job), "counter": counter, "fresh_servings": fresh})
 		}
 		if err = txApp.Save(food); err != nil {
 			return err
@@ -363,6 +380,17 @@ func cancelCooking(app core.App, userID, stoveID string, now types.DateTime) err
 		}
 		if !now.Before(job.GetDateTime("ready_at")) {
 			return errCookingCannotCancel
+		}
+		// A canceled fresh batch gives the ingredients back.
+		if job.GetBool("fresh") {
+			room, err := txApp.FindFirstRecordByData("player_rooms", "user", userID)
+			if err != nil {
+				return err
+			}
+			room.Set("fresh_charges", room.GetInt("fresh_charges")+1)
+			if err := txApp.Save(room); err != nil {
+				return err
+			}
 		}
 		return txApp.Delete(job)
 	})

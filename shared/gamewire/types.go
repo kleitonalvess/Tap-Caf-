@@ -24,6 +24,56 @@ type Food struct {
 	Servings int `json:"servings,omitempty"`
 	// Inventory unit of the counter holding the dish; empty for older dishes.
 	CounterID string `json:"counterId,omitempty"`
+	// Servings made with fresh farm ingredients (they pay a bonus); the first ones served.
+	Fresh int `json:"fresh,omitempty"`
+}
+
+// Street is the state of the buildings across the street, from absolute
+// instants (unix milliseconds); zero means "now" or "never".
+type Street struct {
+	// When the farm can be harvested again, and the fresh-ingredient charges
+	// waiting for the next batch.
+	FarmReadyAt  int64 `json:"farmReadyAt,omitempty"`
+	FreshCharges int   `json:"freshCharges,omitempty"`
+	// The current or last party, and when the next one may start.
+	PartyStartedAt int64 `json:"partyStartedAt,omitempty"`
+	PartyEndsAt    int64 `json:"partyEndsAt,omitempty"`
+	PartyReadyAt   int64 `json:"partyReadyAt,omitempty"`
+}
+
+// AwaySummary is what the café did while the owner was away: the room slept
+// and, on waking, persistence replayed the absence (OfflineRules). It is kept
+// until the owner acknowledges it, accumulating several absences.
+type AwaySummary struct {
+	// Unix milliseconds: the absence and the part of it that was replayed (capped).
+	From      int64 `json:"from"`
+	To        int64 `json:"to"`
+	Simulated int64 `json:"simulatedMs"`
+	Served    int   `json:"served"`
+	// Coins include Tips and FreshCoins.
+	Coins      int64 `json:"coins"`
+	Tips       int64 `json:"tips"`
+	FreshCoins int64 `json:"freshCoins"`
+	XP         int64 `json:"xp"`
+	LevelFrom  int   `json:"levelFrom"`
+	LevelTo    int   `json:"levelTo"`
+	// Popularity in tenths before and after.
+	PopularityFrom int `json:"popularityFrom"`
+	PopularityTo   int `json:"popularityTo"`
+	// Plates left on the tables, and plates the staff cleared.
+	Plates  int `json:"plates"`
+	Cleared int `json:"cleared"`
+	// Who worked, servings still on the counters, batches waiting on the stoves.
+	Waiters      int `json:"waiters"`
+	Cleaners     int `json:"cleaners"`
+	ServingsLeft int `json:"servingsLeft"`
+	ReadyDishes  int `json:"readyDishes"`
+	SpoiledDish  int `json:"spoiledDishes"`
+}
+
+// PartyActive reports whether a party is on at the given instant.
+func (s *Street) PartyActive(nowMs int64) bool {
+	return s != nil && s.PartyStartedAt <= nowMs && nowMs < s.PartyEndsAt
 }
 
 // Payment is credited by persistence when a customer takes a serving; the room
@@ -32,8 +82,12 @@ type Payment struct {
 	ActorID  string `json:"actorId,omitempty"`
 	RecipeID string `json:"recipeId"`
 	Coins    int64  `json:"coins"`
-	// Tip is the part of Coins a waiter's delivery earned.
-	Tip              int64 `json:"tip,omitempty"`
+	// Tip is the part of Coins a waiter's delivery (or a party) earned.
+	Tip int64 `json:"tip,omitempty"`
+	// Fresh-ingredient bonus included in Coins and XP, and fresh servings left on the dish.
+	FreshCoins       int64 `json:"freshCoins,omitempty"`
+	FreshXP          int64 `json:"freshXp,omitempty"`
+	FreshLeft        int   `json:"freshLeft,omitempty"`
 	XP               int64 `json:"xp"`
 	Level            int   `json:"level"`
 	LevelUp          bool  `json:"levelUp,omitempty"`
@@ -50,6 +104,7 @@ type World struct {
 	Foods    []Food          `json:"foods"`
 	Dirt     []Dirt          `json:"dirt"`
 	Staff    []StaffMember   `json:"staff"`
+	Street   *Street         `json:"street,omitempty"`
 	Cooking  json.RawMessage `json:"cooking,omitempty"`
 }
 
@@ -127,6 +182,8 @@ type Seed struct {
 	Looks []string `json:"looks"`
 	// Owner popularity in tenths; it paces customer arrivals.
 	PopularityTenths int `json:"popularityTenths"`
+	// The owner's unacknowledged absence summary, handed over on their welcome.
+	Away *AwaySummary `json:"away,omitempty"`
 }
 type Sleep struct {
 	NPCs []Actor `json:"npcs"`
@@ -154,8 +211,12 @@ type Event struct {
 	Units     []Unit   `json:"units,omitempty"`
 	Revision  int      `json:"revision,omitempty"`
 	// Set on a world event when the room grew (expansion).
-	TilesX    int             `json:"tilesX,omitempty"`
-	TilesY    int             `json:"tilesY,omitempty"`
+	TilesX int `json:"tilesX,omitempty"`
+	TilesY int `json:"tilesY,omitempty"`
+	// Welcome to the owner only: what happened while they were away.
+	Away *AwaySummary `json:"away,omitempty"`
+	// Set on a world event when the farm or the disco changed.
+	Street    *Street         `json:"street,omitempty"`
 	Cooking   json.RawMessage `json:"cooking,omitempty"`
 	Foods     []Food          `json:"foods,omitempty"`
 	Dirt      []Dirt          `json:"dirt,omitempty"`

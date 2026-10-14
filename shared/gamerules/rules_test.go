@@ -234,3 +234,19 @@ func TestWaiterBeatsSelfService(t *testing.T) {
 		}
 	}
 }
+
+func TestStreetBuildingsAreTuned(t *testing.T) {
+	s := Street()
+	if s.Farm.BonusPercent != 20 || FarmCooldown() < time.Minute || s.Farm.MaxCharges < 1 {
+		t.Fatalf("farm = %+v", s.Farm)
+	}
+	if PartyDuration() <= 0 || PartyCooldown() < PartyDuration() || s.Disco.ArrivalFactor <= 1 || s.Disco.TipMultiplier < 2 {
+		t.Fatalf("disco = %+v", s.Disco)
+	}
+	// Every fresh serving earns at least one more coin and XP; 20% of 14 rounds up to 3.
+	for value, want := range map[int64]int64{0: 0, 1: 1, 3: 1, 5: 1, 6: 2, 14: 3} {
+		if got := FreshBonus(value); got != want {
+			t.Fatalf("fresh bonus of %d = %d, want %d", value, got, want)
+		}
+	}
+}

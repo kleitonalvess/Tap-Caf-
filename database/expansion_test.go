@@ -180,3 +180,18 @@ func TestWaiterDeliveryEarnsATip(t *testing.T) {
 		t.Fatalf("waiter = %+v, self-service = %+v (%v)", tipped, plain, err)
 	}
 }
+
+func TestStarterCashAffordsOneShortcut(t *testing.T) {
+	app, owner, _ := newKitchen(t)
+	state, _ := playerstate.GetOrCreate(app, owner)
+	if state.GetInt64("cash") != playerstate.StarterCash || playerstate.StarterCash != 25 {
+		t.Fatalf("starter cash = %d", state.GetInt64("cash"))
+	}
+	if _, err := expandRoom(app, owner, 10, "cash"); err != nil {
+		t.Fatalf("first shortcut: %v", err)
+	}
+	// 15 Grana left: the 12×12 shortcut (20) needs saving or buying more.
+	if _, err := expandRoom(app, owner, 12, "cash"); !errors.Is(err, errExpansionCash) {
+		t.Fatalf("second shortcut with the starter Grana: %v", err)
+	}
+}

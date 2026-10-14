@@ -396,8 +396,9 @@ export class CookScreenModal {
       unaffordable: ['Moedas insuficientes', BAD],
       available: ['Temperar no fogo rende mais porções', INK],
     };
-    const [status, color] = statuses[availability];
-    const quiet = availability === 'available';
+    const fresh = (availability === 'available' || availability === 'free') && (book.context.freshPercent ?? 0) > 0;
+    const [status, color] = fresh ? [`Ingredientes frescos: +${book.context.freshPercent}% de moedas e XP`, GOOD] as [string, number] : statuses[availability];
+    const quiet = availability === 'available' && !fresh;
     const statusText = fitWidth(text(status, quiet ? 18 : 21, color, quiet ? '400' : '700'), DETAILS.w - 30);
     statusText.anchor.set(0.5);
     statusText.position.set(DETAILS.cx, 752);

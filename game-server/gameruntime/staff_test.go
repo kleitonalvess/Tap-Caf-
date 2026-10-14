@@ -171,3 +171,35 @@ func TestIdleStaffLeavesTheDoorway(t *testing.T) {
 		t.Fatal("the doorway is still blocked")
 	}
 }
+
+// place moves an employee to a tile, as if it had walked there.
+func place(r *room, id string, x, y int) *entity {
+	a := r.actors[id]
+	a.X, a.Y, a.Move, a.path = x, y, nil, nil
+	r.indexActor(a)
+	return a
+}
+
+func TestNearestWaiterTakesTheDelivery(t *testing.T) {
+	r, now := staffRoom(&economyStore{}, "waiter", "waiter")
+	far := place(r, "staff:a", 1, 6)
+	near := place(r, "staff:b", 7, 4) // beside the counter at (6,3)
+	customer := seatedCustomer(r, now)
+	customer.Kind = "npc"
+	r.tick(now.Add(1100 * time.Millisecond))
+	if near.job == nil || near.job.kind != "deliver" || far.job != nil || customer.servedBy != near.ID {
+		t.Fatalf("near job=%+v far job=%+v servedBy=%q", near.job, far.job, customer.servedBy)
+	}
+}
+
+func TestNearestEmployeeClearsTheDirtyTable(t *testing.T) {
+	r, now := staffRoom(&economyStore{}, "cleaner", "cleaner")
+	r.world.Foods = nil
+	far := place(r, "staff:a", 7, 6)
+	near := place(r, "staff:b", 4, 4) // beside the table at (3,3)
+	r.world.Dirt = []gamewire.Dirt{{TableID: "table", Plates: 1, Since: now.UnixMilli()}}
+	r.tick(now.Add(1100 * time.Millisecond))
+	if near.job == nil || near.job.table != "table" || far.job != nil || r.claimed["table"] != near.ID {
+		t.Fatalf("near job=%+v far job=%+v claimed=%v", near.job, far.job, r.claimed)
+	}
+}

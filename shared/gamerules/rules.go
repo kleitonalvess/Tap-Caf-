@@ -82,6 +82,40 @@ type ServiceRules struct {
 	WaiterTipMin     int64 `json:"waiterTipMin"`
 }
 
+// StreetRules: the buildings across the street. The Farm grows fresh
+// ingredients (one charge per harvest, every cooldown) that make the next
+// batch pay BonusPercent more coins and XP per serving; the Disco throws a
+// party that brings customers ArrivalFactor times as often and multiplies tips.
+type StreetRules struct {
+	Farm  FarmRules  `json:"farm"`
+	Disco DiscoRules `json:"disco"`
+}
+
+type FarmRules struct {
+	CooldownSeconds int `json:"cooldownSeconds"`
+	BonusPercent    int `json:"bonusPercent"`
+	MaxCharges      int `json:"maxCharges"`
+}
+
+// DiscoRules: CooldownSeconds counts from the end of a party.
+type DiscoRules struct {
+	DurationSeconds int     `json:"durationSeconds"`
+	CooldownSeconds int     `json:"cooldownSeconds"`
+	ArrivalFactor   float64 `json:"arrivalFactor"`
+	TipMultiplier   int64   `json:"tipMultiplier"`
+}
+
+// OfflineRules: the expediente while the café sleeps. After MinAwaySeconds the
+// absence (capped at MaxAwaySeconds) is replayed when the room wakes: one meal
+// per SeatCycleSeconds per dining seat, at most the arrivals of the café's
+// popularity, a waiter delivering one dish per DeliverySeconds.
+type OfflineRules struct {
+	MinAwaySeconds   int `json:"minAwaySeconds"`
+	MaxAwaySeconds   int `json:"maxAwaySeconds"`
+	SeatCycleSeconds int `json:"seatCycleSeconds"`
+	DeliverySeconds  int `json:"deliverySeconds"`
+}
+
 // MaxRoomTiles is the largest room side: the client packs tile indexes as
 // ty*20+tx (MAX_NUM_TILES_X in game/src/world/iso.ts).
 const MaxRoomTiles = 20
@@ -151,6 +185,8 @@ type Rules struct {
 	Stove             StoveRules      `json:"stove"`
 	Tables            TableRules      `json:"tables"`
 	Service           ServiceRules    `json:"service"`
+	Street            StreetRules     `json:"street"`
+	Offline           OfflineRules    `json:"offline"`
 	Expansions        ExpansionRules  `json:"expansions"`
 	Staff             StaffRules      `json:"staff"`
 	Levels            []Level         `json:"levels"`
@@ -225,6 +261,17 @@ func validate(r Rules) string {
 	}
 	if v := r.Service; v.SelfPickupMs < 0 || v.SelfPickupMs > 30000 || v.WaiterTipPercent < 0 || v.WaiterTipPercent > 100 || v.WaiterTipMin < 0 {
 		return "invalid service rules"
+	}
+	if o := r.Offline; o.MinAwaySeconds < 30 || o.MaxAwaySeconds < o.MinAwaySeconds || o.MaxAwaySeconds > 7*24*3600 ||
+		o.SeatCycleSeconds < 5 || o.SeatCycleSeconds > 600 || o.DeliverySeconds < 1 || o.DeliverySeconds > 600 {
+		return "invalid offline rules"
+	}
+	if f := r.Street.Farm; f.CooldownSeconds < 60 || f.CooldownSeconds > 86400 || f.BonusPercent < 1 || f.BonusPercent > 100 || f.MaxCharges < 1 || f.MaxCharges > 10 {
+		return "invalid farm rules"
+	}
+	if d := r.Street.Disco; d.DurationSeconds < 30 || d.DurationSeconds > 3600 || d.CooldownSeconds < 0 || d.CooldownSeconds > 86400 ||
+		d.ArrivalFactor < 1 || d.ArrivalFactor > 5 || d.TipMultiplier < 1 || d.TipMultiplier > 10 {
+		return "invalid disco rules"
 	}
 	e := r.Expansions
 	if e.StartTiles < 2 || e.StartTiles > MaxRoomTiles || e.RewardCoins < 0 {
@@ -397,6 +444,31 @@ func NextExpansion(tiles int) (ExpansionStep, bool) {
 		}
 	}
 	return ExpansionStep{}, false
+}
+
+func Street() StreetRules { return rules.Street }
+
+func Offline() OfflineRules { return rules.Offline }
+
+func FarmCooldown() time.Duration {
+	return time.Duration(rules.Street.Farm.CooldownSeconds) * time.Second
+}
+
+func PartyDuration() time.Duration {
+	return time.Duration(rules.Street.Disco.DurationSeconds) * time.Second
+}
+
+func PartyCooldown() time.Duration {
+	return time.Duration(rules.Street.Disco.CooldownSeconds) * time.Second
+}
+
+// FreshBonus is the extra a fresh-ingredient serving adds to a value
+// (coins or XP), rounded up so every fresh serving earns at least one more.
+func FreshBonus(value int64) int64 {
+	if value <= 0 {
+		return 0
+	}
+	return (value*int64(rules.Street.Farm.BonusPercent) + 99) / 100
 }
 
 // SelfPickup is how long a customer takes to fetch a dish from the counter.

@@ -28,6 +28,11 @@ export interface GameRules {
   service?: { selfPickupMs: number; waiterTipPercent: number; waiterTipMin: number };
   /** hireCoins: one-time fee of each employee slot, the first at index 0. */
   staff?: { hireCoins: number[] };
+  /** Farm (fresh ingredients) and disco (party) across the street; provisional values. */
+  street?: {
+    farm: { cooldownSeconds: number; bonusPercent: number; maxCharges: number };
+    disco: { durationSeconds: number; cooldownSeconds: number; arrivalFactor: number; tipMultiplier: number };
+  };
 }
 
 export async function loadGameRules(signal?: AbortSignal): Promise<GameRules> {
@@ -48,6 +53,8 @@ export interface CookingContext {
   gold: number;
   /** Server-side emergency help: this recipe costs nothing right now. */
   emergencyRecipeId?: string;
+  /** Fresh farm ingredients waiting: the next batch pays this much more per serving. */
+  freshPercent?: number;
 }
 
 export function recipeAvailability(recipe: RecipeRule, context: CookingContext): RecipeAvailability {

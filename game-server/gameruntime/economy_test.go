@@ -198,3 +198,62 @@ func TestExpansionGrowsTheGridLive(t *testing.T) {
 		t.Fatal("no path to a new tile")
 	}
 }
+
+func TestPartyBringsCustomersMoreOften(t *testing.T) {
+	r, peer := economyRoom(&economyStore{})
+	now := time.Now()
+	calm := time.Duration(0)
+	for i := 0; i < 200; i++ {
+		calm += r.arrivalInterval(now)
+	}
+	party := r.world
+	party.Street = &gamewire.Street{PartyStartedAt: now.UnixMilli(), PartyEndsAt: now.Add(5 * time.Minute).UnixMilli()}
+	r.updateWorld(party)
+	busy := time.Duration(0)
+	for i := 0; i < 200; i++ {
+		busy += r.arrivalInterval(now)
+	}
+	factor := float64(calm) / float64(busy)
+	if factor < gamerules.Street().Disco.ArrivalFactor*0.8 || factor > gamerules.Street().Disco.ArrivalFactor*1.25 {
+		t.Fatalf("arrivals during the party are %.2fx as frequent", factor)
+	}
+	broadcast := false
+	for _, event := range events(peer) {
+		if event.Type == "world" && event.Street != nil && event.Street.PartyEndsAt == party.Street.PartyEndsAt {
+			broadcast = true
+		}
+	}
+	if !broadcast {
+		t.Fatal("the party was not broadcast")
+	}
+	if r.world.Street.PartyActive(now.Add(6 * time.Minute).UnixMilli()) {
+		t.Fatal("the party never ends")
+	}
+}
+
+func TestOwnerHearsTheAbsenceOnceOnWelcome(t *testing.T) {
+	r, _ := economyRoom(&economyStore{})
+	r.away = &gamewire.AwaySummary{Served: 4, Coins: 20, To: time.Now().UnixMilli()}
+	visitor := &Peer{ID: "v", Out: make(chan []byte, 64), Kick: func() {}, Ticket: gamewire.Ticket{User: "visitor", Room: r.id}}
+	if err := r.join(visitor); err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events(visitor) {
+		if event.Away != nil {
+			t.Fatal("a visitor got the owner's summary")
+		}
+	}
+	owner := &Peer{ID: "o", Out: make(chan []byte, 64), Kick: func() {}, Ticket: gamewire.Ticket{User: r.id, Room: r.id}}
+	if err := r.join(owner); err != nil {
+		t.Fatal(err)
+	}
+	got := 0
+	for _, event := range events(owner) {
+		if event.Type == "welcome" && event.Away != nil && event.Away.Served == 4 {
+			got++
+		}
+	}
+	if got != 1 || r.away != nil {
+		t.Fatalf("owner welcomes with the summary = %d, left in memory = %+v", got, r.away)
+	}
+}

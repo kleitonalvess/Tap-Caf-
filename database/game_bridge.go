@@ -85,7 +85,8 @@ func publicWorld(app core.App, owner string) (gamewire.World, error) {
 	if err != nil {
 		return gamewire.World{}, err
 	}
-	w := gamewire.World{RoomID: owner, Revision: snapshot.Revision, TilesX: snapshot.TilesX, TilesY: snapshot.TilesY, Units: []gamewire.Unit{}, Foods: []gamewire.Food{}, Dirt: []gamewire.Dirt{}, Staff: []gamewire.StaffMember{}}
+	street := snapshot.Street
+	w := gamewire.World{RoomID: owner, Revision: snapshot.Revision, TilesX: snapshot.TilesX, TilesY: snapshot.TilesY, Units: []gamewire.Unit{}, Foods: []gamewire.Food{}, Dirt: []gamewire.Dirt{}, Staff: []gamewire.StaffMember{}, Street: &street}
 	for _, u := range snapshot.Inventory {
 		if u.Placed {
 			w.Units = append(w.Units, gamewire.Unit{ID: u.UnitID, ItemID: u.ItemID, Placed: true, X: u.TX, Y: u.TY, Rotation: u.Rotation, StoveID: u.StoveID})
@@ -101,7 +102,7 @@ func publicWorld(app core.App, owner string) (gamewire.World, error) {
 		return w, err
 	}
 	for _, food := range foods {
-		w.Foods = append(w.Foods, gamewire.Food{ID: food.Id, Recipe: food.GetString("recipe_id"), Servings: max(1, food.GetInt("servings")), CounterID: food.GetString("counter")})
+		w.Foods = append(w.Foods, gamewire.Food{ID: food.Id, Recipe: food.GetString("recipe_id"), Servings: max(1, food.GetInt("servings")), CounterID: food.GetString("counter"), Fresh: food.GetInt("fresh_servings")})
 	}
 	if w.Dirt, err = roomDirt(app, owner); err != nil {
 		return w, err
@@ -182,6 +183,10 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 		if err == nil {
 			body, err = snapshotStaff(app, op.Owner)
 		}
+	case "farm_harvest":
+		body, err = harvestFarm(app, op.Owner, types.NowDateTime())
+	case "party_start":
+		body, err = startParty(app, op.Owner, types.NowDateTime())
 	case "room_expand":
 		var command struct {
 			Tiles int    `json:"tiles"`
@@ -204,7 +209,8 @@ func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
 			return fail(400, err.Error())
 		case errors.Is(err, errStaffSlots), errors.Is(err, errStaffHired), errors.Is(err, errStaffCoins),
 			errors.Is(err, errExpansionMax), errors.Is(err, errExpansionStep), errors.Is(err, errExpansionLevel),
-			errors.Is(err, errExpansionCoins), errors.Is(err, errExpansionCash):
+			errors.Is(err, errExpansionCoins), errors.Is(err, errExpansionCash),
+			errors.Is(err, errFarmGrowing), errors.Is(err, errFarmFull), errors.Is(err, errPartyOn), errors.Is(err, errPartyResting):
 			return fail(409, err.Error())
 		case errors.Is(err, errRoomPosition):
 			return fail(400, err.Error())
@@ -282,6 +288,8 @@ func saveDormantRoom(app core.App, owner string, state gamewire.Sleep) error {
 		}
 		room.Set("active", false)
 		room.Set("human_count", 0)
+		// The offline catch-up starts here when the room wakes (wakeRoom).
+		room.Set("slept_at", types.NowDateTime())
 		return tx.Save(room)
 	})
 }
@@ -353,6 +361,11 @@ func registerGameBridge(e *core.ServeEvent) error {
 		if err := ensureRoom(r.App, owner); err != nil {
 			return err
 		}
+		// Waking replays the absence first, so the world below already has it.
+		away, err := wakeRoom(r.App, owner, time.Now())
+		if err != nil {
+			return err
+		}
 		world, err := publicWorld(r.App, owner)
 		if err != nil {
 			return err
@@ -381,7 +394,7 @@ func registerGameBridge(e *core.ServeEvent) error {
 		if err != nil {
 			return err
 		}
-		return r.JSON(200, gamewire.Seed{World: world, NPCs: npcs, Looks: looks, PopularityTenths: state.GetInt("satisfaction_current_tenths")})
+		return r.JSON(200, gamewire.Seed{World: world, NPCs: npcs, Looks: looks, PopularityTenths: state.GetInt("satisfaction_current_tenths"), Away: away})
 	})
 	group.POST("/{owner}/active", func(r *core.RequestEvent) error {
 		var body struct {

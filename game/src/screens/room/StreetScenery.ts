@@ -28,6 +28,12 @@ interface BuildingView {
   body: Container;
   animated: Animated[];
   label: Container;
+  title: Text;
+  caption: Text;
+  card: Graphics;
+  /** "!" bubble over the roof while the building has something to collect. */
+  badge: Container;
+  ready: boolean;
   labelTimer: number;
   hovered: boolean;
   bounce: number;
@@ -45,6 +51,9 @@ export class StreetScenery {
   private readonly shared: Texture[] = [];
   private elapsed = 0;
   private destroyed = false;
+  /** 0 = calm street, 1 = party at the disco (beams speed up and brighten). */
+  private party = 0;
+  private partyTarget = 0;
 
   constructor(private readonly options: StreetSceneryOptions, defs: readonly StreetBuildingDef[] = STREET_BUILDINGS) {
     for (const def of defs) this.buildings.push(this.create(def));
@@ -89,17 +98,21 @@ export class StreetScenery {
       animated.push(...this.addEffects(body, art));
     }
 
-    const label = this.createLabel(def);
+    const { label, title, caption, card } = this.createLabel(def);
     const top = Math.min(...buildingOutline(def).map((point) => point.y));
     label.position.set((corners.left.x + corners.right.x) / 2, top - 18);
     label.visible = false;
     label.zIndex = POPUP_DRAW_PRIORITY + 2;
+    const badge = this.createBadge();
+    badge.position.set((corners.left.x + corners.right.x) / 2, top - 30);
+    badge.visible = false;
+    badge.zIndex = POPUP_DRAW_PRIORITY + 1;
 
-    const building: BuildingView = { def, view, body, animated, label, labelTimer: 0, hovered: false, bounce: 0 };
+    const building: BuildingView = { def, view, body, animated, label, title, caption, card, badge, ready: false, labelTimer: 0, hovered: false, bounce: 0 };
     view.on('pointerover', () => { building.hovered = true; });
     view.on('pointerout', () => { building.hovered = false; });
     this.options.bindGestures(view, () => this.tap(building));
-    this.options.world.addChild(view, label);
+    this.options.world.addChild(view, badge, label);
     return building;
   }
 
@@ -124,7 +137,11 @@ export class StreetScenery {
         beam.alpha = 0.32;
         beam.eventMode = 'none';
         view.addChildAt(beam, 0);
-        animated.push({ update: (t) => { beam.rotation = 0.42 * Math.sin(t * 0.7 + prop.phase); } });
+        // During a party the beams sweep faster and wider, and shine brighter.
+        animated.push({ update: (t) => {
+          beam.rotation = (0.42 + 0.3 * this.party) * Math.sin(t * (0.7 + 2.3 * this.party) + prop.phase);
+          beam.alpha = 0.32 + 0.4 * this.party;
+        } });
       } else if (prop.kind === 'sparkle') {
         const sparkle = new Sprite(this.sharedTexture('sparkle', sparkleTexture));
         sparkle.anchor.set(0.5);
@@ -166,7 +183,7 @@ export class StreetScenery {
     return texture;
   }
 
-  private createLabel(def: StreetBuildingDef): Container {
+  private createLabel(def: StreetBuildingDef): { label: Container; title: Text; caption: Text; card: Graphics } {
     const label = new Container();
     label.label = `street-label:${def.id}`;
     label.eventMode = 'none';
@@ -174,22 +191,60 @@ export class StreetScenery {
       text: def.name,
       style: new TextStyle({ fontFamily: [FONT_FAMILY, 'sans-serif'], fontSize: 42, fontWeight: '700', fill: 0x5a3915 }),
     });
-    const soon = new Text({
+    const caption = new Text({
       text: def.status,
       style: new TextStyle({ fontFamily: [FONT_FAMILY, 'sans-serif'], fontSize: 34, fontWeight: '700', fill: 0xd2541b }),
     });
+    caption.label = `street-caption:${def.id}`;
     title.anchor.set(0.5, 0);
-    soon.anchor.set(0.5, 0);
-    const width = Math.max(title.width, soon.width) + 44;
-    const height = title.height + soon.height + 22;
+    caption.anchor.set(0.5, 0);
+    const card = new Graphics();
+    label.addChild(card, title, caption);
+    this.layoutLabel(title, caption, card);
+    return { label, title, caption, card };
+  }
+
+  /** The card fits its two lines; it is redrawn when the second line changes. */
+  private layoutLabel(title: Text, caption: Text, card: Graphics): void {
+    const width = Math.max(title.width, caption.width) + 44;
+    const height = title.height + caption.height + 22;
     title.position.set(0, -height + 9);
-    soon.position.set(0, -height + 11 + title.height);
-    const card = new Graphics()
+    caption.position.set(0, -height + 11 + title.height);
+    card.clear()
       .roundRect(-width / 2, -height, width, height, 18).fill(0xfff7e6).stroke({ color: 0x5a3915, width: 4 })
       .moveTo(-14, -2).lineTo(0, 16).lineTo(14, -2).closePath().fill(0xfff7e6);
     card.moveTo(-14, 0).lineTo(0, 16).lineTo(14, 0).stroke({ color: 0x5a3915, width: 4 });
-    label.addChild(card, title, soon);
-    return label;
+  }
+
+  private createBadge(): Container {
+    const badge = new Container();
+    badge.label = 'street-ready-badge';
+    badge.eventMode = 'none';
+    const bubble = new Graphics()
+      .circle(0, 0, 30).fill(0xffd23f).stroke({ color: 0x5a3915, width: 5 })
+      .moveTo(-10, 24).lineTo(0, 44).lineTo(10, 24).closePath().fill(0xffd23f);
+    const mark = new Text({
+      text: '!',
+      style: new TextStyle({ fontFamily: [FONT_FAMILY, 'sans-serif'], fontSize: 44, fontWeight: '700', fill: 0x5a3915 }),
+    });
+    mark.anchor.set(0.5);
+    badge.addChild(bubble, mark);
+    return badge;
+  }
+
+  /** Second line of a building's card, and whether it has something to collect or start. */
+  setStatus(id: string, caption: string, ready: boolean): void {
+    const building = this.buildings.find((candidate) => candidate.def.id === id);
+    if (!building) return;
+    building.ready = ready;
+    if (building.caption.text === caption) return;
+    building.caption.text = caption;
+    this.layoutLabel(building.title, building.caption, building.card);
+  }
+
+  /** The disco's beams follow the party, easing in and out. */
+  setParty(active: boolean): void {
+    this.partyTarget = active ? 1 : 0;
   }
 
   private tap(building: BuildingView): void {
@@ -207,7 +262,11 @@ export class StreetScenery {
   update(deltaMs: number): void {
     const seconds = Math.max(0, deltaMs) / 1000;
     this.elapsed += seconds;
+    this.party += (this.partyTarget - this.party) * Math.min(1, seconds * 2);
     for (const building of this.buildings) {
+      // The "!" bobs while the building waits for the owner, hidden while its card is up.
+      building.badge.visible = building.ready && building.label.visible === false;
+      if (building.badge.visible) building.badge.pivot.y = 8 * Math.abs(Math.sin(this.elapsed * 3));
       for (const item of building.animated) item.update(this.elapsed);
       building.labelTimer = Math.max(0, building.labelTimer - seconds);
       const showing = building.hovered || building.labelTimer > 0;
@@ -229,6 +288,7 @@ export class StreetScenery {
     for (const building of this.buildings) {
       building.view.destroy({ children: true });
       building.label.destroy({ children: true });
+      building.badge.destroy({ children: true });
     }
     this.buildings.length = 0;
     for (const texture of this.shared) texture.destroy(true);

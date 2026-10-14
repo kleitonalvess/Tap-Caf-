@@ -63,6 +63,10 @@ func (r *room) arrivalInterval(now time.Time) time.Duration {
 	if len(r.world.Foods) == 0 && r.cookingInProgress(now) {
 		base = time.Duration(float64(base) * gamerules.CookingArrivalFactor())
 	}
+	// A party at the disco brings the neighbourhood in more often.
+	if r.world.Street.PartyActive(now.UnixMilli()) {
+		base = time.Duration(float64(base) / gamerules.Street().Disco.ArrivalFactor)
+	}
 	return time.Duration(float64(base) * (0.75 + rand.Float64()/2))
 }
 
@@ -316,6 +320,11 @@ func (r *room) dropFetches(now time.Time) {
 // plate, the customer eats and everyone sees the coins over the customer.
 func (r *room) startMeal(a *entity, food gamewire.Food, payment gamewire.Payment, now time.Time) {
 	r.takeServing(food.ID, payment.ServingsLeft)
+	for i := range r.world.Foods {
+		if r.world.Foods[i].ID == food.ID {
+			r.world.Foods[i].Fresh = payment.FreshLeft
+		}
+	}
 	r.addDirt(a.TableID, now)
 	food.Servings = 0
 	food.CounterID = ""

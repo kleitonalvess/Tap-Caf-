@@ -33,12 +33,17 @@ type Snapshot struct {
 	Satisfaction Resource `json:"satisfaction"`
 }
 
+// StarterCash is the Grana of a new account, set by the project owner: enough
+// to try one expansion shortcut (10×10 costs 10), not to skip to 20×20.
+// Existing accounts keep their balance.
+const StarterCash = 25
+
 // Initial resources for newly provisioned players.
 func NewRecord(collection *core.Collection, userID string) *core.Record {
 	record := core.NewRecord(collection)
 	record.Load(map[string]any{
 		"cafe_name": DefaultCafeName,
-		"user":      userID, "cash": 1000, "gold": 100, "level": 1,
+		"user":      userID, "cash": StarterCash, "gold": 100, "level": 1,
 		"experience_current": 0, "experience_max": gamerules.NextLevelXP(1),
 		"energy_current": 50, "energy_max": 50,
 		"crates_current": 4, "crates_max": 4,

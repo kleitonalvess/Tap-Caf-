@@ -2,6 +2,8 @@ import { Assets, Texture } from 'pixi.js';
 import { IndoorArt, type ArtProvider, type IndoorArtFrame, type IndoorArtEntry } from './indoor-art';
 import { placeholderItemArt } from './placeholder-art';
 import type { PlayerState } from './player-state';
+import type { StreetState } from './street';
+import type { AwaySummary } from './away';
 import type { RoomItem, RoomItemKind } from '../world/RoomModel';
 
 export interface RoomCatalogItem {
@@ -15,6 +17,10 @@ export interface RoomSnapshot {
   roomId?: string; canEdit?: boolean;
   revision: number; tilesX: number; tilesY: number; inventory: RoomUnit[];
   catalog: RoomCatalogItem[]; playerState: PlayerState;
+  /** Farm and disco timers; absent from older servers. */
+  street?: StreetState;
+  /** The owner's unacknowledged absence summary. */
+  awaySummary?: AwaySummary;
 }
 export interface ItemManifest extends RoomCatalogItem {
   itemHeight: number; parts: (IndoorArtFrame & { rotation?: number })[];

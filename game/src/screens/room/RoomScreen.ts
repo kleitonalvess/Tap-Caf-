@@ -47,6 +47,13 @@ import { PatienceMeter, fetchProgress, patienceLeft } from './PatienceMeter';
 import { ExpansionModal } from './ExpansionModal';
 import { ExpansionGlow, newFloorTiles } from './ExpansionGlow';
 import { ExpansionClient, sizeLabel, type ExpansionResult } from '../../game/expansion';
+import { StreetModal, type StreetBuildingId } from './StreetModal';
+import { PartyBadge, PartyLights } from './PartyLights';
+import { StreetClient, farmCaption, farmStatus, formatClock, partyCaption, partyStatus, type StreetState } from '../../game/street';
+import { FESTA_DO_BAIRRO } from '../../audio/music';
+import { WelcomeBackModal } from './WelcomeBackModal';
+import { acknowledgeAway, type AwaySummary } from '../../game/away';
+import type { MusicTrack } from '../../audio/AudioEngine';
 import { RecipeArtLibrary } from '../../game/recipe-art';
 import type { GameRules } from '../../game/game-rules';
 import {
@@ -251,7 +258,7 @@ export interface RoomScreenOptions {
   wardrobeTextures?: WardrobeScreenTextures;
   onWardrobeVisibilityChange?: (open: boolean) => void;
   /** Sound effects and the rush-hour intensity of procedural music. */
-  audio?: SoundPlayer & { setIntensity(value: number): void };
+  audio?: SoundPlayer & { setIntensity(value: number): void; setOverride?(track: MusicTrack | null): void };
   /** Top-left mute, track and volume control. */
   audioControl?: AudioHudControlOptions;
   /** Recipes and kitchen rules published by the server. */
@@ -278,6 +285,18 @@ export class RoomScreen implements Screen {
   private levelUpModal?: LevelUpModal;
   private expansionModal?: ExpansionModal;
   private readonly expansionGlows: ExpansionGlow[] = [];
+  /** Farm and disco timers (absolute instants from the server). */
+  private street?: StreetState;
+  private streetModal?: StreetModal;
+  private readonly streetClient = new StreetClient();
+  private readonly partyLights = new PartyLights(FLOOR_DRAW_PRIORITY + 2);
+  private readonly partyBadge = new PartyBadge();
+  private partyOn = false;
+  private streetSecond = -1;
+  private welcomeBack?: WelcomeBackModal;
+  /** Absence summary waiting for the other windows to close; `to` of the last one shown. */
+  private pendingAway?: AwaySummary;
+  private shownAwayTo = 0;
   /** Last level celebrated; a level-up shows what opened since then. */
   private knownLevel = 1;
   /** Dishes on the waiters' trays, by actor id. */
@@ -289,7 +308,7 @@ export class RoomScreen implements Screen {
   private readonly floatingRewards: FloatingRewards;
   private streetScenery?: StreetScenery;
   private readonly levelUpToast = new LevelUpToast();
-  private readonly audio?: SoundPlayer & { setIntensity(value: number): void };
+  private readonly audio?: SoundPlayer & { setIntensity(value: number): void; setOverride?(track: MusicTrack | null): void };
   private readonly audioControl?: AudioHudControl;
   private rushIntensity = -1;
   private stovesUrgent = false;
@@ -478,7 +497,9 @@ export class RoomScreen implements Screen {
     this.highlight.zIndex = FLOOR_DRAW_PRIORITY + 2;
     this.target.zIndex = FLOOR_DRAW_PRIORITY + 3;
 
-    this.world.addChild(this.floor, this.floorArt, this.highlight, this.target);
+    this.world.addChild(this.floor, this.floorArt, this.highlight, this.target, this.partyLights.view);
+    this.partyLights.setRoom(this.model.tilesX, this.model.tilesY);
+    if (options.roomSnapshot?.street) this.street = options.roomSnapshot.street;
     this.buildFloor();
     this.buildSceneBackground();
     drawTestGrid(this.testGrid, this.model);
@@ -574,6 +595,8 @@ export class RoomScreen implements Screen {
     });
     this.floatingRewards = new FloatingRewards(this.world, { coin: rewardIcon(1), xp: rewardIcon(2) });
     this.view.addChild(this.levelUpToast.view);
+    this.partyBadge.view.position.set(STAGE_WIDTH / 2, 128);
+    this.view.addChild(this.partyBadge.view);
     this.audio = options.audio;
     if (options.audioControl) {
       this.audioControl = new AudioHudControl(options.audioControl);
@@ -854,6 +877,40 @@ export class RoomScreen implements Screen {
       });
       this.view.addChild(this.expansionModal.view);
     }
+    // What the café did while the owner was away: from the snapshot when a visitor
+    // woke the room earlier, or from the owner's own welcome event.
+    if (options.roomSnapshot && options.roomSnapshot.canEdit !== false) {
+      this.welcomeBack = new WelcomeBackModal({
+        onCollect: (summary) => this.collectAway(summary),
+        ...(options.audio ? { audio: options.audio } : {}),
+      });
+      this.view.addChild(this.welcomeBack.view);
+      if (options.roomSnapshot.awaySummary) this.queueAway(options.roomSnapshot.awaySummary);
+    }
+    // Farm and disco actions (owner only); visitors just see the cards and the party.
+    if (options.roomSnapshot && options.roomSnapshot.canEdit !== false && this.rules?.street) {
+      const street = this.rules.street;
+      this.streetModal = new StreetModal({
+        rules: {
+          farmBonusPercent: street.farm.bonusPercent, farmCooldownSeconds: street.farm.cooldownSeconds, farmMaxCharges: street.farm.maxCharges,
+          partyMinutes: Math.round(street.disco.durationSeconds / 60), partyArrivalFactor: street.disco.arrivalFactor, partyTipMultiplier: street.disco.tipMultiplier,
+        },
+        street: () => this.street,
+        serverNow: () => this.serverNow(),
+        harvest: async () => {
+          this.acceptStreet(await this.streetClient.harvest());
+          this.audio?.play('season');
+          this.levelUpToast.showMessage('Ingredientes frescos!', `A próxima receita rende +${street.farm.bonusPercent}% de moedas e XP`);
+        },
+        startParty: async () => {
+          this.acceptStreet(await this.streetClient.startParty());
+          this.audio?.play('levelUp');
+          this.levelUpToast.showMessage('Festa do Bairro!', `Clientes ${String(street.disco.arrivalFactor).replace('.', ',')}× mais rápido e gorjeta ${street.disco.tipMultiplier}× do garçom`);
+        },
+        ...(options.audio ? { audio: options.audio } : {}),
+      });
+      this.view.addChild(this.streetModal.view);
+    }
     if (options.roomSnapshot && options.roomSnapshot.canEdit !== false && this.rules) {
       this.levelUpModal = new LevelUpModal({
         art: this.recipeArt,
@@ -885,10 +942,13 @@ export class RoomScreen implements Screen {
       if (event.world) this.acceptSharedWorld(event.world);
       this.foods = event.world?.foods ?? [];
       this.dirt = event.world?.dirt ?? [];
+      if (event.world?.street) this.acceptStreet(event.world.street);
+      if (event.away) this.queueAway(event.away);
     }
     // Food and dirt events always carry the whole list; an absent field means none.
     if (event.type === 'food') this.foods = event.foods ?? [];
     if (event.type === 'dirt') this.dirt = event.dirt ?? [];
+    if (event.type === 'world' && event.street) this.acceptStreet(event.street);
     for (const update of event.actors ?? []) {
       const state = this.realtime.actors.get(update.id); if (!state) continue;
       let entry = this.liveActors.get(state.id);
@@ -952,7 +1012,7 @@ export class RoomScreen implements Screen {
     const entry = payment.actorId ? this.liveActors.get(payment.actorId) : undefined;
     if (entry) {
       const view = entry.view.view;
-      this.floatingRewards.spawn(view.x, view.y, view.zIndex, payment.coins, payment.xp, payment.tip ?? 0);
+      this.floatingRewards.spawn(view.x, view.y, view.zIndex, payment.coins, payment.xp, payment.tip ?? 0, payment.freshCoins ?? 0);
     }
     this.audio?.play('coin');
     if (payment.levelUp && this.roomSnapshot?.canEdit !== false) this.celebrateLevel(payment.level, payment.levelReward);
@@ -1171,7 +1231,7 @@ export class RoomScreen implements Screen {
       const texture = this.recipeArt.get(food.recipeId).stage2;
       let dish = this.counterDishes.get(counter.inventoryUnitId);
       if (!dish) { dish = new CounterDish(texture); this.counterDishes.set(counter.inventoryUnitId, dish); this.world.addChild(dish.view); }
-      dish.set(texture, Math.max(1, food.servings ?? 1));
+      dish.set(texture, Math.max(1, food.servings ?? 1), food.fresh ?? 0);
       // The counter's worktop is 52 px above its tile centre.
       dish.view.position.set(tileToScreenX(counter.tx, counter.ty), tileToScreenY(counter.tx, counter.ty) + 40 - 52 + 8);
       dish.view.renderable = !this.storeBar?.isOpen;
@@ -1931,7 +1991,10 @@ export class RoomScreen implements Screen {
     const state = this.roomSnapshot?.playerState;
     this.cookModal.setBook({
       recipes: this.rules.recipes,
-      context: { level: state?.level ?? 1, gold: state?.gold ?? 0, ...(this.emergencyRecipeId ? { emergencyRecipeId: this.emergencyRecipeId } : {}) },
+      context: {
+        level: state?.level ?? 1, gold: state?.gold ?? 0, ...(this.emergencyRecipeId ? { emergencyRecipeId: this.emergencyRecipeId } : {}),
+        ...((this.street?.freshCharges ?? 0) > 0 && this.rules?.street ? { freshPercent: this.rules.street.farm.bonusPercent } : {}),
+      },
       art: this.recipeArt,
     });
     this.cookModal.open();
@@ -2022,6 +2085,7 @@ export class RoomScreen implements Screen {
       this.model.resize(snapshot.tilesX, snapshot.tilesY);
       drawTestGrid(this.testGrid, this.model);
       if (snapshot.tilesX >= oldX && snapshot.tilesY >= oldY) {
+        this.partyLights.setRoom(snapshot.tilesX, snapshot.tilesY);
         const glow = new ExpansionGlow(newFloorTiles(oldX, oldY, snapshot.tilesX, snapshot.tilesY), FLOOR_DRAW_PRIORITY + 2);
         this.world.addChild(glow.view);
         this.expansionGlows.push(glow);
@@ -2051,7 +2115,75 @@ export class RoomScreen implements Screen {
 
   private get isModalOpen(): boolean {
     return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen || this.staffModal?.isOpen ||
-      this.levelUpModal?.isOpen || this.expansionModal?.isOpen);
+      this.levelUpModal?.isOpen || this.expansionModal?.isOpen || this.streetModal?.isOpen || this.welcomeBack?.isOpen);
+  }
+
+  private queueAway(summary: AwaySummary): void {
+    if (!this.welcomeBack || summary.to <= this.shownAwayTo) return;
+    this.pendingAway = summary;
+  }
+
+  /** The summary opens as soon as no other window is up (a level-up from the same absence goes first). */
+  private showPendingAway(): void {
+    const summary = this.pendingAway;
+    if (!summary || !this.welcomeBack || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.pendingAway = undefined;
+    this.shownAwayTo = summary.to;
+    this.closeStoveActions();
+    this.welcomeBack.show(summary);
+  }
+
+  /** Coins and XP were credited on waking; collecting confirms and plays the reward over the player. */
+  private collectAway(summary: AwaySummary): void {
+    void acknowledgeAway();
+    if (summary.coins > 0 || summary.xp > 0) {
+      const view = this.playerView.view;
+      this.floatingRewards.spawn(view.x, view.y, view.zIndex, summary.coins, summary.xp, summary.tips, summary.freshCoins);
+      this.audio?.play('coin');
+    }
+  }
+
+  private serverNow(): number {
+    return this.realtime?.serverNowMs() ?? this.cookingClient?.serverNowMs() ?? Date.now();
+  }
+
+  private acceptStreet(street: StreetState): void {
+    this.street = street;
+    this.streetSecond = -1;
+  }
+
+  /**
+   * Once per second: the building cards count down, the "!" shows what the
+   * owner can collect, and the party (lights, music, badge) follows the server
+   * instants, so visitors see it too and it ends on time without an event.
+   */
+  private updateStreet(): void {
+    const now = this.serverNow();
+    const second = Math.floor(now / 1000);
+    if (second === this.streetSecond) return;
+    this.streetSecond = second;
+    const owner = this.roomSnapshot?.canEdit !== false;
+    const farm = farmStatus(this.street, now, this.rules?.street?.farm.maxCharges ?? 1);
+    const party = partyStatus(this.street, now);
+    this.streetScenery?.setStatus('farm', farmCaption(farm), owner && farm.canHarvest);
+    this.streetScenery?.setStatus('disco', partyCaption(party), owner && party.canStart);
+    if (party.active) this.partyBadge.show(`Festa do Bairro · ${formatClock(party.endsInMs)}`);
+    else this.partyBadge.hide();
+    if (party.active === this.partyOn) return;
+    this.partyOn = party.active;
+    this.partyLights.setActive(party.active);
+    this.streetScenery?.setParty(party.active);
+    this.audio?.setOverride?.(party.active ? { id: FESTA_DO_BAIRRO.id, name: FESTA_DO_BAIRRO.name, song: FESTA_DO_BAIRRO } : null);
+    this.rushIntensity = -1;
+    this.updateRushIntensity();
+  }
+
+  /** The owner opens the building's window; everyone else just sees its card. */
+  private onStreetTap(id: string): void {
+    this.audio?.play('click');
+    if (!this.streetModal || this.isModalOpen || this.storeBar?.isOpen || (id !== 'farm' && id !== 'disco')) return;
+    this.closeStoveActions();
+    this.streetModal.open(id as StreetBuildingId);
   }
 
   /** Expansão do Café (owner only): from the store header or the level-up shortcut. */
@@ -2336,7 +2468,7 @@ export class RoomScreen implements Screen {
     this.streetScenery = new StreetScenery({
       world: this.world,
       bindGestures: (target, onTap) => this.bindSceneryTap(target, onTap),
-      onTap: () => this.audio?.play('click'),
+      onTap: (def) => this.onStreetTap(def.id),
     });
   }
 
@@ -2891,7 +3023,13 @@ export class RoomScreen implements Screen {
     }
 
     this.outsideNpcManager?.update(deltaMs);
+    this.updateStreet();
+    this.showPendingAway();
+    this.welcomeBack?.update(deltaMs);
     this.streetScenery?.update(deltaMs);
+    this.partyLights.update(deltaMs);
+    this.partyBadge.update(deltaMs);
+    this.streetModal?.update();
     if (this.tableCleaning?.phase === 'walking' && this.networkPending === 0 && this.realtime?.connected !== false && this.player.reachedPathEnd()) {
       this.requestTableClean();
     }
@@ -2926,7 +3064,7 @@ export class RoomScreen implements Screen {
     let inside = 0;
     for (const { state } of this.liveActors.values()) if (state.kind === 'npc' && !state.outside) inside++;
     const rush = Math.max(0, Math.min(1, (inside - 1) / 3));
-    const intensity = Math.max(rush, this.stovesUrgent ? 0.8 : 0);
+    const intensity = Math.max(rush, this.stovesUrgent ? 0.8 : 0, this.partyOn ? 1 : 0);
     if (intensity === this.rushIntensity) return;
     this.rushIntensity = intensity;
     this.audio.setIntensity(intensity);
@@ -2967,6 +3105,8 @@ export class RoomScreen implements Screen {
     this.staffModal?.setStageScale(scale);
     this.levelUpModal?.setStageScale(scale);
     this.expansionModal?.setStageScale(scale);
+    this.streetModal?.setStageScale(scale);
+    this.welcomeBack?.setStageScale(scale);
     this.audioControl?.setStageScale(scale);
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
@@ -3025,6 +3165,11 @@ export class RoomScreen implements Screen {
     this.staffModal?.destroy();
     this.levelUpModal?.destroy();
     this.expansionModal?.destroy();
+    this.streetModal?.destroy();
+    this.welcomeBack?.destroy();
+    this.partyLights.destroy();
+    this.partyBadge.destroy();
+    this.audio?.setOverride?.(null);
     this.expansionGlows.splice(0).forEach((glow) => glow.destroy());
     this.trayDishes.forEach((dish) => { if (!dish.destroyed) dish.destroy(); }); this.trayDishes.clear();
     this.outsideNpcManager?.destroy();
