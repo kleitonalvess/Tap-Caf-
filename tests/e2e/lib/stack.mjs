@@ -35,8 +35,15 @@ async function ready(url, accepts = (response) => response.ok, attempts = 240) {
   throw new Error(`Serviço indisponível: ${url}`);
 }
 
+// A roteiro stopped from outside (Ctrl+C, a timeout) takes its services with it.
+const live = new Set();
+process.once('exit', () => { for (const child of live) child.kill('SIGKILL'); });
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => process.exit(130));
+
 function start(command, args, cwd, env, logFile) {
   const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  live.add(child);
+  child.once('close', () => live.delete(child));
   const log = createWriteStream(logFile);
   child.stdout.pipe(log);
   child.stderr.pipe(log);
