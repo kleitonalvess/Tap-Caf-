@@ -1,0 +1,17 @@
+{
+  "id": 3030014,
+  "classname": "rustic_wood_table",
+  "name": "Mesa de Madeira Rústica",
+  "type": 3,
+  "kind": "table",
+  "priceGold": 220,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 52,
+  "level": 8,
+  "placeholder": true,
+  "parts": [],
+  "art": "table-wood",
+  "charm": 3
+}

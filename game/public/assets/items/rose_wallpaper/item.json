@@ -1,0 +1,20 @@
+{
+  "id": 3060018,
+  "classname": "rose_wallpaper",
+  "name": "Parede Rosa",
+  "type": 1,
+  "kind": "wall",
+  "priceGold": 25,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 192.4,
+  "level": 5,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "default_wallpaper_name",
+  "tint": "#f29ab8",
+  "tintMode": "color",
+  "charm": 1,
+  "wallpaperRotation": 1
+}

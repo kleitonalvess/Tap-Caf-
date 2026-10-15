@@ -126,8 +126,10 @@ func GetOrCreatePlayer(s Store, userID string) (Record, error) {
 
 // CafeInfo names a café and its popularity, for whoever visits it.
 type CafeInfo struct {
-	Name       string  `json:"name"`
+	Name string `json:"name"`
+	// The score customers see: service popularity plus the decoration bonus.
 	Popularity float64 `json:"popularity"`
+	DecorBonus float64 `json:"decorBonus"`
 }
 
 const CafeNameMin, CafeNameMax = 3, 24

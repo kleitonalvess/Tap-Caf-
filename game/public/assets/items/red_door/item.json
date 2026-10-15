@@ -1,0 +1,28 @@
+{
+  "id": 3010001,
+  "classname": "red_door",
+  "name": "Porta Vermelha",
+  "type": 2,
+  "kind": "door",
+  "priceGold": 150,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 176,
+  "level": 4,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "mafia_door",
+  "tint": "#c23b2e",
+  "tintMode": "color",
+  "charm": 3,
+  "wall_cutter_index": 0.85,
+  "door": {
+    "sourceRotation": 0,
+    "hinge": {
+      "x": 87,
+      "y": 179
+    },
+    "baseSlope": -0.5
+  }
+}

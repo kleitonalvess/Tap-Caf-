@@ -1,0 +1,17 @@
+{
+  "id": 3500000,
+  "classname": "flower_vase",
+  "name": "Vaso de Flores",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 90,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 64,
+  "level": 2,
+  "placeholder": true,
+  "parts": [],
+  "art": "vase-flowers",
+  "charm": 3
+}

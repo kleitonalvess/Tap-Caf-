@@ -1,0 +1,17 @@
+{
+  "id": 3070001,
+  "classname": "steel_stove",
+  "name": "Fogão Inox Rápido",
+  "type": 3,
+  "kind": "stove",
+  "priceGold": 2500,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 47,
+  "level": 8,
+  "placeholder": true,
+  "parts": [],
+  "art": "stove-steel",
+  "cookSpeedPercent": 15
+}

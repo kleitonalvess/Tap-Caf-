@@ -1,0 +1,17 @@
+{
+  "id": 3600000,
+  "classname": "landscape_painting",
+  "name": "Quadro de Paisagem",
+  "type": 3,
+  "kind": "panel",
+  "priceGold": 140,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 195.2,
+  "level": 3,
+  "placeholder": true,
+  "parts": [],
+  "art": "painting-landscape",
+  "charm": 3
+}

@@ -1,0 +1,28 @@
+{
+  "id": 3010002,
+  "classname": "green_door",
+  "name": "Porta Verde",
+  "type": 2,
+  "kind": "door",
+  "priceGold": 250,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 176,
+  "level": 10,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "mafia_door",
+  "tint": "#2f8f5b",
+  "tintMode": "color",
+  "charm": 4,
+  "wall_cutter_index": 0.85,
+  "door": {
+    "sourceRotation": 0,
+    "hinge": {
+      "x": 87,
+      "y": 179
+    },
+    "baseSlope": -0.5
+  }
+}

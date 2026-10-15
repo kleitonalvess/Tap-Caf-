@@ -1,0 +1,17 @@
+{
+  "id": 3080001,
+  "classname": "wood_counter",
+  "name": "Balcão de Madeira",
+  "type": 3,
+  "kind": "counter",
+  "priceGold": 400,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 52,
+  "level": 5,
+  "placeholder": true,
+  "parts": [],
+  "art": "counter-wood",
+  "charm": 2
+}

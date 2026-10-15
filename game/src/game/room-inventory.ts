@@ -10,6 +10,20 @@ import { apiFetch } from './backend';
 export interface RoomCatalogItem {
   id: number; classname: string; name: string; type: number; kind: RoomItemKind;
   priceGold: number; purchasable: boolean; sizeX: number; sizeY: number; wall_cutter_index?: number;
+  /** Store: the level it is sold from (absent: 1) and a Grana price instead of coins. */
+  level?: number; priceCash?: number;
+  /** Decoration bonus of one placed unit, in popularity tenths. */
+  charm?: number;
+  /** Stoves: cooking time saved and extra time before a ready dish spoils (%). */
+  cookSpeedPercent?: number; spoilBonusPercent?: number;
+  /** Leads the Novidades tab. */
+  featured?: boolean;
+}
+
+/** The decoration bonus of the placed units (shared/gamerules DecorBonus). */
+export interface DecorSummary {
+  bonusTenths: number; rawTenths: number; maxTenths: number;
+  lines: Array<{ itemId: number; name: string; copies: number; tenths: number }>;
 }
 export interface RoomUnit {
   unitId: string; itemId: number; placed: boolean; tx: number; ty: number; rotation: number; stoveId?: string;
@@ -22,14 +36,21 @@ export interface RoomSnapshot {
   street?: StreetState;
   /** The owner's unacknowledged absence summary. */
   awaySummary?: AwaySummary;
-  /** The owner's café as visitors see it (playerState is the viewer's own HUD). */
-  cafe?: { name: string; popularity: number };
+  /** The owner's café as visitors see it (playerState is the viewer's own HUD);
+   * popularity already includes the decoration bonus. */
+  cafe?: { name: string; popularity: number; decorBonus?: number };
+  decor?: DecorSummary;
 }
 export interface ItemManifest extends RoomCatalogItem {
   itemHeight: number; parts: (IndoorArtFrame & { rotation?: number })[];
   wallpaperRotation?: 0 | 1; door?: IndoorArtEntry['door'];
   /** Registered before its PNG exists; the client draws a stand-in. */
   placeholder?: boolean;
+  /** A recoloured copy of another item's PNGs: `color` keeps the shading and
+   * takes the tint's hue, `multiply` darkens light art (white cloth) to it. */
+  variantOf?: string; tint?: string; tintMode?: 'color' | 'multiply';
+  /** Canvas drawing style for items without PNG (placeholder-art.ts). */
+  art?: string;
 }
 
 /** Parts without a rotation belong to the same assembled pose. */
@@ -69,13 +90,13 @@ export async function loadRoomItemArt(snapshot: RoomSnapshot, legacy?: ArtProvid
   const entries: Record<string, IndoorArtEntry> = { ...legacy?.art.entries };
   const textures = new Map<string, Texture>();
   await Promise.all(manifests.map(async (manifest) => {
+    if (manifest.variantOf) return;
     if (manifest.parts.length === 0 && manifest.placeholder) {
-      const file = `placeholder:${manifest.classname}`;
-      const drawn = placeholderItemArt(manifest.kind, manifest.itemHeight, file);
-      if (!drawn) return;
-      textures.set(file, drawn.texture);
+      const drawn = placeholderItemArt(manifest.art ?? manifest.kind, manifest.itemHeight, `placeholder:${manifest.classname}`);
+      if (!drawn.length) return;
+      for (const frame of drawn) textures.set(frame.frame.file, frame.texture);
       entries[manifest.classname] = {
-        characterId: manifest.id, frames: [drawn.frame], sizeX: manifest.sizeX, sizeY: manifest.sizeY, itemHeight: manifest.itemHeight,
+        characterId: manifest.id, frames: drawn.map((frame) => frame.frame), sizeX: manifest.sizeX, sizeY: manifest.sizeY, itemHeight: manifest.itemHeight,
       };
       return;
     }
@@ -105,7 +126,43 @@ export async function loadRoomItemArt(snapshot: RoomSnapshot, legacy?: ArtProvid
       wallCutterIndex: manifest.wall_cutter_index,
     };
   }));
+  // Variants recolour their source's finished frames, so floors, wallpapers,
+  // doors, furniture and the store preview all draw them like real art.
+  for (const manifest of manifests) {
+    const source = manifest.variantOf ? entries[manifest.variantOf] : undefined;
+    if (!manifest.variantOf || !source || !manifest.tint) continue;
+    const frames = source.frames.map((frame, index) => {
+      const texture = textures.get(frame.file);
+      const file = `variant:${manifest.classname}:${index}`;
+      const tinted = texture ? tintTexture(texture, manifest.tint!, manifest.tintMode ?? 'color') : undefined;
+      if (tinted) textures.set(file, tinted);
+      return tinted ? { ...frame, file } : frame;
+    });
+    entries[manifest.classname] = { ...source, characterId: manifest.id, frames };
+  }
   return { art: new IndoorArt(entries, legacy?.art.sceneBackground), textureFor: (file) => textures.get(file) ?? legacy?.textureFor(file) };
+}
+
+/** A recoloured copy of a texture: the tint is blended over the art and the
+ * art's own alpha cut back out, so outlines and transparency stay intact. */
+function tintTexture(texture: Texture, tint: string, mode: 'color' | 'multiply'): Texture | undefined {
+  const image = texture.source.resource as CanvasImageSource | undefined;
+  const { width, height } = texture.source;
+  if (!image || !width || !height) return undefined;
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) return undefined;
+  context.drawImage(image, 0, 0, width, height);
+  context.globalCompositeOperation = mode;
+  context.fillStyle = tint;
+  context.fillRect(0, 0, width, height);
+  context.globalCompositeOperation = 'destination-in';
+  context.drawImage(image, 0, 0, width, height);
+  const tinted = Texture.from(canvas);
+  tinted.source.scaleMode = 'nearest'; tinted.source.autoGenerateMipmaps = true;
+  tinted.source.minFilter = 'linear'; tinted.source.mipmapFilter = 'linear';
+  return tinted;
 }
 
 export function roomModelItems(snapshot: RoomSnapshot, art?: IndoorArt): RoomItem[] {

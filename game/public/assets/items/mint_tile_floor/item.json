@@ -1,0 +1,19 @@
+{
+  "id": 3050003,
+  "classname": "mint_tile_floor",
+  "name": "Piso Menta",
+  "type": 0,
+  "kind": "decor",
+  "priceGold": 40,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 0,
+  "level": 9,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "default_tile_name",
+  "tint": "#7ed6a5",
+  "tintMode": "color",
+  "charm": 2
+}

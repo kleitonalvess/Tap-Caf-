@@ -1,0 +1,17 @@
+{
+  "id": 3500003,
+  "classname": "chef_statue",
+  "name": "Estátua do Chef",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 900,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 128,
+  "level": 14,
+  "placeholder": true,
+  "parts": [],
+  "art": "statue",
+  "charm": 8
+}

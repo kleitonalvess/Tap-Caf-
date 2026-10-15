@@ -1,0 +1,21 @@
+{
+  "id": 3030013,
+  "classname": "gold_cloth_table",
+  "name": "Mesa com Toalha Dourada",
+  "type": 3,
+  "kind": "table",
+  "priceGold": 0,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 51.4,
+  "level": 1,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "white_cloth_table",
+  "tint": "#ecc55c",
+  "tintMode": "multiply",
+  "priceCash": 4,
+  "charm": 6,
+  "featured": true
+}

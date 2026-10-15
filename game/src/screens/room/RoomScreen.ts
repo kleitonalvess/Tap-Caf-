@@ -91,9 +91,11 @@ import { StaffModal } from './StaffModal';
 import { AchievementsModal } from './AchievementsModal';
 import { CurrencyModal, type Currency } from './CurrencyModal';
 import { PopularityModal } from './PopularityModal';
+import { CashDayModal } from './CashDayModal';
 import { claimProgress, currencySources, loadProgress, popularityLines, renameCafe, type ProgressClaim, type ProgressSnapshot } from '../../game/progress';
 import { LevelUpModal } from './LevelUpModal';
 import { levelUnlocks, nextUnlocks } from '../../game/game-rules';
+import { shopUnlocks } from '../../game/shop';
 import { StaffClient } from '../../game/staff';
 import { OutsideNpcManager, type PreparedNpcView } from './OutsideNpcManager';
 import { createProceduralWallView, type WallWallpaper } from './ProceduralWallView';
@@ -332,6 +334,7 @@ export class RoomScreen implements Screen {
   private achievementsModal?: AchievementsModal;
   private popularityModal?: PopularityModal;
   private currencyModal?: CurrencyModal;
+  private cashDayModal?: CashDayModal;
   private progressTimer?: ReturnType<typeof setTimeout>;
   private progressLoading = false;
   private progressAgain = false;
@@ -840,6 +843,7 @@ export class RoomScreen implements Screen {
           },
           onDragEnd: (event) => this.onDragEnd(event),
           ...(options.roomSnapshot?.canEdit !== false && this.rules?.expansions ? { onExpand: () => this.openExpansion() } : {}),
+          onCashRegister: () => this.openCashDay(),
         } : undefined,
         options.storeTopButtonTexture,
         options.actionBarIcons?.find(({ name }) => name === 'house')?.texture,
@@ -999,6 +1003,7 @@ export class RoomScreen implements Screen {
         onRecipes: () => this.openRecipeBook(),
         onStaff: () => this.openStaffScreen(),
         onExpand: () => this.openExpansion(),
+        onShop: () => this.openStoreBar(),
       });
       this.view.addChild(this.levelUpModal.view);
     }
@@ -1027,8 +1032,12 @@ export class RoomScreen implements Screen {
       ...(options.audio ? { audio: options.audio } : {}),
     });
     this.view.addChild(this.currencyModal.view);
+    this.cashDayModal = new CashDayModal({ ...(options.audio ? { audio: options.audio } : {}) });
+    this.view.addChild(this.cashDayModal.view);
     this.topBars?.setPlusHandler((kind) => this.openCurrency(kind));
     this.actionBarMood?.setTapHandler(() => this.openPopularity());
+    // The owner's mood column shows the score customers see (service + decoration).
+    if (options.roomSnapshot?.canEdit !== false && options.playerState) this.actionBarMood?.setSatisfaction(this.effectiveSatisfaction(options.playerState));
     if (options.roomSnapshot?.canEdit === false && options.roomSnapshot.cafe) {
       // A visitor's mood column shows the café being visited, not their own.
       this.actionBarMood?.setSatisfaction({ current: options.roomSnapshot.cafe.popularity, maximum: options.playerState?.satisfaction.maximum ?? 105 });
@@ -1104,7 +1113,7 @@ export class RoomScreen implements Screen {
       this.showPayment(event.payment);
       const visited = this.roomSnapshot?.canEdit === false ? this.roomSnapshot.cafe : undefined;
       if (visited) {
-        visited.popularity = event.payment.popularityTenths / 10;
+        visited.popularity = Math.min(105, (event.payment.popularityTenths + (this.roomSnapshot?.decor?.bonusTenths ?? 0)) / 10);
         this.actionBarMood?.setSatisfaction({ current: visited.popularity, maximum: this.roomSnapshot?.playerState?.satisfaction.maximum ?? 105 });
       }
     }
@@ -1162,7 +1171,12 @@ export class RoomScreen implements Screen {
     }
     this.closeStoveActions();
     const tiles = Math.max(this.model.tilesX, this.model.tilesY);
-    this.levelUpModal.show({ level, rewardCoins: reward, unlocks: levelUnlocks(this.rules, from, level, tiles), next: nextUnlocks(this.rules, level, tiles) });
+    const items = shopUnlocks(this.roomSnapshot?.catalog ?? [], from, level).map((item) => {
+      const frame = this.artProvider?.art.get(item.classname)?.frames[0];
+      const texture = frame ? this.artProvider?.textureFor(frame.file) : undefined;
+      return { name: item.name, classname: item.classname, ...(texture ? { texture } : {}) };
+    });
+    this.levelUpModal.show({ level, rewardCoins: reward, unlocks: levelUnlocks(this.rules, from, level, tiles), next: nextUnlocks(this.rules, level, tiles), items });
   }
 
   private acceptSharedWorld(world: SharedWorld): void {
@@ -2317,7 +2331,7 @@ export class RoomScreen implements Screen {
     return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen || this.staffModal?.isOpen ||
       this.levelUpModal?.isOpen || this.expansionModal?.isOpen || this.streetModal?.isOpen || this.welcomeBack?.isOpen ||
       this.confirmDialog?.isOpen || this.dailyModal?.isOpen || this.mailModal?.isOpen || this.achievementsModal?.isOpen ||
-      this.popularityModal?.isOpen || this.currencyModal?.isOpen);
+      this.popularityModal?.isOpen || this.currencyModal?.isOpen || this.cashDayModal?.isOpen);
   }
 
   /** Bottom bar: open the system, or say it is not here yet (or not for visitors). */
@@ -2361,9 +2375,28 @@ export class RoomScreen implements Screen {
     const owner = this.roomSnapshot?.canEdit !== false;
     const state = this.roomSnapshot?.playerState;
     const visited = this.roomSnapshot?.cafe;
+    const decor = this.roomSnapshot?.decor;
     this.popularityModal.show(owner
-      ? { name: state?.cafeName ?? '', popularity: state?.satisfaction.current ?? 0, maximum: state?.satisfaction.maximum ?? 105, owner }
-      : { name: visited?.name ?? '', popularity: visited?.popularity ?? 0, maximum: state?.satisfaction.maximum ?? 105, owner });
+      ? { name: state?.cafeName ?? '', popularity: state ? this.effectiveSatisfaction(state).current : 0, maximum: state?.satisfaction.maximum ?? 105, owner, ...(decor ? { decor } : {}) }
+      : { name: visited?.name ?? '', popularity: visited?.popularity ?? 0, maximum: state?.satisfaction.maximum ?? 105, owner, ...(decor ? { decor } : {}) });
+  }
+
+  /** Caixa do dia, from the cash register in the store header. */
+  private openCashDay(): void {
+    if (!this.cashDayModal || this.isModalOpen) return;
+    this.audio?.play('coin');
+    const register = this.model.items.some((item) => item.kind === 'register');
+    void loadProgress().then((progress) => {
+      if (this.destroyed || this.isModalOpen) return;
+      this.acceptProgress(progress);
+      this.cashDayModal?.show({ today: progress.today ?? {}, register });
+    }).catch((error: unknown) => this.showNotice(error instanceof Error ? error.message : 'Caixa indisponível.'));
+  }
+
+  /** The score customers see: service popularity plus the decoration bonus. */
+  private effectiveSatisfaction(state: PlayerState): { current: number; maximum: number } {
+    const bonus = (this.roomSnapshot?.decor?.bonusTenths ?? 0) / 10;
+    return { current: Math.min(state.satisfaction.maximum, Math.round((state.satisfaction.current + bonus) * 10) / 10), maximum: state.satisfaction.maximum };
   }
 
   private openCurrency(kind: Currency): void {
@@ -3297,7 +3330,7 @@ export class RoomScreen implements Screen {
     this.topBars?.setState(state);
     // Visitors keep the visited café in the mood column.
     if (this.roomSnapshot?.canEdit !== false) {
-      this.actionBarMood?.setSatisfaction(state.satisfaction);
+      this.actionBarMood?.setSatisfaction(this.effectiveSatisfaction(state));
       this.actionBarMood?.setCafeName(state.cafeName);
     }
     this.scheduleProgress();
@@ -3402,6 +3435,7 @@ export class RoomScreen implements Screen {
     this.achievementsModal?.update(deltaMs);
     this.popularityModal?.update(deltaMs);
     this.currencyModal?.update(deltaMs);
+    this.cashDayModal?.update(deltaMs);
     // New missions at São Paulo midnight, by the server's clock.
     if (this.progressNextAt > 0 && this.serverNow() >= this.progressNextAt) { this.progressNextAt = 0; this.scheduleProgress(); }
     this.streetScenery?.update(deltaMs);
@@ -3491,6 +3525,7 @@ export class RoomScreen implements Screen {
     this.achievementsModal?.setStageScale(scale);
     this.popularityModal?.setStageScale(scale);
     this.currencyModal?.setStageScale(scale);
+    this.cashDayModal?.setStageScale(scale);
     this.audioControl?.setStageScale(scale);
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
@@ -3558,6 +3593,7 @@ export class RoomScreen implements Screen {
     this.achievementsModal?.destroy();
     this.popularityModal?.destroy();
     this.currencyModal?.destroy();
+    this.cashDayModal?.destroy();
     this.partyLights.destroy();
     this.partyBadge.destroy();
     this.audio?.setOverride?.(null);

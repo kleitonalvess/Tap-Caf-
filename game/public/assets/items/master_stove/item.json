@@ -1,0 +1,19 @@
+{
+  "id": 3070002,
+  "classname": "master_stove",
+  "name": "Fogão Mestre",
+  "type": 3,
+  "kind": "stove",
+  "priceGold": 8000,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 52,
+  "level": 18,
+  "placeholder": true,
+  "parts": [],
+  "art": "stove-master",
+  "featured": true,
+  "cookSpeedPercent": 25,
+  "spoilBonusPercent": 50
+}

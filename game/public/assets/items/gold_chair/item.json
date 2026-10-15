@@ -1,0 +1,21 @@
+{
+  "id": 3040005,
+  "classname": "gold_chair",
+  "name": "Cadeira Dourada",
+  "type": 3,
+  "kind": "chair",
+  "priceGold": 0,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 97.4,
+  "level": 1,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "classic_chair",
+  "tint": "#d4a017",
+  "tintMode": "color",
+  "priceCash": 3,
+  "charm": 5,
+  "featured": true
+}

@@ -1,0 +1,20 @@
+{
+  "id": 3060019,
+  "classname": "blue_wallpaper",
+  "name": "Parede Azul",
+  "type": 1,
+  "kind": "wall",
+  "priceGold": 35,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 192.4,
+  "level": 8,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "default_wallpaper_name",
+  "tint": "#6fa6e0",
+  "tintMode": "color",
+  "charm": 2,
+  "wallpaperRotation": 1
+}

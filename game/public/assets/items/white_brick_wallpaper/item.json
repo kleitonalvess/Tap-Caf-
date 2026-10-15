@@ -1,0 +1,20 @@
+{
+  "id": 3060020,
+  "classname": "white_brick_wallpaper",
+  "name": "Tijolinho Branco",
+  "type": 1,
+  "kind": "wall",
+  "priceGold": 60,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 233,
+  "level": 12,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "mafia_wall",
+  "tint": "#ece6dc",
+  "tintMode": "color",
+  "charm": 2,
+  "wallpaperRotation": 1
+}

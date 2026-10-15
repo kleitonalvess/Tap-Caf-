@@ -1,0 +1,20 @@
+{
+  "id": 3060017,
+  "classname": "cream_wallpaper",
+  "name": "Parede Creme",
+  "type": 1,
+  "kind": "wall",
+  "priceGold": 15,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 192.4,
+  "level": 2,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "default_wallpaper_name",
+  "tint": "#f2d9a6",
+  "tintMode": "color",
+  "charm": 1,
+  "wallpaperRotation": 1
+}

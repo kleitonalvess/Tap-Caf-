@@ -228,7 +228,8 @@ func StartCooking(s Store, userID, stoveID, recipeID string, now time.Time) erro
 		if err != nil {
 			return err
 		}
-		if stove.GetInt("item_id") != starterStoveItemID {
+		model, ok := roomcatalog.ByID(stove.GetInt("item_id"))
+		if !ok || model.Kind != "stove" {
 			return ErrStoveNotOwned
 		}
 		if job, err := tx.First("stove_cooking", Where{"stove": stoveID}); err == nil {
@@ -266,8 +267,9 @@ func StartCooking(s Store, userID, stoveID, recipeID string, now time.Time) erro
 				return err
 			}
 		}
+		// Better stoves cook faster and keep a ready dish longer.
 		started := now.Add(gamerules.PrepareDuration())
-		ready := started.Add(recipe.CookDuration())
+		ready := started.Add(StoveCookDuration(model, recipe))
 		job, err := tx.New("stove_cooking")
 		if err != nil {
 			return err
@@ -275,7 +277,7 @@ func StartCooking(s Store, userID, stoveID, recipeID string, now time.Time) erro
 		setAll(job, map[string]any{
 			"user": userID, "stove": stoveID, "recipe_id": recipe.ID,
 			"preparing_at": now, "started_at": started, "ready_at": ready,
-			"spoils_at": ready.Add(recipe.SpoilDuration()), "cost_coins": cost,
+			"spoils_at": ready.Add(StoveSpoilDuration(model, recipe)), "cost_coins": cost,
 		})
 		// Fresh farm ingredients go into the next batch, whatever the recipe.
 		if room, err := tx.First("player_rooms", Where{"user": userID}); err == nil && room.GetInt("fresh_charges") > 0 {
@@ -289,6 +291,16 @@ func StartCooking(s Store, userID, stoveID, recipeID string, now time.Time) erro
 		}
 		return tx.Save(job)
 	})
+}
+
+// StoveCookDuration is how long the recipe cooks on this stove model.
+func StoveCookDuration(stove roomcatalog.Item, recipe gamerules.Recipe) time.Duration {
+	return recipe.CookDuration() * time.Duration(100-stove.CookSpeedPercent) / 100
+}
+
+// StoveSpoilDuration is how long a ready dish waits on this stove before it spoils.
+func StoveSpoilDuration(stove roomcatalog.Item, recipe gamerules.Recipe) time.Duration {
+	return recipe.SpoilDuration() * time.Duration(100+stove.SpoilBonusPercent) / 100
 }
 
 // pickCounter prefers a counter already holding the same recipe, then an empty one.

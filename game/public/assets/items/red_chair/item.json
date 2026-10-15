@@ -1,0 +1,19 @@
+{
+  "id": 3040002,
+  "classname": "red_chair",
+  "name": "Cadeira Vermelha",
+  "type": 3,
+  "kind": "chair",
+  "priceGold": 70,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 97.4,
+  "level": 3,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "classic_chair",
+  "tint": "#c0392b",
+  "tintMode": "color",
+  "charm": 1
+}

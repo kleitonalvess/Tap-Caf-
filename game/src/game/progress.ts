@@ -27,6 +27,8 @@ export interface ProgressSnapshot {
   /** Grana paid with the last mission of the day (completing all three), and whether today's was paid. */
   trioCash?: number;
   trioClaimed?: boolean;
+  /** Today's daily counters: customers, earned_coins, tips, dishes, spent_coins... */
+  today?: Record<string, number>;
 }
 export interface ProgressClaim { reward: Reward; levelReward?: number; progress: ProgressSnapshot; state: PlayerState }
 

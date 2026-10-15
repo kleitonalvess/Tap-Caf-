@@ -1,0 +1,17 @@
+{
+  "id": 3500001,
+  "classname": "fern_pot",
+  "name": "Samambaia",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 150,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 86,
+  "level": 5,
+  "placeholder": true,
+  "parts": [],
+  "art": "fern",
+  "charm": 4
+}

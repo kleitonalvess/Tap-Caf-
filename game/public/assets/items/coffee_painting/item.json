@@ -1,0 +1,17 @@
+{
+  "id": 3600002,
+  "classname": "coffee_painting",
+  "name": "Quadro do Café",
+  "type": 3,
+  "kind": "panel",
+  "priceGold": 400,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 195.2,
+  "level": 10,
+  "placeholder": true,
+  "parts": [],
+  "art": "painting-coffee",
+  "charm": 5
+}

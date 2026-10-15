@@ -1,0 +1,19 @@
+{
+  "id": 3050001,
+  "classname": "sky_tile_floor",
+  "name": "Piso Azul-Céu",
+  "type": 0,
+  "kind": "decor",
+  "priceGold": 20,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 0,
+  "level": 3,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "default_tile_name",
+  "tint": "#7fb8f0",
+  "tintMode": "color",
+  "charm": 1
+}

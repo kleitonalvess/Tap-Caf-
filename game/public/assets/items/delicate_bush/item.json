@@ -4,8 +4,8 @@
   "name": "Arbusto",
   "type": 3,
   "kind": "bush",
-  "priceGold": 0,
-  "purchasable": false,
+  "priceGold": 60,
+  "purchasable": true,
   "legacyClassName": "DelicateBush",
   "sizeX": 1,
   "sizeY": 1,
@@ -18,5 +18,7 @@
       "left": -36.7,
       "top": -106.1
     }
-  ]
+  ],
+  "level": 1,
+  "charm": 3
 }

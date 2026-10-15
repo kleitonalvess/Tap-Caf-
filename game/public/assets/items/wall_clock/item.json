@@ -1,0 +1,17 @@
+{
+  "id": 3600001,
+  "classname": "wall_clock",
+  "name": "Relógio de Parede",
+  "type": 3,
+  "kind": "panel",
+  "priceGold": 220,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 195.2,
+  "level": 6,
+  "placeholder": true,
+  "parts": [],
+  "art": "wall-clock",
+  "charm": 3
+}

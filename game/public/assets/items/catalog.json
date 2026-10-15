@@ -6,9 +6,24 @@
       "manifest": "basic_window/item.json"
     },
     {
+      "id": 3000012,
+      "classname": "blue_window",
+      "manifest": "blue_window/item.json"
+    },
+    {
       "id": 3010000,
       "classname": "mafia_door",
       "manifest": "mafia_door/item.json"
+    },
+    {
+      "id": 3010001,
+      "classname": "red_door",
+      "manifest": "red_door/item.json"
+    },
+    {
+      "id": 3010002,
+      "classname": "green_door",
+      "manifest": "green_door/item.json"
     },
     {
       "id": 3020003,
@@ -16,9 +31,34 @@
       "manifest": "delicate_bush/item.json"
     },
     {
+      "id": 3020004,
+      "classname": "cherry_bush",
+      "manifest": "cherry_bush/item.json"
+    },
+    {
       "id": 3030010,
       "classname": "white_cloth_table",
       "manifest": "white_cloth_table/item.json"
+    },
+    {
+      "id": 3030011,
+      "classname": "red_cloth_table",
+      "manifest": "red_cloth_table/item.json"
+    },
+    {
+      "id": 3030012,
+      "classname": "blue_cloth_table",
+      "manifest": "blue_cloth_table/item.json"
+    },
+    {
+      "id": 3030013,
+      "classname": "gold_cloth_table",
+      "manifest": "gold_cloth_table/item.json"
+    },
+    {
+      "id": 3030014,
+      "classname": "rustic_wood_table",
+      "manifest": "rustic_wood_table/item.json"
     },
     {
       "id": 3040001,
@@ -26,9 +66,49 @@
       "manifest": "classic_chair/item.json"
     },
     {
+      "id": 3040002,
+      "classname": "red_chair",
+      "manifest": "red_chair/item.json"
+    },
+    {
+      "id": 3040003,
+      "classname": "blue_chair",
+      "manifest": "blue_chair/item.json"
+    },
+    {
+      "id": 3040004,
+      "classname": "green_chair",
+      "manifest": "green_chair/item.json"
+    },
+    {
+      "id": 3040005,
+      "classname": "gold_chair",
+      "manifest": "gold_chair/item.json"
+    },
+    {
       "id": 3050000,
       "classname": "default_tile_name",
       "manifest": "default_tile_name/item.json"
+    },
+    {
+      "id": 3050001,
+      "classname": "sky_tile_floor",
+      "manifest": "sky_tile_floor/item.json"
+    },
+    {
+      "id": 3050002,
+      "classname": "terracotta_tile_floor",
+      "manifest": "terracotta_tile_floor/item.json"
+    },
+    {
+      "id": 3050003,
+      "classname": "mint_tile_floor",
+      "manifest": "mint_tile_floor/item.json"
+    },
+    {
+      "id": 3050004,
+      "classname": "royal_tile_floor",
+      "manifest": "royal_tile_floor/item.json"
     },
     {
       "id": 3060016,
@@ -36,14 +116,59 @@
       "manifest": "default_wallpaper_name/item.json"
     },
     {
+      "id": 3060017,
+      "classname": "cream_wallpaper",
+      "manifest": "cream_wallpaper/item.json"
+    },
+    {
+      "id": 3060018,
+      "classname": "rose_wallpaper",
+      "manifest": "rose_wallpaper/item.json"
+    },
+    {
+      "id": 3060019,
+      "classname": "blue_wallpaper",
+      "manifest": "blue_wallpaper/item.json"
+    },
+    {
+      "id": 3060020,
+      "classname": "white_brick_wallpaper",
+      "manifest": "white_brick_wallpaper/item.json"
+    },
+    {
       "id": 3070000,
       "classname": "starter_stove",
       "manifest": "starter_stove/item.json"
     },
     {
+      "id": 3070001,
+      "classname": "steel_stove",
+      "manifest": "steel_stove/item.json"
+    },
+    {
+      "id": 3070002,
+      "classname": "master_stove",
+      "manifest": "master_stove/item.json"
+    },
+    {
       "id": 3080000,
       "classname": "serving_counter",
       "manifest": "serving_counter/item.json"
+    },
+    {
+      "id": 3080001,
+      "classname": "wood_counter",
+      "manifest": "wood_counter/item.json"
+    },
+    {
+      "id": 3080002,
+      "classname": "marble_counter",
+      "manifest": "marble_counter/item.json"
+    },
+    {
+      "id": 3080003,
+      "classname": "glass_display_counter",
+      "manifest": "glass_display_counter/item.json"
     },
     {
       "id": 3090000,
@@ -69,6 +194,51 @@
       "id": 3300000,
       "classname": "letter_box",
       "manifest": "letter_box/item.json"
+    },
+    {
+      "id": 3400000,
+      "classname": "cash_register",
+      "manifest": "cash_register/item.json"
+    },
+    {
+      "id": 3500000,
+      "classname": "flower_vase",
+      "manifest": "flower_vase/item.json"
+    },
+    {
+      "id": 3500001,
+      "classname": "fern_pot",
+      "manifest": "fern_pot/item.json"
+    },
+    {
+      "id": 3500002,
+      "classname": "floor_lamp",
+      "manifest": "floor_lamp/item.json"
+    },
+    {
+      "id": 3500003,
+      "classname": "chef_statue",
+      "manifest": "chef_statue/item.json"
+    },
+    {
+      "id": 3500004,
+      "classname": "garden_fountain",
+      "manifest": "garden_fountain/item.json"
+    },
+    {
+      "id": 3600000,
+      "classname": "landscape_painting",
+      "manifest": "landscape_painting/item.json"
+    },
+    {
+      "id": 3600001,
+      "classname": "wall_clock",
+      "manifest": "wall_clock/item.json"
+    },
+    {
+      "id": 3600002,
+      "classname": "coffee_painting",
+      "manifest": "coffee_painting/item.json"
     },
     {
       "id": 9000001,

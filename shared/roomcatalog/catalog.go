@@ -19,7 +19,26 @@ type Item struct {
 	SizeX           int     `json:"sizeX"`
 	SizeY           int     `json:"sizeY"`
 	WallCutterIndex float64 `json:"wall_cutter_index,omitempty"`
+	// Level is the player level the store sells the item from (0 or 1: always).
+	Level int `json:"level,omitempty"`
+	// PriceCash sells the item for Grana instead of coins (PriceGold is then 0).
+	PriceCash int64 `json:"priceCash,omitempty"`
+	// Charm is the decoration bonus of one placed unit, in popularity tenths
+	// (gamerules.DecorBonus applies the limits per identical item and in total).
+	Charm int `json:"charm,omitempty"`
+	// Stoves only: cooking takes this share less time, and a ready dish lasts
+	// this share longer before it spoils.
+	CookSpeedPercent  int `json:"cookSpeedPercent,omitempty"`
+	SpoilBonusPercent int `json:"spoilBonusPercent,omitempty"`
+	// Featured items lead the store's Novidades tab.
+	Featured bool `json:"featured,omitempty"`
 }
+
+// MinLevel is the level the item is sold from.
+func (i Item) MinLevel() int { return max(1, i.Level) }
+
+// PaidWithCash reports whether buying the item costs Grana.
+func (i Item) PaidWithCash() bool { return i.PriceCash > 0 }
 
 var Items []Item
 
@@ -40,7 +59,11 @@ func init() {
 	for _, item := range Items {
 		if seen[item.ID] || classNames[item.Classname] || item.ID <= 0 || item.Classname == "" || item.SizeX < 1 || item.SizeY < 1 ||
 			item.PriceGold < 0 || item.Type < 0 || item.Type > 3 ||
-			(item.Type == 2 && (item.Kind != "door" || item.WallCutterIndex < 0 || item.WallCutterIndex > 1)) {
+			(item.Type == 2 && (item.Kind != "door" || item.WallCutterIndex < 0 || item.WallCutterIndex > 1)) ||
+			item.Level < 0 || item.Level > 260 || item.PriceCash < 0 || item.PriceCash > 0 && item.PriceGold > 0 ||
+			item.Charm < 0 || item.Charm > 100 || item.CookSpeedPercent < 0 || item.CookSpeedPercent > 50 ||
+			item.SpoilBonusPercent < 0 || item.SpoilBonusPercent > 200 ||
+			item.Kind != "stove" && (item.CookSpeedPercent > 0 || item.SpoilBonusPercent > 0) {
 			panic("invalid room catalogue")
 		}
 		seen[item.ID] = true

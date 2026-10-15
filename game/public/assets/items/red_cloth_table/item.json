@@ -1,0 +1,19 @@
+{
+  "id": 3030011,
+  "classname": "red_cloth_table",
+  "name": "Mesa com Toalha Vermelha",
+  "type": 3,
+  "kind": "table",
+  "priceGold": 120,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 51.4,
+  "level": 3,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "white_cloth_table",
+  "tint": "#e04a4a",
+  "tintMode": "multiply",
+  "charm": 2
+}

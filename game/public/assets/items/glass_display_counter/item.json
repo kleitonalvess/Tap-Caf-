@@ -1,0 +1,19 @@
+{
+  "id": 3080003,
+  "classname": "glass_display_counter",
+  "name": "Vitrine Refrigerada",
+  "type": 3,
+  "kind": "counter",
+  "priceGold": 0,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 60,
+  "level": 1,
+  "placeholder": true,
+  "parts": [],
+  "art": "counter-glass",
+  "priceCash": 10,
+  "charm": 6,
+  "featured": true
+}

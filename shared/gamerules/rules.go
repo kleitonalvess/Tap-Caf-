@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"sort"
 	"time"
+
+	"coffe-mania/shared/roomcatalog"
 )
 
 //go:embed rules.json
@@ -98,12 +100,17 @@ const (
 	// Expansion steps done and staff slots opened (derived).
 	StatExpansions = "expansions"
 	StatStaff      = "staff"
+	// Coins customers paid (tips included) and the tips alone: the store's
+	// "Caixa do dia" reads today's.
+	StatEarnedCoins = "earned_coins"
+	StatTips        = "tips"
 	// Social stats wait for neighbours and gifts (Sprint 15).
 	StatNeighbors = "neighbors"
 	StatGifts     = "gifts"
 )
 
-var dailyStats = map[string]bool{StatDishes: true, StatCustomers: true, StatTables: true, StatSeasoned: true, StatHarvests: true, StatParties: true, StatSpentCoins: true}
+var dailyStats = map[string]bool{StatDishes: true, StatCustomers: true, StatTables: true, StatSeasoned: true, StatHarvests: true, StatParties: true, StatSpentCoins: true,
+	StatEarnedCoins: true, StatTips: true}
 var achievementStats = map[string]bool{StatDishes: true, StatUniqueDishes: true, StatCustomers: true, StatTables: true, StatSeasoned: true,
 	StatHarvests: true, StatParties: true, StatSpentCoins: true, StatExpansions: true, StatStaff: true, StatNeighbors: true, StatGifts: true}
 
@@ -160,6 +167,33 @@ type Mission struct {
 type MissionGoal struct {
 	Stat   string `json:"stat"`
 	Target int64  `json:"target"`
+}
+
+// DecorRules: placed decoration adds its charm to the café's popularity. The
+// first FullCopies units of the same item count in full and the next
+// HalfCopies at half, so variety beats repeating the cheapest item; the whole
+// bonus is capped at MaxBonusTenths.
+type DecorRules struct {
+	FullCopies     int `json:"fullCopies"`
+	HalfCopies     int `json:"halfCopies"`
+	MaxBonusTenths int `json:"maxBonusTenths"`
+}
+
+// DecorLine is one decoration item's share of the bonus.
+type DecorLine struct {
+	ItemID int    `json:"itemId"`
+	Name   string `json:"name"`
+	Copies int    `json:"copies"`
+	Tenths int    `json:"tenths"`
+}
+
+// DecorSummary is the café's decoration bonus, in popularity tenths.
+type DecorSummary struct {
+	BonusTenths int `json:"bonusTenths"`
+	// Before the cap: the window shows when more decoration no longer helps.
+	RawTenths int         `json:"rawTenths"`
+	MaxTenths int         `json:"maxTenths"`
+	Lines     []DecorLine `json:"lines"`
 }
 
 // TableRules: every meal leaves its dishes on the table, which stays dirty
@@ -307,6 +341,7 @@ type Rules struct {
 	Daily             DailyRules       `json:"daily"`
 	Mail              MailRules        `json:"mail"`
 	Achievements      AchievementRules `json:"achievements"`
+	Decor             DecorRules       `json:"decor"`
 	Missions          MissionRules     `json:"missions"`
 	Levels            []Level          `json:"levels"`
 	CustomerFrequency []Frequency      `json:"customerFrequency"`
@@ -385,6 +420,9 @@ func validate(r Rules) string {
 	}
 	if w := r.Mail.Welcome; w.Title == "" || len(w.Title) > 80 || w.Body == "" || len(w.Body) > 600 || w.Coins < 0 || w.Cash < 0 {
 		return "invalid welcome letter"
+	}
+	if d := r.Decor; d.FullCopies < 1 || d.FullCopies > 20 || d.HalfCopies < 0 || d.HalfCopies > 20 || d.MaxBonusTenths < 0 || d.MaxBonusTenths > 1000 {
+		return "invalid decor rules"
 	}
 	if message := validateProgress(r); message != "" {
 		return message
@@ -590,6 +628,46 @@ func AchievementByID(id string) (Achievement, bool) {
 	return Achievement{}, false
 }
 
+func Decor() DecorRules { return rules.Decor }
+
+// DecorBonus sums the charm of the placed units (their catalogue item ids).
+func DecorBonus(itemIDs []int) DecorSummary {
+	d := rules.Decor
+	copies := map[int]int{}
+	for _, id := range itemIDs {
+		copies[id]++
+	}
+	summary := DecorSummary{MaxTenths: d.MaxBonusTenths, Lines: []DecorLine{}}
+	for id, n := range copies {
+		item, ok := roomcatalog.ByID(id)
+		if !ok || item.Charm <= 0 {
+			continue
+		}
+		full := min(n, d.FullCopies)
+		half := min(n-full, d.HalfCopies)
+		tenths := full*item.Charm + half*item.Charm/2
+		summary.RawTenths += tenths
+		summary.Lines = append(summary.Lines, DecorLine{ItemID: id, Name: item.Name, Copies: n, Tenths: tenths})
+	}
+	sort.Slice(summary.Lines, func(i, j int) bool {
+		a, b := summary.Lines[i], summary.Lines[j]
+		if a.Tenths != b.Tenths {
+			return a.Tenths > b.Tenths
+		}
+		return a.ItemID < b.ItemID
+	})
+	summary.BonusTenths = min(summary.RawTenths, d.MaxBonusTenths)
+	return summary
+}
+
+// EffectivePopularity is the score customers react to: the service score
+// plus the decoration bonus, never above the maximum. Since the service score
+// never falls below the minimum, decoration raises the café's floor too.
+func EffectivePopularity(tenths, decorTenths int) int {
+	_, high := PopularityBoundsTenths()
+	return min(high, tenths+max(0, decorTenths))
+}
+
 // MissionTrioCash is the Grana for claiming every mission of a day.
 func MissionTrioCash() int64 { return rules.Missions.TrioCash }
 
@@ -728,6 +806,7 @@ func Public() Rules {
 	snapshot.Expansions = Expansions()
 	snapshot.Daily = Daily()
 	snapshot.Achievements.List = append([]Achievement{}, rules.Achievements.List...)
+	snapshot.Decor = rules.Decor
 	snapshot.Missions.Slots = MissionSlots()
 	return snapshot
 }

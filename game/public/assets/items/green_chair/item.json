@@ -1,0 +1,19 @@
+{
+  "id": 3040004,
+  "classname": "green_chair",
+  "name": "Cadeira Verde",
+  "type": 3,
+  "kind": "chair",
+  "priceGold": 110,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 97.4,
+  "level": 9,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "classic_chair",
+  "tint": "#3a9d5d",
+  "tintMode": "color",
+  "charm": 2
+}

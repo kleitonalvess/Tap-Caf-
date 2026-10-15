@@ -4,8 +4,8 @@
   "name": "Mesa com Toalha Branca",
   "type": 3,
   "kind": "table",
-  "priceGold": 0,
-  "purchasable": false,
+  "priceGold": 80,
+  "purchasable": true,
   "legacyClassName": "WhiteTableCloth",
   "sizeX": 1,
   "sizeY": 1,
@@ -18,5 +18,6 @@
       "left": -90,
       "top": -49.2
     }
-  ]
+  ],
+  "level": 1
 }

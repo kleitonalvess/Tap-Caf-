@@ -20,8 +20,9 @@ func ServeCustomer(s Store, owner, foodID, tableID string, waiter bool, now time
 
 // ServeServing credits one serving as of the given instant (the offline
 // catch-up replays past meals). Tips: a waiter's delivery always tips; during a
-// party the tip is multiplied and self-served customers tip too. A fresh
-// serving (farm ingredients) adds its bonus to coins and XP.
+// party the tip is multiplied and self-served customers tip too, as they do
+// when the café has a cash register. A fresh serving (farm ingredients) adds
+// its bonus to coins and XP.
 func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.Time) (gamewire.Payment, error) {
 	var payment gamewire.Payment
 	err := s.Transaction(func(tx Store) error {
@@ -58,11 +59,17 @@ func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.T
 		} else if !errors.Is(err, ErrNotFound) {
 			return err
 		}
+		register := false
+		if !waiter && !party {
+			if register, err = hasPlacedKind(tx, owner, "register"); err != nil {
+				return err
+			}
+		}
 		var tip int64
 		switch {
 		case waiter && party:
 			tip = gamerules.WaiterTip(recipe.PricePerServing) * gamerules.Street().Disco.TipMultiplier
-		case waiter || party:
+		case waiter || party || register:
 			tip = gamerules.WaiterTip(recipe.PricePerServing)
 		}
 		var freshCoins, freshXP int64
@@ -76,7 +83,8 @@ func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.T
 		if err = leavePlate(tx, owner, tableID); err != nil {
 			return err
 		}
-		if err = count(tx, owner, at, gamerules.StatCustomers, 1); err != nil {
+		if err = countStats(tx, owner, at, statChange{stat: gamerules.StatCustomers, delta: 1},
+			statChange{stat: gamerules.StatEarnedCoins, delta: progress.Coins}, statChange{stat: gamerules.StatTips, delta: tip}); err != nil {
 			return err
 		}
 		payment = gamewire.Payment{

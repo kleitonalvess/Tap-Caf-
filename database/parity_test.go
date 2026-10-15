@@ -257,6 +257,39 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 	log("rename invalid", outcome(err))
 	snapshot, err := cafe.SnapshotRoom(s, owner)
 	log("cafe", map[string]any{"err": outcome(err), "cafe": snapshot.Cafe})
+
+	// Sprint 13: the store. A Grana item, decoration, and a stove bought, stored
+	// and bought again on the same tile (the cooking table keeps the stored
+	// stove's tile: a unique index there broke the second purchase).
+	shop := func(label, action string, itemID int, unitID string, x, y int) cafe.RoomSnapshot {
+		current, err := cafe.SnapshotRoom(s, owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rotation := 0
+		command := cafe.RoomCommand{ItemID: itemID, UnitID: unitID, TX: &x, TY: &y, Rotation: &rotation, Revision: &current.Revision, RequestID: "parity-shop-" + label}
+		if action == "store" {
+			command = cafe.RoomCommand{UnitID: unitID, Revision: &current.Revision, RequestID: "parity-shop-" + label}
+		}
+		result, err := cafe.MutateRoom(s, owner, action, command, t0)
+		log("shop "+label, map[string]any{"err": outcome(err), "gold": result.PlayerState.Gold, "cash": result.PlayerState.Cash, "decor": result.Decor.BonusTenths, "popularity": result.Cafe.Popularity})
+		return result
+	}
+	shop("gold chair", "purchase", 3040005, "", 4, 4)
+	shop("vase", "purchase", 3500000, "", 5, 3)
+	shop("locked statue", "purchase", 3500003, "", 4, 6)
+	boughtStove := shop("stove", "purchase", 3070000, "", 4, 6)
+	stoveUnit := ""
+	for _, u := range boughtStove.Inventory {
+		if u.ItemID == 3070000 && u.TX == 4 && u.TY == 6 && u.Placed {
+			stoveUnit = u.UnitID
+		}
+	}
+	shop("store stove", "store", 0, stoveUnit, 0, 0)
+	shop("stove again", "purchase", 3070000, "", 4, 6)
+	shop("stored stove back", "move", 0, stoveUnit, 6, 7)
+	stoves, err := cafe.SnapshotCooking(s, owner, t0)
+	log("stoves", map[string]any{"err": outcome(err), "count": len(stoves.Stoves)})
 	world("final")
 	return lines
 }

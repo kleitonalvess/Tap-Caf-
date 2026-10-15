@@ -155,6 +155,10 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 	return gamewire.Result{Status: status, Body: data, World: &w}
 }
 
+// ErrorStatus maps a rule error to its HTTP status and the message shown to
+// the player; routes that run the rules without the room service use it too.
+func ErrorStatus(err error) (int, string) { return errorStatus(err) }
+
 // errorStatus maps a rule error to its HTTP status and the message shown to the player.
 func errorStatus(err error) (int, string) {
 	is := func(targets ...error) bool {
@@ -185,6 +189,8 @@ func errorStatus(err error) (int, string) {
 		return 409, "Este preparo não pode mais ser cancelado."
 	case is(ErrUnknownRecipe):
 		return 400, err.Error()
+	case is(ErrRoomLevel, ErrRoomCash):
+		return 409, err.Error()
 	case is(ErrRoomGold, ErrRoomConflict, ErrRoomOperation, ErrRoomBusy, ErrCounterBusy, ErrRecipeLocked, ErrCookingCoins,
 		ErrStoveDirty, ErrDishSpoiled, ErrNothingToClean, ErrCleaningCoins, ErrNoCounter, ErrSeasonClosed,
 		ErrAlreadySeasoned, ErrTableClean, ErrTableDirty):

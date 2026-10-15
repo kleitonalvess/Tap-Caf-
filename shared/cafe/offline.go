@@ -124,7 +124,13 @@ func catchUp(tx Store, owner string, from, to time.Time) (gamewire.AwaySummary, 
 	meals := 0
 	pace := 0.0
 	if len(turns) > 0 && total > 0 {
-		pace = math.Max(60/float64(gamerules.CustomersPerMinute(summary.PopularityFrom)), float64(rules.SeatCycleSeconds)/float64(len(seats)))
+		// Arrivals follow the score customers see: service plus decoration.
+		decor, err := RoomDecor(tx, owner)
+		if err != nil {
+			return summary, err
+		}
+		popularity := gamerules.EffectivePopularity(summary.PopularityFrom, decor.BonusTenths)
+		pace = math.Max(60/float64(gamerules.CustomersPerMinute(popularity)), float64(rules.SeatCycleSeconds)/float64(len(seats)))
 		if summary.Waiters > 0 {
 			pace = math.Max(pace, float64(rules.DeliverySeconds)/float64(summary.Waiters))
 		}

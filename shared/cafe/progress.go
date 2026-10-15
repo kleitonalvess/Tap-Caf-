@@ -171,6 +171,9 @@ type ProgressSnapshot struct {
 	// Grana paid with the last mission of the day, and whether it was paid today.
 	TrioCash    int64 `json:"trioCash"`
 	TrioClaimed bool  `json:"trioClaimed"`
+	// Today's daily counters (servings paid, coins and tips earned...): the
+	// store's "Caixa do dia".
+	Today map[string]int64 `json:"today"`
 	// Next São Paulo midnight (Unix ms), when the missions change.
 	NextAt int64 `json:"nextAt"`
 }
@@ -274,6 +277,12 @@ func buildProgress(tx Store, user string, record Record, now time.Time) (Progres
 			snapshot.Ready++
 		}
 		snapshot.Missions = append(snapshot.Missions, view)
+	}
+	snapshot.Today = map[string]int64{}
+	if daily {
+		for stat, value := range data.dayCounts {
+			snapshot.Today[stat] = value
+		}
 	}
 	snapshot.TrioClaimed = len(snapshot.Missions) > 0 && !slices.ContainsFunc(snapshot.Missions, func(m MissionView) bool { return !m.Claimed })
 	return snapshot, nil

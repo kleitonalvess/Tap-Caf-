@@ -1,0 +1,19 @@
+{
+  "id": 3030012,
+  "classname": "blue_cloth_table",
+  "name": "Mesa com Toalha Azul",
+  "type": 3,
+  "kind": "table",
+  "priceGold": 160,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 51.4,
+  "level": 6,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "white_cloth_table",
+  "tint": "#5b8fe2",
+  "tintMode": "multiply",
+  "charm": 3
+}

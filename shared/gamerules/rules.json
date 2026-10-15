@@ -40,6 +40,7 @@
       "cash": 0
     }
   },
+  "decor": { "fullCopies": 3, "halfCopies": 3, "maxBonusTenths": 150 },
   "achievements": {
     "list": [
       { "id": "served_dishes", "code": 1, "name": "Mestre-Cuca", "description": "Leve pratos prontos do fogão ao balcão.", "stat": "dishes", "goals": [

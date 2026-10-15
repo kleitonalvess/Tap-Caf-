@@ -20,6 +20,8 @@ var ErrRoomOwned = errors.New("Esta unidade não pertence ao seu inventário.")
 var ErrRoomOperation = errors.New("Identificador de operação já utilizado em outro pedido.")
 var ErrRoomBusy = errors.New("Não é possível mover um fogão durante o preparo.")
 var ErrCounterBusy = errors.New("Não é possível mover um balcão com comida.")
+var ErrRoomLevel = errors.New("Este item ainda está bloqueado para o seu nível.")
+var ErrRoomCash = errors.New("Grana insuficiente.")
 
 // RequestKeyPattern is the idempotency key of a room command.
 var RequestKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{16,80}$`)
@@ -43,8 +45,10 @@ type RoomSnapshot struct {
 	Catalog     []roomcatalog.Item `json:"catalog"`
 	PlayerState PlayerSnapshot     `json:"playerState"`
 	// The owner's café as its visitors see it (PlayerState is the viewer's own HUD).
-	Cafe   CafeInfo        `json:"cafe"`
-	Street gamewire.Street `json:"street"`
+	Cafe CafeInfo `json:"cafe"`
+	// The decoration bonus of the placed units (added to the popularity).
+	Decor  gamerules.DecorSummary `json:"decor"`
+	Street gamewire.Street        `json:"street"`
 	// The owner's unacknowledged absence summary (never sent to visitors).
 	AwaySummary *gamewire.AwaySummary `json:"awaySummary,omitempty"`
 }
@@ -173,7 +177,13 @@ func SnapshotRoom(s Store, userID string) (RoomSnapshot, error) {
 		return result, err
 	}
 	result.PlayerState = PlayerView(state)
-	result.Cafe = CafeInfo{Name: result.PlayerState.CafeName, Popularity: result.PlayerState.Satisfaction.Current}
+	decor, err := RoomDecor(s, userID)
+	if err != nil {
+		return result, err
+	}
+	result.Decor = decor
+	effective := gamerules.EffectivePopularity(state.GetInt("satisfaction_current_tenths"), decor.BonusTenths)
+	result.Cafe = CafeInfo{Name: result.PlayerState.CafeName, Popularity: float64(effective) / 10, DecorBonus: float64(decor.BonusTenths) / 10}
 	return result, nil
 }
 
@@ -240,19 +250,44 @@ func MutateRoom(s Store, userID, action string, command RoomCommand, now time.Ti
 			if err != nil {
 				return err
 			}
-			if state.GetInt64("gold") < item.PriceGold {
-				return ErrRoomGold
+			if max(1, state.GetInt("level")) < item.MinLevel() {
+				return ErrRoomLevel
+			}
+			if item.PaidWithCash() {
+				if state.GetInt64("cash") < item.PriceCash {
+					return ErrRoomCash
+				}
+				state.Set("cash", state.GetInt64("cash")-item.PriceCash)
+			} else {
+				if state.GetInt64("gold") < item.PriceGold {
+					return ErrRoomGold
+				}
+				state.Set("gold", state.GetInt64("gold")-item.PriceGold)
 			}
 			if unit, err = tx.New("player_inventory"); err != nil {
 				return err
 			}
 			setAll(unit, map[string]any{"user": userID, "item_id": item.ID, "layer": roomcatalog.Layer(item)})
-			state.Set("gold", state.GetInt64("gold")-item.PriceGold)
 			if err := tx.Save(state); err != nil {
 				return err
 			}
-			if err := count(tx, userID, now, gamerules.StatSpentCoins, item.PriceGold); err != nil {
-				return err
+			if !item.PaidWithCash() {
+				if err := count(tx, userID, now, gamerules.StatSpentCoins, item.PriceGold); err != nil {
+					return err
+				}
+			}
+			// A bought stove cooks: it gets its own row in the cooking table,
+			// positioned below when the unit is placed.
+			if item.Kind == "stove" {
+				stove, err := tx.New("player_stoves")
+				if err != nil {
+					return err
+				}
+				setAll(stove, map[string]any{"user": userID, "item_id": item.ID, "tx": *command.TX, "ty": *command.TY})
+				if err := tx.Save(stove); err != nil {
+					return err
+				}
+				unit.Set("stove_id", stove.ID())
 			}
 		} else {
 			unit, err = tx.Get("player_inventory", command.UnitID)

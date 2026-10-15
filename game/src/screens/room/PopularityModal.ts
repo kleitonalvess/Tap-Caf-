@@ -1,13 +1,18 @@
 import type { SoundPlayer } from '../../audio/sound-events';
+import type { DecorSummary } from '../../game/room-inventory';
 import { DIALOG_COLORS, RoomDialog } from './RoomDialog';
 
 const NAME_MAX = 24;
 /** The name field's centre, below the panel's centre (stage px), between its label and the message. */
-const INPUT_OFFSET_Y = 220;
+const INPUT_OFFSET_Y = 280;
+const decimal = (value: number) => value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export interface PopularityView {
   name: string;
+  /** The score customers see: service plus decoration. */
   popularity: number;
+  /** The decoration's share and what makes it up. */
+  decor?: DecorSummary;
   maximum: number;
   /** Visitors read the café; only its owner renames it. */
   owner: boolean;
@@ -31,7 +36,7 @@ export class PopularityModal extends RoomDialog {
     onRename: (name: string) => Promise<string>;
     audio?: SoundPlayer;
   }) {
-    super('popularity-modal', 1160, 780, options.audio);
+    super('popularity-modal', 1160, 900, options.audio);
   }
 
   show(state: PopularityView): void {
@@ -48,12 +53,26 @@ export class PopularityModal extends RoomDialog {
     this.clear();
     this.text('Popularidade', this.width / 2, 40, 64, DIALOG_COLORS.title);
     this.text(state.owner ? state.name : `Café visitado: ${state.name}`, this.width / 2, 128, 34, DIALOG_COLORS.ink);
-    this.text(`★ ${state.popularity.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} / ${state.maximum}`,
-      this.width / 2, 176, 40, DIALOG_COLORS.gold);
-    let y = 244;
+    this.text(`★ ${decimal(state.popularity)} / ${state.maximum}`, this.width / 2, 176, 40, DIALOG_COLORS.gold);
+    let y = 236;
     for (const line of this.options.lines()) {
-      const text = this.text(`• ${line}`, 80, y, 23, DIALOG_COLORS.ink, { anchorX: 0, align: 'left', wrap: this.width - 160, weight: '600' });
-      y += text.height + 10;
+      const text = this.text(`• ${line}`, 80, y, 22, DIALOG_COLORS.ink, { anchorX: 0, align: 'left', wrap: this.width - 160, weight: '600' });
+      y += text.height + 8;
+    }
+    // Decoration: its share of the score, the items that count most and the limits.
+    const decor = state.decor;
+    if (decor) {
+      const bonus = decor.bonusTenths / 10;
+      y += 8;
+      this.text(`Decoração: +${decimal(bonus)} (nota do serviço ${decimal(Math.max(0, state.popularity - bonus))}; a decoração soma até +${decimal(decor.maxTenths / 10)})`,
+        this.width / 2, y, 24, DIALOG_COLORS.cash);
+      y += 36;
+      const top = decor.lines.slice(0, 4).map((line) => `${line.name} ×${line.copies} (+${decimal(line.tenths / 10)})`).join(' · ');
+      const hint = decor.rawTenths > decor.maxTenths
+        ? 'O café já chegou ao teto da decoração.'
+        : 'Plantas, quadros, janelas e móveis especiais contam. Até 3 itens iguais contam inteiros e os 3 seguintes pela metade: varie a decoração.';
+      const text = this.text(top ? `${top}\n${hint}` : `Nenhum item de decoração ainda. ${hint}`, this.width / 2, y, 20, DIALOG_COLORS.ink, { weight: '600', wrap: this.width - 160 });
+      y += text.height;
     }
     if (state.owner) {
       this.text('Nome do café', this.width / 2, this.height - 238, 26, DIALOG_COLORS.ink);

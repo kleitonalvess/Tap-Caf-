@@ -1,11 +1,11 @@
 {
   "id": 3070000,
   "classname": "starter_stove",
-  "name": "Fogão",
+  "name": "Fogão Básico",
   "type": 3,
   "kind": "stove",
-  "priceGold": 0,
-  "purchasable": false,
+  "priceGold": 400,
+  "purchasable": true,
   "legacyClassName": "Stove01",
   "sizeX": 1,
   "sizeY": 1,
@@ -18,5 +18,6 @@
       "left": -80,
       "top": -47
     }
-  ]
+  ],
+  "level": 2
 }

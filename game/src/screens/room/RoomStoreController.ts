@@ -6,6 +6,7 @@ import type { RoomModel, RoomItem } from '../../world/RoomModel';
 import { DEPTH_BIAS_WALLPAPER, FLOOR_DRAW_PRIORITY, screenToTile, tileToScreen, wallDepth, type Tile } from '../../world/iso';
 import { wallGeometry } from '../../world/wallGeometry';
 import { StoreActionBar, type StoreEntry } from './StoreActionBar';
+import { itemLevel, itemLocked, itemPerk, newsItems, storeCategory } from '../../game/shop';
 import { createArtView, rotateFloorSprite, tileDiamond } from './iso-art';
 import { createProceduralWallView } from './ProceduralWallView';
 import { DoorView } from './DoorView';
@@ -92,13 +93,13 @@ export class RoomStoreController {
   private message(text: string): void { this.store?.setMessage(text); }
   private refreshEntries(): void {
     const category = this.store?.selectedCategory;
-    const categoryFor = (item: RoomCatalogItem): string => item.type === 0 ? 'floor' : item.type === 1 ? 'wallpaper' : item.type === 2 ? 'door'
-      : ({ stove: 'stove', counter: 'stove', table: 'table', chair: 'chair', window: 'flower-window', panel: 'flower-window', bush: 'flower', letterbox: 'flower', decor: 'flower', wall: 'wallpaper', door: 'door' } as const)[item.kind];
+    const level = this.snapshot.playerState?.level ?? 1;
     const texture = (item: RoomCatalogItem) => {
       const frame = this.options.art.art.get(item.classname)?.frames[0]; return frame ? this.options.art.textureFor(frame.file) : undefined;
     };
     const available = this.snapshot.catalog.filter((item) => item.kind !== 'wall' || item.type === 1);
-    const matches = (item: RoomCatalogItem) => !category || categoryFor(item) === category;
+    const matches = (item: RoomCatalogItem) => !category || storeCategory(item) === category;
+    const forSale = (item: RoomCatalogItem): StoreEntry => ({ item, texture: texture(item), ...(itemLocked(item, level) ? { lockedLevel: itemLevel(item) } : {}) });
     const stored = new Map<number, StoreEntry>();
     if (this.inventory) for (const unit of this.snapshot.inventory) {
         if (unit.placed) continue;
@@ -108,14 +109,24 @@ export class RoomStoreController {
         if (existing) existing.quantity = (existing.quantity ?? 1) + 1;
         else stored.set(item.id, { item, unit, quantity: 1, texture: texture(item) });
     }
+    // Sold items first (cheapest first), then the locked ones by level.
     const entries: StoreEntry[] = this.inventory ? [...stored.values()]
-      : available.filter((item) => item.purchasable && matches(item)).map((item) => ({ item, texture: texture(item) }));
-    this.store?.setEntries(entries, this.inventory);
+      : available.filter((item) => item.purchasable && matches(item))
+        .sort((a, b) => Number(itemLocked(a, level)) - Number(itemLocked(b, level)) || itemLevel(a) - itemLevel(b) || a.id - b.id)
+        .map(forSale);
+    this.store?.setEntries(entries, this.inventory, newsItems(available, level).map(forSale));
   }
   select(entry: StoreEntry): void {
     if (this.busy) return;
+    if (entry.lockedLevel) {
+      const perk = itemPerk(entry.item);
+      this.message(`${entry.item.name}: disponível no nível ${entry.lockedLevel}.${perk ? ` ${perk}.` : ''}`);
+      return;
+    }
     this.cancel(); this.selection = entry; this.rotation = entry.unit?.rotation ?? 0;
-    this.message(`${entry.item.name}: mova a prévia e clique para ${entry.unit ? 'colocar' : `comprar por ${entry.item.priceGold} moedas`}. R: girar. Esc: cancelar.${entry.unit ? ' Delete: guardar.' : ''}`);
+    const price = (entry.item.priceCash ?? 0) > 0 ? `${entry.item.priceCash} Grana` : `${entry.item.priceGold} moedas`;
+    const perk = itemPerk(entry.item);
+    this.message(`${entry.item.name}${perk ? ` (${perk})` : ''}: mova a prévia e clique para ${entry.unit ? 'colocar' : `comprar por ${price}`}. R: girar. Esc: cancelar.${entry.unit ? ' Delete: guardar.' : ''}`);
     if (entry.unit?.placed) this.options.alpha(entry.unit.unitId, 0);
   }
   cancel(): boolean {
@@ -225,6 +236,8 @@ export class RoomStoreController {
   }
   beginEntryDrag(entry: StoreEntry, event: FederatedPointerEvent): boolean {
     if (!this.store?.isOpen || this.busy || event.button !== 0) return false;
+    // A locked item only says when it unlocks; there is nothing to drag.
+    if (entry.lockedLevel) { this.select(entry); event.stopPropagation(); return true; }
     this.select(entry); this.dragging = event.pointerId;
     this.cardDragStart = { x: event.global.x, y: event.global.y }; this.cardDragMoved = false;
     this.hover(event); event.stopPropagation(); return true;
@@ -285,7 +298,7 @@ export class RoomStoreController {
       });
       if (this.destroyed) return;
       this.snapshot = snapshot; this.options.apply(snapshot); this.busy = false; this.cancel(); this.refreshEntries();
-      this.message(action === 'purchase' ? `${selection.item.name} comprado por ${selection.item.priceGold} moedas.` : store ? 'Item guardado no inventário.' : 'Posição salva.');
+      this.message(action === 'purchase' ? `${selection.item.name} comprado por ${(selection.item.priceCash ?? 0) > 0 ? `${selection.item.priceCash} Grana` : `${selection.item.priceGold} moedas`}.` : store ? 'Item guardado no inventário.' : 'Posição salva.');
     } catch (error) {
       if (this.destroyed) return;
       const message = error instanceof Error ? error.message : 'Não foi possível salvar.';

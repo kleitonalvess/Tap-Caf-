@@ -1,0 +1,19 @@
+{
+  "id": 3020004,
+  "classname": "cherry_bush",
+  "name": "Arbusto Cerejeira",
+  "type": 3,
+  "kind": "bush",
+  "priceGold": 120,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 127.2,
+  "level": 4,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "delicate_bush",
+  "tint": "#f08cb4",
+  "tintMode": "color",
+  "charm": 4
+}

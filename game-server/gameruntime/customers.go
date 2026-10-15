@@ -55,10 +55,22 @@ func (r *room) spawnNPC(now time.Time) {
 	r.broadcast(gamewire.Event{Type: "actors", Actors: []gamewire.Actor{r.status(a, true)}}, "")
 }
 
-// arrivalInterval follows the popularity band, with ±25% jitter so customers
-// do not arrive in lockstep. MaxNPCs still caps how many are inside.
+// decorTenths is the decoration bonus of the placed units, in popularity tenths.
+func (r *room) decorTenths() int {
+	ids := make([]int, 0, len(r.world.Units))
+	for _, u := range r.world.Units {
+		if u.Placed {
+			ids = append(ids, u.ItemID)
+		}
+	}
+	return gamerules.DecorBonus(ids).BonusTenths
+}
+
+// arrivalInterval follows the popularity band (service score plus the
+// decoration bonus), with ±25% jitter so customers do not arrive in lockstep.
+// MaxNPCs still caps how many are inside.
 func (r *room) arrivalInterval(now time.Time) time.Duration {
-	base := time.Minute / time.Duration(gamerules.CustomersPerMinute(r.popularity))
+	base := time.Minute / time.Duration(gamerules.CustomersPerMinute(gamerules.EffectivePopularity(r.popularity, r.decorTenths())))
 	// Empty counters with food on the way: fewer arrivals while the owner cooks.
 	if len(r.world.Foods) == 0 && r.cookingInProgress(now) {
 		base = time.Duration(float64(base) * gamerules.CookingArrivalFactor())

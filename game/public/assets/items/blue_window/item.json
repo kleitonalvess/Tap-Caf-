@@ -1,0 +1,19 @@
+{
+  "id": 3000012,
+  "classname": "blue_window",
+  "name": "Janela Azul",
+  "type": 3,
+  "kind": "window",
+  "priceGold": 200,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 195.2,
+  "level": 5,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "basic_window",
+  "tint": "#5f97de",
+  "tintMode": "color",
+  "charm": 3
+}

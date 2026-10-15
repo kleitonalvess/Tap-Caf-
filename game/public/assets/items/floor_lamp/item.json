@@ -1,0 +1,17 @@
+{
+  "id": 3500002,
+  "classname": "floor_lamp",
+  "name": "Luminária de Pé",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 250,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 120,
+  "level": 7,
+  "placeholder": true,
+  "parts": [],
+  "art": "floor-lamp",
+  "charm": 5
+}

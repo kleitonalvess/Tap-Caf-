@@ -1,0 +1,17 @@
+{
+  "id": 3080002,
+  "classname": "marble_counter",
+  "name": "Balcão de Mármore",
+  "type": 3,
+  "kind": "counter",
+  "priceGold": 1200,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 52,
+  "level": 12,
+  "placeholder": true,
+  "parts": [],
+  "art": "counter-marble",
+  "charm": 4
+}

@@ -7,7 +7,11 @@ import { CATEGORY_PULSE_DURATION_MS, drawCategorySelectionPulse } from './Catego
 import { FONT_FAMILY } from '../../core/fonts';
 import type { RoomCatalogItem, RoomUnit } from '../../game/room-inventory';
 
-export interface StoreEntry { item: RoomCatalogItem; unit?: RoomUnit; texture?: Texture; quantity?: number }
+export interface StoreEntry {
+  item: RoomCatalogItem; unit?: RoomUnit; texture?: Texture; quantity?: number;
+  /** Not sold yet at the player's level: the slot shows a padlock and this level. */
+  lockedLevel?: number;
+}
 export interface StoreActions {
   onSelect(entry: StoreEntry): void;
   onCategory(category: string | undefined): void;
@@ -16,6 +20,8 @@ export interface StoreActions {
   onDragEnd?(event: FederatedPointerEvent): void;
   /** Opens the Expansão window (owner only). */
   onExpand?(): void;
+  /** The cash register in the header: "Caixa do dia". */
+  onCashRegister?(): void;
 }
 
 /** Visible silhouette of cafe_action_bar.png, excluding its transparent canvas. */
@@ -71,6 +77,7 @@ export class StoreActionBar {
   private readonly itemPreviewTextures = new Map<Texture, Texture>();
   private readonly pageButtons: Container[] = [];
   private entries: StoreEntry[] = [];
+  private newsEntries: StoreEntry[] = [];
   private page = 0;
   private inventory = false;
   private activeTopTab: (typeof TOP_TABS)[number] = 'shop';
@@ -256,7 +263,7 @@ export class StoreActionBar {
     let headerRight = confirmX - close.width / 2;
     let messageRight = barWidth - 12;
     if (storeToolbarTextures) {
-      const register = this.createButton(storeToolbarTextures.cashRegister, CLOSE_BUTTON_SIZE * 0.81, () => {});
+      const register = this.createButton(storeToolbarTextures.cashRegister, CLOSE_BUTTON_SIZE * 0.81, () => actions?.onCashRegister?.());
       register.label = 'store-cash-register-icon';
       register.position.set(confirmX - close.width / 2 - register.width / 2 - 8, 8);
       content.addChild(register);
@@ -418,8 +425,8 @@ export class StoreActionBar {
     if (index >= 0) { this.categoryIndex = index; this.syncCategorySelection(); }
   }
 
-  setEntries(entries: StoreEntry[], inventory = false): void {
-    this.entries = entries; this.page = 0; this.inventory = inventory;
+  setEntries(entries: StoreEntry[], inventory = false, news: StoreEntry[] = this.newsEntries): void {
+    this.entries = entries; this.newsEntries = news; this.page = 0; this.inventory = inventory;
     if (inventory) this.activeTopTab = 'inventory';
     else if (this.activeTopTab !== 'news') this.activeTopTab = 'shop';
     this.syncTopTabs.forEach((sync) => sync());
@@ -429,7 +436,7 @@ export class StoreActionBar {
   setMessage(message: string): void { if (this.message) this.message.text = message; }
 
   private renderEntries(): void {
-    const entries = this.activeTopTab === 'news' ? [] : this.entries;
+    const entries = this.activeTopTab === 'news' ? this.newsEntries : this.entries;
     this.slots.forEach((slot, index) => {
       const face = this.slotFaces[index];
       // Keep the card's background; all its contents share the same centered scale.
@@ -463,13 +470,20 @@ export class StoreActionBar {
       if (!entry.unit) {
         const price = new Container(); price.label = 'store-item-price'; price.eventMode = 'none';
         let coinWidth = 0;
-        if (this.storeToolbarTextures?.gold) {
+        const cash = (entry.item.priceCash ?? 0) > 0;
+        if (cash) {
+          // Grana: a small green note, as on the HUD's first bar.
+          const note = new Graphics().roundRect(0, -9, 26, 18, 4).fill(0x58b84f).stroke({ color: 0x276c1f, width: 2.5 })
+            .circle(13, 0, 4.5).stroke({ color: 0xe8f4e3, width: 2 });
+          note.label = 'store-item-cash-icon'; note.eventMode = 'none';
+          coinWidth = 30; price.addChild(note);
+        } else if (this.storeToolbarTextures?.gold) {
           const coin = new Sprite(this.storeToolbarTextures.gold);
           coin.label = 'store-item-gold-icon'; coin.anchor.set(0, 0.5);
           coin.scale.set(22.1 / coin.texture.height); coin.eventMode = 'none';
           coinWidth = coin.width + 4; price.addChild(coin);
         }
-        const value = new Text({ text: String(entry.item.priceGold), style: {
+        const value = new Text({ text: String(cash ? entry.item.priceCash : entry.item.priceGold), style: {
           fontFamily: FONT_FAMILY, fontSize: 18, fontWeight: 'bold', fill: 0xffffff,
           stroke: { color: 0x633513, width: 8.748, join: 'round' },
         } });
@@ -481,6 +495,16 @@ export class StoreActionBar {
           SLOT_SIZE + 6.5 / MAIN_ACTION_BAR_SCALE - priceBounds.y - priceBounds.height,
         );
         face.addChild(price);
+      }
+      if (entry.lockedLevel) {
+        // Shown so the player knows what is coming, but not for sale yet.
+        if (preview) preview.alpha = 0.45;
+        const lock = new Container(); lock.label = 'store-item-lock'; lock.eventMode = 'none';
+        lock.position.set(SLOT_SIZE / 2, SLOT_SIZE / 2 - 4);
+        lock.addChild(new Graphics().roundRect(-34, -14, 68, 28, 14).fill({ color: 0x38210e, alpha: 0.82 }));
+        const level = new Text({ text: `Nível ${entry.lockedLevel}`, style: { fontFamily: FONT_FAMILY, fontSize: 15, fontWeight: 'bold', fill: 0xffffff } });
+        level.anchor.set(0.5); level.eventMode = 'none'; lock.addChild(level);
+        face.addChild(lock);
       }
       if (preview) {
         const imageSize = SLOT_SIZE - 2 * ITEM_PREVIEW_PADDING;

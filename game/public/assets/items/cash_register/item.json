@@ -1,0 +1,17 @@
+{
+  "id": 3400000,
+  "classname": "cash_register",
+  "name": "Caixa Registradora",
+  "type": 3,
+  "kind": "register",
+  "priceGold": 1500,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 70,
+  "level": 6,
+  "placeholder": true,
+  "parts": [],
+  "art": "register",
+  "charm": 2
+}

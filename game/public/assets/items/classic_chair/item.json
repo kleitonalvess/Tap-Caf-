@@ -4,8 +4,8 @@
   "name": "Cadeira Clássica",
   "type": 3,
   "kind": "chair",
-  "priceGold": 0,
-  "purchasable": false,
+  "priceGold": 50,
+  "purchasable": true,
   "legacyClassName": "Chair02",
   "sizeX": 1,
   "sizeY": 1,
@@ -43,5 +43,6 @@
       "top": -80.2,
       "rotation": 3
     }
-  ]
+  ],
+  "level": 1
 }
