@@ -123,7 +123,8 @@ export class SettingsModal {
     const title = this.addText('Configurações', PANEL_WIDTH / 2, 85, 64, 'settings-modal-title');
     title.anchor.set(0.5);
     const square = new Graphics().roundRect(76, 166, PORTRAIT_SIZE, PORTRAIT_SIZE, 12)
-      .fill(0xf3ece0).stroke({ color: 0x704721, width: 6 });
+      // Light blue: light hair and skin stay readable against it.
+      .fill(0xcfe4f4).stroke({ color: 0x704721, width: 6 });
     square.eventMode = 'none';
     this.portraitHolder.label = 'settings-modal-portrait';
     this.portraitHolder.position.set(76, 166);
@@ -201,9 +202,10 @@ export class SettingsModal {
       const mask = new Graphics().roundRect(5, 5, PORTRAIT_SIZE - 10, PORTRAIT_SIZE - 10, 8).fill(0xffffff);
       const sprite = new Sprite(texture);
       sprite.label = 'settings-modal-portrait-avatar';
-      // The cell holds the whole body: head and shoulders, framed like the staff cards.
-      sprite.anchor.set(0.5, 0.42);
-      sprite.scale.set(PORTRAIT_SIZE * 1.3 / texture.height);
+      // The atlas cell leaves room for every clip: the standing avatar fills its
+      // lower part. Zoom on the head and shoulders (measured on the idle frame).
+      sprite.anchor.set(0.5, 0.585);
+      sprite.scale.set(PORTRAIT_SIZE * 2.8 / texture.height);
       sprite.position.set(PORTRAIT_SIZE / 2, PORTRAIT_SIZE / 2);
       sprite.mask = mask;
       this.portraitHolder.addChild(mask, sprite);
