@@ -223,12 +223,20 @@ try {
     const snapshot = await screen.cookingClient.refresh();
     return { emergency: snapshot.emergencyRecipeId ?? null, gold: screen.roomSnapshot.playerState.gold, food: window.__kitchen.foods.at(-1) };
   });
-  const [served] = counterCheck.food;
-  run.check(counterCheck.food.length === 1 && served.recipeId === pao.id && served.servings === pao.servings + seasonBonus && served.counterId === furniture.counter,
-    `o balcão recebe as ${pao.servings + seasonBonus} porções`, counterCheck.food);
-  const afterServe = await game.player();
-  // Customers may already have paid XP for servings taken from the counter.
-  const paidXp = await game.room(() => window.__kitchen.payments.reduce((sum, payment) => sum + payment.xp, 0));
+  // The first counter event after serving: a seated customer may already have taken a serving since.
+  const servedFood = await game.room((index) => window.__kitchen.foods[index], foodsBefore);
+  run.check(servedFood?.length === 1 && servedFood[0].recipeId === pao.id && servedFood[0].servings === pao.servings + seasonBonus && servedFood[0].counterId === furniture.counter,
+    `o balcão recebe as ${pao.servings + seasonBonus} porções`, servedFood);
+  // Customers may already have paid XP for servings taken from the counter: read
+  // the player between two equal sums of the payments.
+  const paidSum = () => game.room(() => window.__kitchen.payments.reduce((sum, payment) => sum + payment.xp, 0));
+  let afterServe, paidXp;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    paidXp = await paidSum();
+    afterServe = await game.player();
+    if (paidXp === await paidSum()) break;
+    await sleep(300);
+  }
   run.check(afterServe.xp - afterSeason.xp - paidXp === rules.stove.seasonXp, `servir o prato temperado credita os ${rules.stove.seasonXp} XP do tempero`, { before: afterSeason.xp, after: afterServe.xp, paidXp });
   run.check(await game.waitFor(() => window.__coffeMania.screens.active.occupiedStoves.size === 0, undefined, 15000).then(() => true, () => false), 'servir libera o fogão');
   run.check(counterCheck.gold < cheapest && counterCheck.emergency === null, 'com comida no balcão não há ajuda de emergência, mesmo sem moedas', counterCheck);

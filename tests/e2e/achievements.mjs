@@ -34,6 +34,15 @@ try {
     window.__coffeMania.screens.active.realtime.onEvent((event) => { if (event.type === 'payment') window.__paidXp += event.payment.xp; });
   });
   const paidXp = () => game.room(() => window.__paidXp);
+  /** The player's XP and the XP customers paid, read with no payment in between. */
+  const settledXp = async () => {
+    for (let attempt = 0; ; attempt++) {
+      const before = await paidXp();
+      const player = await game.player();
+      if (before === await paidXp() || attempt >= 10) return { xp: player.xp, paid: before };
+      await sleep(300);
+    }
+  };
   const rules = await game.room(() => window.__coffeMania.screens.active.rules);
   run.check(await game.room(() => !window.__coffeMania.screens.active.hud), 'sem ?debug=1 o HUD de depuração não aparece');
 
@@ -83,16 +92,14 @@ try {
 
   // 3. Temperar o próprio prato: porções na hora, XP só ao servir no balcão.
   const pao = rules.recipes.find((recipe) => recipe.id === 'pao_de_queijo');
-  const beforeCook = await game.player();
-  const paidAtCook = await paidXp();
+  const atCook = await settledXp();
   await game.cook(pao.id);
   await game.page.mouse.click(stove.x, stove.y);
   await game.waitFor(() => window.__coffeMania.app.stage.getChildByLabel('stove-action-season', true)?.visible, undefined, 10000);
   await game.click('stove-action-season');
   await game.waitFor(() => [...window.__coffeMania.screens.active.occupiedStoves.values()][0]?.seasoned, undefined, 15000);
-  const seasoned = await game.player();
-  const paidAtSeason = await paidXp();
-  run.check(seasoned.xp === beforeCook.xp + paidAtSeason - paidAtCook, 'o tempero do dono não dá XP com o prato no fogo', { before: beforeCook.xp, after: seasoned.xp });
+  const seasoned = await settledXp();
+  run.check(seasoned.xp - atCook.xp === seasoned.paid - atCook.paid, 'o tempero do dono não dá XP com o prato no fogo', { atCook, seasoned });
   await game.waitFor(() => {
     const job = [...window.__coffeMania.screens.active.occupiedStoves.values()][0];
     return job && Date.parse(job.readyAt.replace(' ', 'T')) <= window.__coffeMania.screens.active.cookingClient.serverNowMs();
@@ -101,9 +108,8 @@ try {
   await game.page.mouse.click(stove.x, stove.y);
   await game.waitFor(() => window.__coffeMania.screens.active.occupiedStoves.size === 0, undefined, 60000);
   await sleep(1500);
-  const served = await game.player();
-  const paidMeanwhile = (await paidXp()) - paidAtSeason;
-  run.check(served.xp - seasoned.xp - paidMeanwhile === rules.stove.seasonXp, `servir no balcão credita os ${rules.stove.seasonXp} XP do tempero`, { before: seasoned.xp, after: served.xp, paidMeanwhile });
+  const served = await settledXp();
+  run.check(served.xp - seasoned.xp - (served.paid - seasoned.paid) === rules.stove.seasonXp, `servir no balcão credita os ${rules.stove.seasonXp} XP do tempero`, { seasoned, served });
   const afterServe = await progress(game);
   const dishes = afterServe.achievements.find((a) => a.id === 'served_dishes');
   run.check(dishes.progress === 1 && afterServe.achievements.find((a) => a.id === 'unique_dishes').progress === 1, 'o prato no balcão conta para Mestre-Cuca e Cardápio Variado', dishes);
