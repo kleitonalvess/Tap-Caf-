@@ -647,6 +647,7 @@ func (r *room) join(p *Peer) error {
 	r.send(p, welcome)
 	return nil
 }
+
 // shiftClocks moves every running timer forward by a pause, so time the room
 // did not run (asleep, or a frozen process) does not expire it all at once.
 func (r *room) shiftClocks(pause time.Duration) {

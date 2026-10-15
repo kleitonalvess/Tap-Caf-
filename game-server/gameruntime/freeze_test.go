@@ -37,7 +37,7 @@ func TestShiftClocksMovesEveryTimer(t *testing.T) {
 	standing(r, a)
 	pause := 6 * time.Hour
 	r.shiftClocks(pause)
-	if !a.due.Equal(now.Add(5*time.Second + pause)) || !a.patienceUntil.Equal(now.Add(40*time.Second+pause)) || !a.fetchAt.Equal(now.Add(3*time.Second+pause)) {
+	if !a.due.Equal(now.Add(5*time.Second+pause)) || !a.patienceUntil.Equal(now.Add(40*time.Second+pause)) || !a.fetchAt.Equal(now.Add(3*time.Second+pause)) {
 		t.Fatalf("timers: due %v patience %v fetch %v", a.due.Sub(now), a.patienceUntil.Sub(now), a.fetchAt.Sub(now))
 	}
 	if a.Action.StartedAt != now.Add(pause).UnixMilli() || a.Move.StartedAt != now.Add(pause).UnixMilli() {
