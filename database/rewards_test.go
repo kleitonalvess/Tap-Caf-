@@ -177,7 +177,7 @@ func TestCancelAnswerReportsTheRefund(t *testing.T) {
 }
 
 // Missions and achievements on PocketBase: the JSON fields of player_stats
-// round-trip, each mission pays once (+1 Grana) and tomorrow starts over.
+// round-trip, each mission pays once (the trio's Grana with the last) and tomorrow starts over.
 func TestMissionsAndAchievementsOnPocketBase(t *testing.T) {
 	app, owner := newEconomyApp(t)
 	now := saoPaulo(15, 12)
@@ -200,17 +200,22 @@ func TestMissionsAndAchievementsOnPocketBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	cash := playerState(t, app, owner).GetInt64("cash")
-	for _, m := range progress.Missions {
+	for i, m := range progress.Missions {
 		claim, err := cafe.ClaimMission(pb(app), owner, m.ID, now)
-		if err != nil || claim.Reward.Cash != 1 {
+		// Grana only with the last mission of the day.
+		trio := int64(0)
+		if i == len(progress.Missions)-1 {
+			trio = gamerules.MissionTrioCash()
+		}
+		if err != nil || claim.Reward.Cash != trio {
 			t.Fatalf("mission %s: %+v %v", m.ID, claim.Reward, err)
 		}
 		if _, err := cafe.ClaimMission(pb(app), owner, m.ID, now); !errors.Is(err, cafe.ErrRewardClaimed) {
 			t.Fatalf("mission %s twice: %v", m.ID, err)
 		}
 	}
-	if got := playerState(t, app, owner).GetInt64("cash"); got != cash+int64(len(progress.Missions)) {
-		t.Fatalf("cash %d, want %d", got, cash+int64(len(progress.Missions)))
+	if got := playerState(t, app, owner).GetInt64("cash"); got != cash+gamerules.MissionTrioCash() {
+		t.Fatalf("cash %d, want %d", got, cash+gamerules.MissionTrioCash())
 	}
 	claim, err := cafe.ClaimAchievement(pb(app), owner, "customers", now)
 	if err != nil || claim.Progress.Achievements == nil {

@@ -155,8 +155,15 @@ export class AchievementsModal extends RoomDialog {
 
   private renderMissions(progress: ProgressSnapshot): void {
     const remaining = progress.nextAt - (this.options.now?.() ?? Date.now());
-    this.text(`Três missões por dia. Novas missões ${untilText(remaining)} (meia-noite de São Paulo). Um prato conta quando chega ao balcão.`,
-      this.width / 2, 210, 22, DIALOG_COLORS.ink, { weight: '600', wrap: this.width - 160 });
+    this.text(`Três missões por dia; novas ${untilText(remaining)} (meia-noite de São Paulo). Pratos contam ao chegar no balcão.`,
+      this.width / 2, 196, 22, DIALOG_COLORS.ink, { weight: '600', wrap: this.width - 160 });
+    // Grana only for completing the trio: its line says how far the day's three are.
+    const trio = progress.trioCash ?? 0;
+    if (trio > 0) {
+      const claimed = progress.missions.filter((mission) => mission.claimed).length;
+      const label = progress.trioClaimed ? `✓ Trio do dia completo: +${trio} Grana resgatada` : `Complete as três missões: +${trio} Grana na última (${claimed}/${progress.missions.length})`;
+      this.text(label, this.width / 2, 232, 22, progress.trioClaimed ? DIALOG_COLORS.cash : DIALOG_COLORS.gold, { weight: '700' });
+    }
     progress.missions.forEach((mission, index) => this.missionCard(mission, 270 + index * (MISSION_HEIGHT + 24)));
   }
 

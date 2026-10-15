@@ -30,7 +30,7 @@ export class LocalBackend implements GameBackend {
   private readonly requests = new Map<number, { resolve(status: number, body: string): void; reject(error: Error): void }>();
   private readonly sockets = new Map<number, LocalSocket>();
   private readonly suspends = new Map<number, () => void>();
-  private readonly checks = new Map<number, (error: string) => void>();
+  private readonly prepares = new Map<number, (result: { save: string; error: string }) => void>();
   /** Export and import of the save; set once the café opened (startLocalBackend). */
   saves: SaveTransfer | null = null;
   private readonly stateListeners = new Set<() => void>();
@@ -87,9 +87,9 @@ export class LocalBackend implements GameBackend {
         this.suspends.get(message.id)?.();
         this.suspends.delete(message.id);
         break;
-      case 'checked':
-        this.checks.get(message.id)?.(message.error);
-        this.checks.delete(message.id);
+      case 'prepared':
+        this.prepares.get(message.id)?.({ save: message.save, error: message.error });
+        this.prepares.delete(message.id);
         break;
     }
   }
@@ -177,13 +177,14 @@ export class LocalBackend implements GameBackend {
 
   resume(): void { this.post({ type: 'resume' }); }
 
-  /** Asks the engine whether it can open a save; resolves to why not, or ''. */
-  check(save: string, profileId: string): Promise<string> {
-    if (this.failure) return Promise.resolve(this.failure);
+  /** Asks the engine to check an imported save and freeze it in time; resolves
+   * to the café to store, or to why it cannot be opened. */
+  prepare(save: string, profileId: string, savedAt: number): Promise<{ save: string; error: string }> {
+    if (this.failure) return Promise.resolve({ save: '', error: this.failure });
     const id = this.nextId++;
     return new Promise((resolve) => {
-      this.checks.set(id, resolve);
-      this.post({ type: 'check', id, save, profileId });
+      this.prepares.set(id, resolve);
+      this.post({ type: 'prepare', id, save, profileId, savedAt });
     });
   }
 }
@@ -357,12 +358,13 @@ export async function startLocalBackend(): Promise<LocalBackend> {
       return latest;
     },
     async importRecord(record) {
-      const error = await backend.check(record.data, record.profile.id);
+      // The café opens as exported: no expediente for the time the file sat unused.
+      const { save, error } = await backend.prepare(record.data, record.profile.id, record.savedAt);
       if (error) throw new Error(`Este save não abre: ${error}.`);
       replaced = true;
       await writing.catch(() => undefined);
       worker.terminate();
-      const imported: SaveRecord = { ...record, savedAt: Date.now() };
+      const imported: SaveRecord = { ...record, data: save, savedAt: Date.now() };
       latest = imported;
       await store.save(imported);
       store.backup(imported);

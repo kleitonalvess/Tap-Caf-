@@ -168,6 +168,9 @@ type ProgressSnapshot struct {
 	Achievements []AchievementView `json:"achievements"`
 	Missions     []MissionView     `json:"missions"`
 	Ready        int               `json:"ready"`
+	// Grana paid with the last mission of the day, and whether it was paid today.
+	TrioCash    int64 `json:"trioCash"`
+	TrioClaimed bool  `json:"trioClaimed"`
 	// Next São Paulo midnight (Unix ms), when the missions change.
 	NextAt int64 `json:"nextAt"`
 }
@@ -242,7 +245,7 @@ func buildProgress(tx Store, user string, record Record, now time.Time) (Progres
 	}
 	today := bonusDate(now)
 	daily := data.rollDay(today)
-	snapshot := ProgressSnapshot{Achievements: []AchievementView{}, Missions: []MissionView{}, NextAt: nextMidnight(now).UnixMilli()}
+	snapshot := ProgressSnapshot{Achievements: []AchievementView{}, Missions: []MissionView{}, NextAt: nextMidnight(now).UnixMilli(), TrioCash: gamerules.MissionTrioCash()}
 	for _, a := range gamerules.Achievements() {
 		goals := visibleGoals(a)
 		view := AchievementView{ID: a.ID, Code: a.Code, Name: a.Name, Description: a.Description, Stat: a.Stat,
@@ -272,6 +275,7 @@ func buildProgress(tx Store, user string, record Record, now time.Time) (Progres
 		}
 		snapshot.Missions = append(snapshot.Missions, view)
 	}
+	snapshot.TrioClaimed = len(snapshot.Missions) > 0 && !slices.ContainsFunc(snapshot.Missions, func(m MissionView) bool { return !m.Claimed })
 	return snapshot, nil
 }
 
@@ -349,14 +353,16 @@ func ClaimAchievement(s Store, user, id string, now time.Time) (ProgressClaim, e
 	return claim, err
 }
 
-// ClaimMission pays one of today's missions once it is complete.
+// ClaimMission pays one of today's missions once it is complete; the last of
+// the day's missions also pays the trio's Grana.
 func ClaimMission(s Store, user, id string, now time.Time) (ProgressClaim, error) {
 	today := bonusDate(now)
 	index := slices.IndexFunc(DailyMissions(user, today), func(m gamerules.Mission) bool { return m.ID == id })
 	if index < 0 {
 		return ProgressClaim{}, ErrRewardMissing
 	}
-	mission := DailyMissions(user, today)[index]
+	missions := DailyMissions(user, today)
+	mission := missions[index]
 	var claim ProgressClaim
 	err := s.Transaction(func(tx Store) error {
 		record, err := statsRecord(tx, user)
@@ -380,7 +386,11 @@ func ClaimMission(s Store, user, id string, now time.Time) (ProgressClaim, error
 		}
 		data.dayClaimed = append(data.dayClaimed, id)
 		writeStats(record, data)
-		claim, err = claimReward(tx, user, record, mission.Reward, now)
+		reward := mission.Reward
+		if !slices.ContainsFunc(missions, func(m gamerules.Mission) bool { return !slices.Contains(data.dayClaimed, m.ID) }) {
+			reward.Cash += gamerules.MissionTrioCash()
+		}
+		claim, err = claimReward(tx, user, record, reward, now)
 		return err
 	})
 	return claim, err

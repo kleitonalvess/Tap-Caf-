@@ -204,14 +204,20 @@ try {
   await game.waitFor(() => window.__coffeMania.screens.active.achievementsModal?.isOpen, undefined, 15000);
   await sleep(600);
   await game.shot('8-premios-prontos');
-  const mission = ready.missions[0];
-  const beforeMission = await game.player();
+  // Missions pay coins and XP; the last of the three also pays the trio's Grana.
   await game.click('achievements-tab-missions'); await sleep(400);
-  await game.click(`mission-claim-${mission.id}`);
-  await game.waitFor((id) => window.__coffeMania.screens.active.achievementsModal.progress.missions.find((m) => m.id === id)?.claimed, mission.id, 15000);
-  const afterMission = await game.player();
-  run.check(afterMission.cash - beforeMission.cash === mission.cash && mission.cash === 1 && afterMission.gold >= beforeMission.gold + mission.coins,
-    `resgatar a missão paga ${mission.coins} moedas, ${mission.xp} XP e +1 Grana`, { beforeMission, afterMission, mission });
+  let afterMission;
+  for (const [index, mission] of ready.missions.entries()) {
+    const beforeMission = await game.player();
+    await game.click(`mission-claim-${mission.id}`);
+    await game.waitFor((id) => window.__coffeMania.screens.active.achievementsModal.progress.missions.find((m) => m.id === id)?.claimed, mission.id, 15000);
+    afterMission = await game.player();
+    const last = index === ready.missions.length - 1;
+    run.check(afterMission.cash - beforeMission.cash === (last ? ready.trioCash : 0) && afterMission.gold >= beforeMission.gold + mission.coins,
+      last ? `a 3ª missão paga moedas, XP e +${ready.trioCash} Grana do trio` : `a missão ${index + 1} paga ${mission.coins} moedas e ${mission.xp} XP, sem Grana`, { beforeMission, afterMission, mission });
+  }
+  await sleep(400);
+  run.check((await game.texts('achievements-modal')).includes('Trio do dia completo'), 'a janela mostra o trio do dia completo');
   await game.click('achievements-tab-achievements'); await sleep(400);
   const customers = ready.achievements.find((a) => a.id === 'customers');
   await game.click('achievement-claim-customers');
@@ -220,7 +226,7 @@ try {
   run.check(afterAchievement.xp - afterMission.xp === customers.goals[0].xp && afterAchievement.gold >= afterMission.gold + customers.goals[0].coins,
     'resgatar o Bronze de Clientela Fiel paga moedas e XP', { afterMission, afterAchievement });
   await sleep(500);
-  run.check(Number(await badge(game)) === ready.ready - 2, 'o selo diminui a cada resgate', { badge: await badge(game), before: ready.ready });
+  run.check(Number(await badge(game)) === ready.ready - 4, 'o selo diminui a cada resgate', { badge: await badge(game), before: ready.ready });
   await game.shot('9-resgatados');
   await game.page.keyboard.press('Escape'); await sleep(400);
 

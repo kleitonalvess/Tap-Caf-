@@ -1,5 +1,5 @@
 {
-  "source": "ripped/game-config.xml.txt (referência modificada). Níveis, popularidade, frequência, gorjetas (tabela por nível, sem uso) e vagas de funcionários vêm do arquivo. Preços e níveis das expansões, o custo por vaga de funcionário, a Fazenda e a Discoteca (street) e o expediente offline (offline) e a Carta de Boas-Vindas do correio (mail, +50 moedas no lugar das 5.000 do nível 1) foram definidos pelo responsável pelo projeto (o config só traz em <expansions><newsFeed> o prêmio de 250 moedas por cliques de amigos na publicação, aqui pago ao concluir cada expansão). O bônus diário (daily) tem os 6 dias do <dailyBonus> do config, mas lá os prêmios premiavam cliques de amigos numa publicação (newsFeed): os dias 1 e 2 reaproveitam esses 100 e 250 moedas; os demais valores e a Grana (2 no 3º dia, 10 no 6º) foram aprovados pelo responsável. As conquistas (achievements) com code 1 a 5 são as do <achievements> do config, com metas e prêmios de lá (amount_neighbors e sent_gifts ficam ocultas até existirem vizinhos e presentes); as demais conquistas, com Grana nos níveis Prata e Ouro, e as missões diárias (missions; o config só cita 25 códigos de metas, sem definições) são de design provisório. Receitas, fogão (inclusive o reembolso ao cancelar), mesas, perfis e tempos dos funcionários, XP das expansões, atraso do autosserviço, gorjeta do garçom e paciência dos clientes são valores de design provisórios: o repositório não contém a lista original de receitas nem dados de sujeira (o config só nomeia dishPickupTime, adulterado).",
+  "source": "ripped/game-config.xml.txt (referência modificada). Níveis, popularidade, frequência, gorjetas (tabela por nível, sem uso) e vagas de funcionários vêm do arquivo. Preços e níveis das expansões, o custo por vaga de funcionário, a Fazenda e a Discoteca (street) e o expediente offline (offline) e a Carta de Boas-Vindas do correio (mail, +50 moedas no lugar das 5.000 do nível 1) foram definidos pelo responsável pelo projeto (o config só traz em <expansions><newsFeed> o prêmio de 250 moedas por cliques de amigos na publicação, aqui pago ao concluir cada expansão). O bônus diário (daily) tem os 6 dias do <dailyBonus> do config, mas lá os prêmios premiavam cliques de amigos numa publicação (newsFeed): os dias 1 e 2 reaproveitam esses 100 e 250 moedas; os demais valores e a Grana (2 no 3º dia, 10 no 6º) foram aprovados pelo responsável. As conquistas (achievements) com code 1 a 5 são as do <achievements> do config, com metas e prêmios de lá (amount_neighbors e sent_gifts ficam ocultas até existirem vizinhos e presentes); as demais conquistas, com Grana nos níveis Prata e Ouro, e as missões diárias (missions; o config só cita 25 códigos de metas, sem definições; +1 Grana só ao completar as três do dia) foram aprovadas pelo responsável. Receitas, fogão (inclusive o reembolso ao cancelar), mesas, perfis e tempos dos funcionários, XP das expansões, atraso do autosserviço, gorjeta do garçom e paciência dos clientes são valores de design provisórios: o repositório não contém a lista original de receitas nem dados de sujeira (o config só nomeia dishPickupTime, adulterado).",
   "popularity": { "min": 5, "max": 105, "satisfiedDelta": 0.1, "unsatisfiedDelta": 0.3 },
   "customers": { "patienceSeconds": 40, "cookingArrivalFactor": 1.5 },
   "stove": { "prepareSeconds": 2, "cleaningCoins": 0, "cleaningXp": 1, "seasonBonusPercent": 25, "seasonXp": 1, "cancelRefundPercent": 50 },
@@ -41,7 +41,6 @@
     }
   },
   "achievements": {
-    "provisional": true,
     "list": [
       { "id": "served_dishes", "code": 1, "name": "Mestre-Cuca", "description": "Leve pratos prontos do fogão ao balcão.", "stat": "dishes", "goals": [
         { "target": 10, "coins": 100, "xp": 10, "cash": 0 },
@@ -100,22 +99,22 @@
     ]
   },
   "missions": {
-    "provisional": true,
+    "trioCash": 1,
     "slots": [
       [
-        { "id": "cook_2", "title": "Cozinhe 2 receitas", "goals": [{ "stat": "dishes", "target": 2 }], "coins": 60, "xp": 5, "cash": 1 },
-        { "id": "cook_3", "title": "Cozinhe 3 receitas", "goals": [{ "stat": "dishes", "target": 3 }], "coins": 90, "xp": 8, "cash": 1 },
-        { "id": "spend_100", "title": "Gaste 100 moedas", "goals": [{ "stat": "spent_coins", "target": 100 }], "coins": 60, "xp": 5, "cash": 1 }
+        { "id": "cook_2", "title": "Cozinhe 2 receitas", "goals": [{ "stat": "dishes", "target": 2 }], "coins": 60, "xp": 5, "cash": 0 },
+        { "id": "cook_3", "title": "Cozinhe 3 receitas", "goals": [{ "stat": "dishes", "target": 3 }], "coins": 90, "xp": 8, "cash": 0 },
+        { "id": "spend_100", "title": "Gaste 100 moedas", "goals": [{ "stat": "spent_coins", "target": 100 }], "coins": 60, "xp": 5, "cash": 0 }
       ],
       [
-        { "id": "serve_6", "title": "Sirva 6 porções", "goals": [{ "stat": "customers", "target": 6 }], "coins": 50, "xp": 5, "cash": 1 },
-        { "id": "serve_12", "title": "Sirva 12 porções", "goals": [{ "stat": "customers", "target": 12 }], "coins": 100, "xp": 10, "cash": 1 },
-        { "id": "serve_20", "title": "Sirva 20 porções", "goals": [{ "stat": "customers", "target": 20 }], "coins": 160, "xp": 15, "cash": 1 }
+        { "id": "serve_6", "title": "Sirva 6 porções", "goals": [{ "stat": "customers", "target": 6 }], "coins": 50, "xp": 5, "cash": 0 },
+        { "id": "serve_12", "title": "Sirva 12 porções", "goals": [{ "stat": "customers", "target": 12 }], "coins": 100, "xp": 10, "cash": 0 },
+        { "id": "serve_20", "title": "Sirva 20 porções", "goals": [{ "stat": "customers", "target": 20 }], "coins": 160, "xp": 15, "cash": 0 }
       ],
       [
-        { "id": "clean_or_season", "title": "Limpe 3 mesas ou tempere 1 prato", "goals": [{ "stat": "tables", "target": 3 }, { "stat": "seasoned", "target": 1 }], "coins": 50, "xp": 5, "cash": 1 },
-        { "id": "season_2", "title": "Tempere 2 pratos", "goals": [{ "stat": "seasoned", "target": 2 }], "coins": 60, "xp": 6, "cash": 1 },
-        { "id": "farm_or_party", "title": "Colha na Fazenda ou dê uma festa", "goals": [{ "stat": "harvests", "target": 1 }, { "stat": "parties", "target": 1 }], "coins": 60, "xp": 5, "cash": 1 }
+        { "id": "clean_or_season", "title": "Limpe 3 mesas ou tempere 1 prato", "goals": [{ "stat": "tables", "target": 3 }, { "stat": "seasoned", "target": 1 }], "coins": 50, "xp": 5, "cash": 0 },
+        { "id": "season_2", "title": "Tempere 2 pratos", "goals": [{ "stat": "seasoned", "target": 2 }], "coins": 60, "xp": 6, "cash": 0 },
+        { "id": "farm_or_party", "title": "Colha na Fazenda ou dê uma festa", "goals": [{ "stat": "harvests", "target": 1 }, { "stat": "parties", "target": 1 }], "coins": 60, "xp": 5, "cash": 0 }
       ]
     ]
   },

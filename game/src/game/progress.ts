@@ -24,6 +24,9 @@ export interface ProgressSnapshot {
   ready: number;
   /** Unix ms of the next São Paulo midnight, when the missions change. */
   nextAt: number;
+  /** Grana paid with the last mission of the day (completing all three), and whether today's was paid. */
+  trioCash?: number;
+  trioClaimed?: boolean;
 }
 export interface ProgressClaim { reward: Reward; levelReward?: number; progress: ProgressSnapshot; state: PlayerState }
 
@@ -94,7 +97,7 @@ export function currencySources(kind: 'gold' | 'cash', rules?: GameRules): strin
   const cashDays = days.filter((day) => day.cash > 0).map((day) => `${day.day}º dia: +${day.cash}`);
   return [
     cashDays.length ? `Bônus diário: ${cashDays.join(', ')} Grana.` : 'Bônus diário: Grana nos dias especiais da sequência.',
-    'Missões diárias: +1 Grana a cada missão resgatada (3 por dia).',
+    'Missões diárias: +1 Grana ao resgatar as três missões do dia.',
     'Conquistas: os níveis Prata e Ouro também pagam Grana.',
     'Use a Grana para expandir o café sem esperar o nível.',
   ];

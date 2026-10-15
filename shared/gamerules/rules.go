@@ -141,9 +141,11 @@ type AchievementGoal struct {
 }
 
 // MissionRules: three missions a day, one drawn from each slot's pool for the
-// player and the São Paulo date, renewed at midnight.
+// player and the São Paulo date, renewed at midnight. TrioCash is the Grana
+// paid with the last of the day's missions, for completing them all.
 type MissionRules struct {
 	Slots       [][]Mission `json:"slots"`
+	TrioCash    int64       `json:"trioCash"`
 	Provisional bool        `json:"provisional,omitempty"`
 }
 
@@ -472,7 +474,7 @@ func validateProgress(r Rules) string {
 			}
 		}
 	}
-	if len(r.Missions.Slots) == 0 || len(r.Missions.Slots) > 5 {
+	if len(r.Missions.Slots) == 0 || len(r.Missions.Slots) > 5 || r.Missions.TrioCash < 0 || r.Missions.TrioCash > 10 {
 		return "invalid missions"
 	}
 	ids = map[string]bool{}
@@ -587,6 +589,9 @@ func AchievementByID(id string) (Achievement, bool) {
 	}
 	return Achievement{}, false
 }
+
+// MissionTrioCash is the Grana for claiming every mission of a day.
+func MissionTrioCash() int64 { return rules.Missions.TrioCash }
 
 // MissionSlots returns each slot's pool.
 func MissionSlots() [][]Mission {

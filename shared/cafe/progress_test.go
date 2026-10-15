@@ -218,7 +218,7 @@ func TestDailyMissionsAreStablePerPlayerAndDay(t *testing.T) {
 	}
 }
 
-func TestClaimMissionOncePerDayWithGrana(t *testing.T) {
+func TestClaimMissionOncePerDay(t *testing.T) {
 	s, _ := newCafe(t, "owner")
 	missions := DailyMissions("owner", bonusDate(progressT0))
 	mission := missions[0]
@@ -242,7 +242,8 @@ func TestClaimMissionOncePerDayWithGrana(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claim.State.Cash != cash+mission.Cash || claim.State.Gold < gold+mission.Coins || mission.Cash != 1 {
+	// Only the trio pays Grana: the first mission pays coins and XP.
+	if claim.State.Cash != cash || claim.State.Gold < gold+mission.Coins || mission.Cash != 0 {
 		t.Fatalf("claim paid cash %d→%d, gold %d→%d", cash, claim.State.Cash, gold, claim.State.Gold)
 	}
 	if !claim.Progress.Missions[0].Claimed || claim.Progress.Ready != p.Ready-1 {
@@ -342,6 +343,44 @@ func TestCleanCafeName(t *testing.T) {
 	for _, in := range []string{"", "ab", "<b>oi</b>", "café​mania", "um nome comprido demais para caber"} {
 		if _, err := CleanCafeName(in); !errors.Is(err, ErrCafeName) {
 			t.Errorf("%q accepted", in)
+		}
+	}
+}
+
+func TestTheLastMissionOfTheDayPaysTheTrioGrana(t *testing.T) {
+	s, _ := newCafe(t, "owner")
+	missions := DailyMissions("owner", bonusDate(progressT0))
+	if err := s.Transaction(func(tx Store) error {
+		for _, m := range missions {
+			for _, goal := range m.Goals {
+				if err := count(tx, "owner", progressT0, goal.Stat, goal.Target); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	trio := gamerules.MissionTrioCash()
+	if trio != 1 {
+		t.Fatalf("trio cash = %d, want 1", trio)
+	}
+	for i, m := range missions {
+		before, _ := GetOrCreatePlayer(s, "owner")
+		claim, err := ClaimMission(s, "owner", m.ID, progressT0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := int64(0)
+		if i == len(missions)-1 {
+			want = trio
+		}
+		if got := claim.State.Cash - before.GetInt64("cash"); got != want || claim.Reward.Cash != want {
+			t.Fatalf("mission %d paid %d Grana, want %d", i+1, got, want)
+		}
+		if claim.Progress.TrioClaimed != (i == len(missions)-1) {
+			t.Fatalf("trioClaimed after %d = %v", i+1, claim.Progress.TrioClaimed)
 		}
 	}
 }

@@ -7,7 +7,8 @@
 //	fetch(method, path, body) → Promise<{status, body}>
 //	connect(id), send(id, text), disconnect(id)
 //	suspend() → Promise, resume(), export() → Promise<string>
-//	check(save, profileId) → "" or why an imported save cannot be opened
+//	prepare(save, profileId, savedAtMs) → {save, error}: an imported save,
+//	checked and frozen in time (PrepareImport)
 //
 // hooks: message(id, text) and close(id) for connections, state() when the
 // HUD values changed and commit() after every saved change.
@@ -42,7 +43,7 @@ func main() {
 		"suspend":    js.FuncOf(suspend),
 		"resume":     js.FuncOf(resume),
 		"export":     js.FuncOf(export),
-		"check":      js.FuncOf(check),
+		"prepare":    js.FuncOf(prepare),
 	}))
 	select {}
 }
@@ -206,12 +207,15 @@ func export(js.Value, []js.Value) any {
 	})
 }
 
-func check(_ js.Value, args []js.Value) any {
-	if len(args) < 2 || args[0].Type() != js.TypeString || args[1].Type() != js.TypeString {
-		return "argumentos inválidos"
+func prepare(_ js.Value, args []js.Value) any {
+	fail := func(message string) any { return map[string]any{"save": "", "error": message} }
+	if len(args) < 3 || args[0].Type() != js.TypeString || args[1].Type() != js.TypeString || args[2].Type() != js.TypeNumber {
+		return fail("argumentos inválidos")
 	}
-	if err := standalone.CheckSave([]byte(args[0].String()), args[1].String()); err != nil {
-		return err.Error()
+	saved := time.UnixMilli(int64(args[2].Float()))
+	data, err := standalone.PrepareImport([]byte(args[0].String()), args[1].String(), saved, time.Now())
+	if err != nil {
+		return fail(err.Error())
 	}
-	return ""
+	return map[string]any{"save": string(data), "error": ""}
 }

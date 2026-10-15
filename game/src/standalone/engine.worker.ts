@@ -12,7 +12,7 @@ interface CoffeEngine {
   suspend(): Promise<void>;
   resume(): void;
   export(): Promise<string>;
-  check(save: string, profileId: string): string;
+  prepare(save: string, profileId: string, savedAtMs: number): { save: string; error: string };
 }
 
 interface GoRuntime { importObject: WebAssembly.Imports; run(instance: WebAssembly.Instance): Promise<void> }
@@ -115,10 +115,10 @@ function handle(message: ToEngine): void {
       });
       break;
     }
-    case 'check': {
-      let error = '';
-      try { error = engine.check(message.save, message.profileId); } catch (failure) { error = String(failure); }
-      post({ type: 'checked', id: message.id, error });
+    case 'prepare': {
+      let result = { save: '', error: '' };
+      try { result = engine.prepare(message.save, message.profileId, message.savedAt); } catch (failure) { result = { save: '', error: String(failure) }; }
+      post({ type: 'prepared', id: message.id, ...result });
       break;
     }
     case 'resume': {

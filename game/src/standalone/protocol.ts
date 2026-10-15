@@ -12,8 +12,9 @@ export type ToEngine =
   /** The page is hidden: the room sleeps and the café is saved at once. */
   | { type: 'suspend'; id: number }
   | { type: 'resume' }
-  /** Can the engine open this save for this profile? (importing a save) */
-  | { type: 'check'; id: number; save: string; profileId: string };
+  /** Importing a save: can the engine open it for this profile? It comes back
+   * frozen in time (clocks moved by the time since savedAt). */
+  | { type: 'prepare'; id: number; save: string; profileId: string; savedAt: number };
 
 export type FromEngine =
   | { type: 'started' }
@@ -27,5 +28,5 @@ export type FromEngine =
   /** The whole café after one or more game transactions. */
   | { type: 'save'; data: string }
   | { type: 'suspended'; id: number }
-  /** Empty error: the save opens. */
-  | { type: 'checked'; id: number; error: string };
+  /** Empty error: save is the café to store. */
+  | { type: 'prepared'; id: number; save: string; error: string };

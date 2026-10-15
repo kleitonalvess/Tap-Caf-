@@ -403,3 +403,50 @@ func TestCheckSaveAcceptsOnlyThePlayersCafe(t *testing.T) {
 		t.Error("a save of another profile was accepted")
 	}
 }
+
+// A restored backup opens as exported: clocks move by the time the file sat
+// unused, so nothing cooks, spoils or counts as an absence in between.
+func TestPrepareImportFreezesTheCafe(t *testing.T) {
+	store := cafe.NewMemoryStore()
+	e := newEngine(t, store, time.Time{})
+	if status, _ := e.Fetch("GET", "/api/coffe/cooking", nil); status != 200 {
+		t.Fatal("cooking")
+	}
+	stove, err := store.First("player_stoves", cafe.Where{"user": testProfile.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exported := time.Now().Add(-72 * time.Hour).UTC().Truncate(time.Millisecond)
+	if err := cafe.StartCooking(store, testProfile.ID, stove.ID(), "cake_1", exported); err != nil {
+		t.Fatal(err)
+	}
+	room, _ := store.First("player_rooms", cafe.Where{"user": testProfile.ID})
+	room.Set("slept_at", exported)
+	if err := store.Save(room); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := store.Export()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	prepared, err := PrepareImport(data, testProfile.ID, exported, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := cafe.LoadMemoryStore(prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, _ := loaded.First("stove_cooking", cafe.Where{"stove": stove.ID()})
+	if got := job.GetTime("preparing_at"); !got.Equal(now) {
+		t.Fatalf("preparing_at = %v, want %v", got, now)
+	}
+	if status, _ := cafe.JobState(job, now.Add(time.Second)); status != "preparing" {
+		t.Fatalf("the dish is %s right after the import", status)
+	}
+	sleptRoom, _ := loaded.First("player_rooms", cafe.Where{"user": testProfile.ID})
+	if got := sleptRoom.GetTime("slept_at"); !got.Equal(now) {
+		t.Fatalf("slept_at = %v, want the import instant", got)
+	}
+	if _, err := PrepareImport(data, "someoneelse0001", exported, now); err == nil {
+		t.Fatal("another profile was accepted")
+	}
+}
