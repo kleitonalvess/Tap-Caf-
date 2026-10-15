@@ -4,7 +4,7 @@ import type { SoundPlayer } from '../../audio/sound-events';
 import { crateContents, crateCost, type Crate, type CrateResult, type PantrySnapshot } from '../../game/pantry';
 import { DIALOG_COLORS, RoomDialog } from './RoomDialog';
 
-const CARD = { w: 250, h: 360, gap: 22 };
+const CARD = { w: 250, h: 380, gap: 22 };
 const CRATE_COLORS: Record<string, [number, number]> = {
   surprise: [0xf2c14e, 0xb7791f], brown: [0xa0703f, 0x6b4423], purple: [0x9a5ad6, 0x5e2d91], gold: [0xf6d36b, 0xc99a3c],
 };
@@ -79,11 +79,11 @@ export class CratesModal extends RoomDialog {
     card.addChild(box);
     this.content.addChild(card);
     const cx = x + CARD.w / 2;
-    this.text(crate.name, cx, y + 180, 28, DIALOG_COLORS.ink, { wrap: CARD.w - 20 });
-    this.text(crateContents(crate), cx, y + 218, 18, DIALOG_COLORS.ink, { weight: '600', wrap: CARD.w - 24 });
+    this.text(crate.name, cx, y + 172, 28, DIALOG_COLORS.ink, { wrap: CARD.w - 20 });
+    this.text(crateContents(crate), cx, y + 210, 18, DIALOG_COLORS.ink, { weight: '600', wrap: CARD.w - 24 });
     const wallet = this.options.wallet();
     const affordable = crate.free ? freeCrates > 0 : (crate.cash ?? 0) > 0 ? wallet.cash >= (crate.cash ?? 0) : wallet.gold >= (crate.coins ?? 0);
-    this.text(crateCost(crate, freeCrates), cx, y + 266, 22, (crate.cash ?? 0) > 0 ? DIALOG_COLORS.cash : DIALOG_COLORS.gold);
+    this.text(crateCost(crate, freeCrates), cx, y + 262, 22, (crate.cash ?? 0) > 0 ? DIALOG_COLORS.cash : DIALOG_COLORS.gold);
     const busy = this.opening === crate.id;
     this.button({
       label: `crate-open-${crate.id}`, caption: busy ? 'Abrindo…' : 'Abrir', color: DIALOG_COLORS.green, width: 190,
