@@ -19,6 +19,8 @@ func init() {
 		stoves.AddIndex("idx_player_stoves_location", false, "user, tx, ty", "")
 		return app.Save(stoves)
 	}, func(app core.App) error {
+		// Fails (and changes nothing) once two stoves share a tile, which this
+		// version allows; such a database cannot go back without moving them.
 		stoves, err := app.FindCollectionByNameOrId("player_stoves")
 		if err != nil {
 			return err

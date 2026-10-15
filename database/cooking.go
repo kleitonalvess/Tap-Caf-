@@ -63,6 +63,8 @@ func registerCookingRoutes(e *core.ServeEvent) {
 				StoveID  string `json:"stoveId"`
 				RecipeID string `json:"recipeId,omitempty"`
 				RoomID   string `json:"roomId,omitempty"`
+				// A pantry spice (only when seasoning).
+				Spice int `json:"spice,omitempty"`
 			}
 			decoder := json.NewDecoder(r.Request.Body)
 			decoder.DisallowUnknownFields()
@@ -76,6 +78,9 @@ func registerCookingRoutes(e *core.ServeEvent) {
 			if route.Action == "cook_start" && !knownRecipe || route.Action != "cook_start" && body.RecipeID != "" {
 				return r.BadRequestError("Fogão ou receita inválidos.", nil)
 			}
+			if body.Spice != 0 && (route.Action != "cook_season" || body.Spice < 0) {
+				return r.BadRequestError("Tempero inválido.", nil)
+			}
 			owner := user.Id
 			if body.RoomID != "" && body.RoomID != user.Id {
 				if !route.Visitors {
@@ -86,9 +91,12 @@ func registerCookingRoutes(e *core.ServeEvent) {
 				}
 				owner = body.RoomID
 			}
-			command := map[string]string{"stoveId": body.StoveID}
+			command := map[string]any{"stoveId": body.StoveID}
 			if body.RecipeID != "" {
 				command["recipeId"] = body.RecipeID
+			}
+			if body.Spice != 0 {
+				command["spice"] = body.Spice
 			}
 			if roomService(r.App) != nil {
 				return proxyRoomOperationAs(r, owner, user.Id, route.Action, command)

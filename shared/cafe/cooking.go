@@ -442,6 +442,17 @@ func CancelCooking(s Store, userID, stoveID string, now time.Time) (int64, error
 				return err
 			}
 		}
+		// Like the coins, a pantry spice comes back in full only during preparation.
+		if spice := job.GetInt("spice"); spice > 0 && now.Before(job.GetTime("started_at")) {
+			state, err := tx.First(PlayerCollection, Where{"user": userID})
+			if err != nil {
+				return err
+			}
+			addSpices(state, spice, 1)
+			if err := tx.Save(state); err != nil {
+				return err
+			}
+		}
 		// A canceled fresh batch gives the ingredients back, up to the farm's limit.
 		if job.GetBool("fresh") {
 			room, err := tx.First("player_rooms", Where{"user": userID})

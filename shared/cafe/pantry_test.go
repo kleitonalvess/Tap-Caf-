@@ -217,3 +217,49 @@ func TestDailyBonusDaysFiveAndSixGiveASpice(t *testing.T) {
 		t.Fatalf("day 5: %+v %v", claim, err)
 	}
 }
+
+func TestCancellingInPreparationGivesTheSpiceBack(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		cancel time.Duration
+		back   int
+	}{{"preparing", time.Second / 2, 1}, {"cooking", gamerules.PrepareDuration() + time.Second, 0}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, stove := newCafe(t, "owner")
+			if err := StartCooking(s, "owner", stove, "pao_de_queijo", progressT0); err != nil {
+				t.Fatal(err)
+			}
+			state, _ := GetOrCreatePlayer(s, "owner")
+			addSpices(state, 800003, 1)
+			if err := s.Save(state); err != nil {
+				t.Fatal(err)
+			}
+			if err := SeasonCooking(s, "owner", "owner", stove, 800003, progressT0.Add(time.Second/4)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := CancelCooking(s, "owner", stove, progressT0.Add(tc.cancel)); err != nil {
+				t.Fatal(err)
+			}
+			if got := pantryOf(t, s, "owner")[800003]; got != tc.back {
+				t.Fatalf("spice back = %d, want %d", got, tc.back)
+			}
+		})
+	}
+}
+
+func TestABadPantryEntryDoesNotEmptyThePantry(t *testing.T) {
+	s, _ := newCafe(t, "owner")
+	state, _ := GetOrCreatePlayer(s, "owner")
+	state.Set("pantry", map[string]any{"800001": 2, "800002": "x", "800003": 1.5, "oops": 4})
+	if err := s.Save(state); err != nil {
+		t.Fatal(err)
+	}
+	spice, _ := gamerules.SpiceByCode(800001)
+	setPlayer(t, s, "owner", map[string]any{"gold": spice.PriceCoins})
+	if _, err := BuySpice(s, "owner", spice.Code, progressT0); err != nil {
+		t.Fatal(err)
+	}
+	if got := pantryOf(t, s, "owner"); got[800001] != 3 || got[800003] != 1 || len(got) != 2 {
+		t.Fatalf("pantry after a write = %v", got)
+	}
+}

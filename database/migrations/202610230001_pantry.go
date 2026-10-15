@@ -50,6 +50,11 @@ func init() {
 			return err
 		}
 		state.Fields.RemoveByName("pantry")
-		return app.Save(state)
+		if err := app.Save(state); err != nil {
+			return err
+		}
+		// Back to the old fixed bar of 4 crates.
+		_, err = app.DB().NewQuery("UPDATE player_state SET crates_max = 4, crates_current = MIN(crates_current, 4)").Execute()
+		return err
 	})
 }

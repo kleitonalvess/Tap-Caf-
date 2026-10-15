@@ -39,12 +39,15 @@ var RandomIntn = func(n int) int {
 
 // The pantry lives in player_state.pantry as {"800001": 2, ...}.
 func readPantry(state Record) map[int]int {
-	raw := map[string]int{}
+	// Decoded entry by entry: one bad value (an edited save) must not empty the
+	// whole pantry, which the next write would then persist.
+	raw := map[string]json.RawMessage{}
 	_ = state.UnmarshalJSONField("pantry", &raw)
 	pantry := map[int]int{}
-	for key, count := range raw {
-		if code, err := strconv.Atoi(key); err == nil && count > 0 {
-			pantry[code] = count
+	for key, value := range raw {
+		var count float64
+		if code, err := strconv.Atoi(key); err == nil && json.Unmarshal(value, &count) == nil && count >= 1 && count <= 1e6 {
+			pantry[code] = int(count)
 		}
 	}
 	return pantry
@@ -213,6 +216,18 @@ func OpenCrate(s Store, user, crateID, requestKey string, now time.Time) (CrateR
 	if _, err := GetOrCreatePlayer(s, user); err != nil {
 		return CrateResult{}, err
 	}
+	result, err := openCrate(s, user, crate, requestKey, now)
+	if status, _ := PantryErrorStatus(err); err != nil && status == 500 {
+		// Two requests with the same key at once: the loser's insert breaks the
+		// unique (user, request_key) index and rolls back. Running it again finds
+		// the winner's opening and answers the same prize.
+		result, err = openCrate(s, user, crate, requestKey, now)
+	}
+	return result, err
+}
+
+func openCrate(s Store, user string, crate gamerules.Crate, requestKey string, now time.Time) (CrateResult, error) {
+	crateID := crate.ID
 	var result CrateResult
 	err := s.Transaction(func(tx Store) error {
 		if opened, err := tx.First(CrateOpenings, Where{"user": user, "request_key": requestKey}); err == nil {
