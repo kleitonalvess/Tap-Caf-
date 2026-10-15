@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { crateContents, crateCost, ownedSpices, type Crate, type Spice } from '../../game/src/game/pantry';
-import { rewardText } from '../../game/src/game/rewards';
+import { CrateOpener, crateContents, crateCost, ownedSpices, type Crate, type Spice } from '../../game/src/game/pantry';
+import { RequestError, rewardText } from '../../game/src/game/rewards';
 
 const spices: Spice[] = [
   { code: 800001, name: 'Tempero Caseiro', effect: 'double', description: '', priceCoins: 150, count: 0 },
@@ -30,5 +30,33 @@ describe('despensa e caixas', () => {
   it('o texto do prêmio cita os temperos', () => {
     expect(rewardText({ coins: 800, cash: 0, spices: 1 })).toBe('+800 moedas e +1 tempero');
     expect(rewardText({ coins: 0, cash: 10, spices: 2 })).toBe('+10 Grana e +2 temperos');
+  });
+});
+
+describe('abrir caixas', () => {
+  const result = { crate: 'gold' } as never;
+  it('repete a mesma chave depois de uma falha de conexão ou do servidor', async () => {
+    const keys: string[] = [];
+    const answers: Array<() => Promise<never>> = [
+      () => Promise.reject(new Error('Não foi possível conectar ao servidor.')),
+      () => Promise.reject(new RequestError('Não foi possível concluir agora.', 500)),
+      () => Promise.resolve(result),
+    ];
+    let n = 0;
+    const opener = new CrateOpener((_crate, key) => { keys.push(key); return answers.shift()!(); }, () => `key-${++n}`);
+    await expect(opener.open('gold')).rejects.toThrow();
+    await expect(opener.open('gold')).rejects.toThrow();
+    await expect(opener.open('gold')).resolves.toBe(result);
+    await opener.open('gold').catch(() => undefined);
+    expect(keys).toEqual(['key-1', 'key-1', 'key-1', 'key-2']);
+  });
+
+  it('troca a chave depois de uma recusa definitiva', async () => {
+    const keys: string[] = [];
+    let n = 0;
+    const opener = new CrateOpener((_crate, key) => { keys.push(key); return Promise.reject(new RequestError('Grana insuficiente.', 409)); }, () => `key-${++n}`);
+    await expect(opener.open('gold')).rejects.toThrow('Grana insuficiente.');
+    await expect(opener.open('gold')).rejects.toThrow();
+    expect(keys).toEqual(['key-1', 'key-2']);
   });
 });

@@ -1,5 +1,5 @@
 // Sprint 11 no modo standalone: bônus diário e Correio (créditos e selo), ícones
-// "Em breve!" e a galinha que abre a Fazenda, barra de XP dentro do nível, aviso
+// "Em breve!", pilão e caixa que abrem as janelas da Sprint 14, a galinha que abre a Fazenda, barra de XP dentro do nível, aviso
 // sem fogão livre, cancelar com confirmação (reembolso pago pelo servidor, texto
 // do preparo, prato que fica pronto com a janela aberta), selo offline durante a
 // festa, Configurações e as 16 cores do guarda-roupa.
@@ -8,7 +8,8 @@ import { startStandalone } from './lib/stack.mjs';
 
 const site = await startStandalone();
 const run = await scenario('retention');
-const SOON = ['gift', 'yellow-box', 'map', 'mortar'];
+// Each "Em breve!" names its system, so a toast left by the previous icon never passes.
+const SOON = { gift: 'Presentes', map: 'Mapa do bairro' };
 
 try {
   const game = await run.page();
@@ -49,11 +50,19 @@ try {
   await sleep(400);
 
   // 3. Ícones: "Em breve!" com o nome do sistema; a galinha abre a Fazenda.
-  for (const icon of SOON) {
+  for (const [icon, system] of Object.entries(SOON)) {
     await game.click(`room-action-bar-icon-${icon}`);
     await sleep(600);
     const notice = await game.toast();
-    run.check(/^Em breve!/.test(notice ?? ''), `${icon} responde "Em breve!"`, notice);
+    run.check(/^Em breve!/.test(notice ?? '') && notice.includes(system), `${icon} responde "Em breve!"`, notice);
+  }
+  // Since Sprint 14 the pestle opens the pantry and the yellow box the crates.
+  for (const [icon, modal] of [['mortar', 'pantryModal'], ['yellow-box', 'cratesModal']]) {
+    await game.click(`room-action-bar-icon-${icon}`);
+    const opened = await game.waitFor((modal) => window.__coffeMania.screens.active[modal]?.isOpen, modal, 15000).then(() => true, () => false);
+    run.check(opened, `${icon} abre a sua janela`);
+    await game.page.keyboard.press('Escape');
+    await sleep(500);
   }
   await game.shot('5-em-breve');
   await game.click('room-action-bar-icon-striped-chicken');

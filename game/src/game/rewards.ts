@@ -50,6 +50,11 @@ export function untilText(ms: number): string {
   return hours > 0 ? `em ${hours} h ${String(minutes % 60).padStart(2, '0')} min` : `em ${minutes} min`;
 }
 
+/** A refusal with an HTTP status; a lost connection stays a plain Error. */
+export class RequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
 export async function request<T>(path: string, body?: unknown): Promise<T> {
   let response: Response;
   try {
@@ -68,7 +73,7 @@ export async function request<T>(path: string, body?: unknown): Promise<T> {
   try { data = await response.json(); } catch { data = undefined; }
   if (!response.ok) {
     const message = (data as { message?: unknown } | undefined)?.message;
-    throw new Error(typeof message === 'string' && message ? message : 'Não foi possível concluir agora.');
+    throw new RequestError(typeof message === 'string' && message ? message : 'Não foi possível concluir agora.', response.status);
   }
   if (!data || typeof data !== 'object') throw new Error('Resposta inválida do servidor.');
   return data as T;

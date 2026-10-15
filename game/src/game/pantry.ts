@@ -1,5 +1,5 @@
 import type { PlayerState } from './player-state';
-import { request } from './rewards';
+import { RequestError, request } from './rewards';
 
 /** Pantry spices and mystery crates (shared/cafe/pantry.go); the server pays and draws. */
 export interface Spice { code: number; name: string; effect: 'double' | 'rush' | 'preserve'; description: string; priceCoins: number; count: number }
@@ -39,4 +39,30 @@ export function crateContents(crate: Crate): string {
   if (crate.prizes.some((prize) => prize.coins)) kinds.push('moedas');
   if (crate.prizes.some((prize) => prize.cash)) kinds.push('Grana');
   return kinds.length > 1 ? `${kinds.slice(0, -1).join(', ')} ou ${kinds.at(-1)}` : kinds[0] ?? '';
+}
+
+/**
+ * Opens crates with one request key per crate until the server answers: a
+ * retry after a lost connection or a server error repeats the same key, so the
+ * server returns the first prize instead of charging and drawing again.
+ */
+export class CrateOpener {
+  private readonly pending = new Map<string, string>();
+
+  constructor(private readonly send: (crate: string, requestId: string) => Promise<CrateResult> = openCrate,
+    private readonly newKey: () => string = () => crypto.randomUUID()) {}
+
+  async open(crate: string): Promise<CrateResult> {
+    const key = this.pending.get(crate) ?? this.newKey();
+    this.pending.set(crate, key);
+    try {
+      const result = await this.send(crate, key);
+      this.pending.delete(crate);
+      return result;
+    } catch (error) {
+      // A definite refusal (no coins, unknown crate) committed nothing.
+      if (error instanceof RequestError && error.status < 500) this.pending.delete(crate);
+      throw error;
+    }
+  }
 }

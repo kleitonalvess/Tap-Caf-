@@ -306,6 +306,30 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 	log("open gold crate", outcome(err))
 	pantry, err := cafe.SnapshotPantry(s, owner)
 	log("pantry", map[string]any{"err": outcome(err), "free": pantry.FreeCrates, "max": pantry.FreeMax, "spices": len(pantry.Spices)})
+	// A pantry spice on a batch: it must be stored on the job (a field the
+	// PocketBase schema has to declare) and come back when cancelled in time.
+	spiceAt := t0.Add(48 * time.Hour)
+	idle, err := cafe.SnapshotCooking(s, owner, spiceAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stove := range idle.Stoves {
+		if stove.Cooking != nil {
+			continue
+		}
+		log("cook to spice", outcome(cafe.StartCooking(s, owner, stove.ID, "pao_de_queijo", spiceAt)))
+		log("spice", outcome(cafe.SeasonCooking(s, owner, owner, stove.ID, 800001, spiceAt.Add(time.Second/2))))
+		spiced, _ := cafe.SnapshotCooking(s, owner, spiceAt.Add(time.Second))
+		for _, view := range spiced.Stoves {
+			if view.ID == stove.ID && view.Cooking != nil {
+				log("spiced batch", map[string]any{"spice": view.Cooking.Spice, "servings": view.Cooking.Servings})
+			}
+		}
+		_, err := cafe.CancelCooking(s, owner, stove.ID, spiceAt.Add(time.Second))
+		after, _ := cafe.SnapshotPantry(s, owner)
+		log("cancel spiced", map[string]any{"err": outcome(err), "spices": after.Spices})
+		break
+	}
 	world("final")
 	return lines
 }

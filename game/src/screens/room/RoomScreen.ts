@@ -94,7 +94,7 @@ import { PopularityModal } from './PopularityModal';
 import { CashDayModal } from './CashDayModal';
 import { CratesModal } from './CratesModal';
 import { PantryModal } from './PantryModal';
-import { buySpice, loadPantry, openCrate, ownedSpices, type CrateResult } from '../../game/pantry';
+import { buySpice, CrateOpener, loadPantry, ownedSpices, type CrateResult } from '../../game/pantry';
 import { claimProgress, currencySources, loadProgress, popularityLines, renameCafe, type ProgressClaim, type ProgressSnapshot } from '../../game/progress';
 import { LevelUpModal } from './LevelUpModal';
 import { levelUnlocks, nextUnlocks } from '../../game/game-rules';
@@ -338,6 +338,7 @@ export class RoomScreen implements Screen {
   private cashDayModal?: CashDayModal;
   private pantryModal?: PantryModal;
   private cratesModal?: CratesModal;
+  private readonly crateOpener = new CrateOpener();
   private readonly roomClient?: RoomInventoryClient;
   private progressTimer?: ReturnType<typeof setTimeout>;
   private progressLoading = false;
@@ -1049,7 +1050,7 @@ export class RoomScreen implements Screen {
     this.view.addChild(this.pantryModal.view);
     this.cratesModal = new CratesModal({
       wallet: () => ({ gold: this.roomSnapshot?.playerState?.gold ?? 0, cash: this.roomSnapshot?.playerState?.cash ?? 0 }),
-      onOpen: (crate) => openCrate(crate.id, crypto.randomUUID()),
+      onOpen: (crate) => this.crateOpener.open(crate.id),
       onOpened: (result) => this.collectCrate(result),
       ...(options.audio ? { audio: options.audio } : {}),
     });

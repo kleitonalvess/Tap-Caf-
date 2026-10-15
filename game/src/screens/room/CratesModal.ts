@@ -116,9 +116,10 @@ export class CratesModal extends RoomDialog {
       this.pantry = result.pantry;
       this.result = result;
       this.revealMs = 0;
+      // The wallet first: the buttons below are enabled from the new balance.
+      this.options.onOpened(result);
       this.render();
       this.options.audio?.play('levelUp');
-      this.options.onOpened(result);
     }, (error: unknown) => {
       this.opening = undefined;
       this.message = error instanceof Error ? error.message : 'Não foi possível abrir a caixa.';

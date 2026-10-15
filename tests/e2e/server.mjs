@@ -71,10 +71,27 @@ try {
   run.check(hud === String(paid.gold), 'o HUD mostra as moedas do PocketBase', { hud, gold: paid.gold });
   await game.shot('2-pagamento');
 
-  // 3. Cancelar com o fogo aceso: o servidor do jogo decide e informa o reembolso.
+  // 3. Despensa pelo PocketBase: comprar um tempero e temperar com ele pelo servidor do jogo.
+  const api = (path, body) => game.room(async ({ path, body }) => {
+    const { apiFetch } = await import('/src/game/backend.ts');
+    const response = await apiFetch(path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: response.status, body: await response.json() };
+  }, { path, body });
+  // Coins from the superuser, so the cake below is paid (never the emergency help).
+  await stack.admin.update('player_state', owner.id, { gold: paid.gold + 1000 });
+  await sleep(1000);
+  const bought = await api('/api/coffe/pantry/buy', { code: 800001 });
+  run.check(bought.status === 200 && bought.body.state.pantry['800001'] === 1, 'comprar um tempero grava a despensa no banco', bought.body.state?.pantry ?? bought.body);
   await game.cook('cake_1');
   const cooking = await game.player();
   const job = await game.room(() => [...window.__coffeMania.screens.active.occupiedStoves.values()][0]);
+  const seasoned = await api('/api/coffe/cooking/season', { stoveId: await game.room(() => [...window.__coffeMania.screens.active.occupiedStoves.keys()][0]), spice: 800001 });
+  const stoves = await api('/api/coffe/cooking');
+  const spiced = stoves.body.stoves.find((entry) => entry.cooking)?.cooking;
+  const rows = await stack.admin.list('player_state', `user = "${owner.user}"`);
+  run.check(seasoned.status === 200 && spiced?.spice === 800001 && !rows[0].pantry?.['800001'], 'temperar com a despensa passa pelo servidor do jogo e gasta a carga', { status: seasoned.status, message: seasoned.body.message, spice: spiced?.spice, pantry: rows[0].pantry });
+
+  // 4. Cancelar com o fogo aceso: o servidor do jogo decide e informa o reembolso.
   await game.waitFor(() => { const screen = window.__coffeMania.screens.active; const [current] = screen.occupiedStoves.values();
     return current && Date.parse(current.startedAt.replace(' ', 'T')) <= screen.cookingClient.serverNowMs(); }, undefined, 20000);
   await sleep(700);
@@ -92,7 +109,7 @@ try {
   run.check(refund === Math.floor(job.costCoins / 2) && (notice ?? '').includes(`${refund} moedas devolvidas`), 'o reembolso pago pelo servidor é o que o aviso mostra', { cost: job.costCoins, refund, notice });
   run.check(engine.length === 0, 'o modo servidor não baixa o motor offline', engine);
 
-  // 4. Sair do jogo volta ao login.
+  // 5. Sair do jogo volta ao login.
   await game.click('room-action-bar-settings');
   await game.waitFor(() => window.__coffeMania.screens.active.settingsModal.isOpen, undefined, 10000);
   await sleep(500);
