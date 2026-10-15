@@ -1,4 +1,3 @@
-import { GAME_VERSION } from '../core/version';
 import { useLocalBackend, type GameBackend, type RealtimeSource, type RoomSocket } from '../game/backend';
 import { PLAYER_STATE_TOPIC } from '../game/player-state-realtime';
 import type { FromEngine, LocalProfile, ToEngine } from './protocol';
@@ -8,6 +7,9 @@ import { newProfileId, openSaveStore, type SaveRecord } from './save-store';
  * the absence ("Bem-vindo de volta!") from here. */
 export const SEEN_KEY = 'coffe-standalone-seen';
 const HEARTBEAT_MS = 15000;
+/** Downloading and compiling the engine takes seconds; a start that never
+ * answers (a worker stuck before its first message) must not hang the page. */
+export const START_TIMEOUT_MS = 90_000;
 
 export interface EnginePort {
   postMessage(message: ToEngine): void;
@@ -34,9 +36,13 @@ export class LocalBackend implements GameBackend {
     port.addEventListener('message', (event) => this.receive(event.data));
   }
 
-  start(message: StartMessage): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.starting = { resolve, reject };
+  start(message: StartMessage, timeoutMs = START_TIMEOUT_MS): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => this.engineFailed('O motor do café não respondeu. Recarregue a página.'), timeoutMs);
+      this.starting = {
+        resolve: () => { clearTimeout(timer); resolve(); },
+        reject: (error) => { clearTimeout(timer); reject(error); },
+      };
       this.post(message);
     });
   }
@@ -51,12 +57,7 @@ export class LocalBackend implements GameBackend {
         this.starting = null;
         break;
       case 'failed':
-        if (!this.started) {
-          this.starting?.reject(new Error(message.message));
-          this.starting = null;
-          break;
-        }
-        this.fail(message.message);
+        this.engineFailed(message.message);
         break;
       case 'response':
         this.requests.get(message.id)?.resolve(message.status, message.body);
@@ -86,8 +87,20 @@ export class LocalBackend implements GameBackend {
     }
   }
 
+  /** The worker reported a failure, crashed or never answered: before it
+   * started, the start fails; after, the whole café does. */
+  engineFailed(message: string): void {
+    if (!this.started) {
+      this.starting?.reject(new Error(message));
+      this.starting = null;
+      return;
+    }
+    this.fail(message);
+  }
+
   /** The engine stopped: nothing will answer again. */
   private fail(message: string): void {
+    if (this.failure) return;
     this.failure = message;
     for (const request of this.requests.values()) request.reject(new Error(message));
     this.requests.clear();
@@ -265,6 +278,12 @@ export async function startLocalBackend(): Promise<LocalBackend> {
   const worker = new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module', name: 'coffe-engine' });
   const backend = new LocalBackend(worker);
   backend.onFatal = showFatal;
+  // A worker that cannot load, or throws outside a request, sends no 'failed'.
+  worker.addEventListener('error', (event) => {
+    event.preventDefault();
+    backend.engineFailed(`O motor do café parou${event.message ? `: ${event.message}` : ''}. Recarregue a página.`);
+  });
+  worker.addEventListener('messageerror', () => backend.engineFailed('O motor do café enviou uma mensagem ilegível. Recarregue a página.'));
   let latest: SaveRecord | null = saved;
   let writing: Promise<void> = Promise.resolve();
   backend.onSave = (data) => {
@@ -275,12 +294,14 @@ export async function startLocalBackend(): Promise<LocalBackend> {
       store.backup(record);
     });
   };
-  const base = new URL(import.meta.env.BASE_URL, document.baseURI);
-  // The version keeps a cached engine from outliving the page that expects it.
-  const asset = (file: string) => new URL(`standalone/${file}?v=${encodeURIComponent(GAME_VERSION)}`, base).href;
   try {
+    const engine = await import('./engine-assets').catch(() => {
+      throw new Error('O modo offline não foi compilado (npm run wasm).');
+    });
+    // The worker resolves addresses against its own script, so they go absolute.
+    const absolute = (url: string) => new URL(url, document.baseURI).href;
     await backend.start({
-      type: 'start', execUrl: asset('wasm_exec.js'), wasmUrl: asset('coffe.wasm'),
+      type: 'start', execUrl: absolute(engine.execUrl), wasmUrl: absolute(engine.wasmUrl),
       save: saved?.data ?? null, profile, lastSeen: Math.max(lastSeen(), saved?.savedAt ?? 0),
     });
   } catch (error) {

@@ -1,6 +1,7 @@
-// Compiles the standalone café (Go → WebAssembly) into game/public/standalone/,
-// with the wasm_exec.js of the same Go toolchain. Both files are generated:
-// the client loads them only in the offline mode.
+// Compiles the standalone café (Go → WebAssembly) into
+// game/src/standalone/generated/, with the wasm_exec.js of the same Go
+// toolchain. Both files are generated; the client imports them through Vite
+// (?url), so builds name them by content hash.
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -14,7 +15,7 @@ export function goCommand() {
 }
 
 export function buildWasm({ go = goCommand(), quiet = false } = {}) {
-  const out = join(root, 'game', 'public', 'standalone');
+  const out = join(root, 'game', 'src', 'standalone', 'generated');
   mkdirSync(out, { recursive: true });
   const goroot = spawnSync(go, ['env', 'GOROOT'], { encoding: 'utf8' });
   if (goroot.status !== 0) return Promise.reject(new Error('Go não encontrado. Instale Go 1.27+ ou configure COFFE_GO.'));

@@ -189,4 +189,32 @@ describe('LocalBackend', () => {
     engine.reply({ type: 'failed', message: 'save ilegível' });
     await expect(started).rejects.toThrow('save ilegível');
   });
+
+  it('desiste da partida quando o worker não responde', async () => {
+    vi.useFakeTimers();
+    try {
+      const backend = new LocalBackend(fakeEngine().port);
+      const started = backend.start({ type: 'start', execUrl: 'a', wasmUrl: 'b', save: null, profile: { id: 'abcdefghij12345', name: 'Ana' }, lastSeen: 0 }, 1000);
+      const outcome = expect(started).rejects.toThrow('não respondeu');
+      await vi.advanceTimersByTimeAsync(1000);
+      await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('um erro do worker derruba o café uma vez só', async () => {
+    const engine = fakeEngine();
+    const backend = new LocalBackend(engine.port);
+    const fatal = vi.fn();
+    backend.onFatal = fatal;
+    const started = backend.start({ type: 'start', execUrl: 'a', wasmUrl: 'b', save: null, profile: { id: 'abcdefghij12345', name: 'Ana' }, lastSeen: 0 });
+    engine.reply({ type: 'started' });
+    await started;
+    const pending = backend.fetch('/api/coffe/rules');
+    backend.engineFailed('O motor do café parou: out of memory.');
+    engine.reply({ type: 'failed', message: 'outra falha' });
+    await expect(pending).rejects.toThrow('out of memory');
+    expect(fatal).toHaveBeenCalledOnce();
+  });
 });

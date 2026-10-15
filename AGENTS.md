@@ -87,7 +87,7 @@ O launcher compila os dois serviços Go, inicia o PocketBase, inicia o servidor 
 
 `Ctrl+C` salva o estado dos quartos antes de encerrar os serviços iniciados pelo launcher. Ele não reutiliza processos ou bancos de outra cópia do projeto. Para executar duas cópias simultaneamente, altere as portas.
 
-O launcher também compila o modo offline (`game/public/standalone/`). Se a página inicial não conseguir falar com os serviços, o jogo abre sozinho no modo offline; `?offline=1` força esse modo mesmo com os serviços no ar.
+O launcher também compila o modo offline (`game/src/standalone/generated/`). Se a página inicial não conseguir falar com os serviços, o jogo abre sozinho no modo offline; `?offline=1` força esse modo mesmo com os serviços no ar.
 
 ## Configuração e dados locais
 
@@ -154,7 +154,7 @@ O comando valida os manifestos e sincroniza os catálogos do cliente e de `share
 O mesmo jogo roda inteiro no navegador: o servidor dos quartos (`gameruntime`) e as regras de persistência (`shared/cafe`) são compilados para WebAssembly e executados num Web Worker, e o café é salvo no IndexedDB do navegador. Visitas e recursos sociais não existem nesse modo.
 
 ```sh
-npm run wasm                # só o motor: game/public/standalone/coffe.wasm + wasm_exec.js
+npm run wasm                # só o motor: game/src/standalone/generated/coffe.wasm + wasm_exec.js
 npm run build:standalone    # site estático em game/dist-standalone/
 npm run preview:standalone  # serve o build estático em http://localhost:4173/
 ```
@@ -162,7 +162,7 @@ npm run preview:standalone  # serve o build estático em http://localhost:4173/
 - `game/dist-standalone/` usa caminhos relativos: publique o conteúdo da pasta em qualquer hospedagem estática (GitHub Pages, Vercel), inclusive numa subpasta. O servidor precisa entregar `.wasm` como `application/wasm` (o jogo tem uma alternativa mais lenta quando não entrega).
 - O modo também é escolhido por `VITE_STANDALONE=true` no build, por `?offline=1` no endereço ou automaticamente quando `/api/coffe/session` não responde.
 - O save fica no navegador e no aparelho do jogador, separado das contas do servidor. Um café aberto em duas abas é recusado na segunda.
-- Os arquivos de `game/public/standalone/` são gerados e ficam fora do Git; `npm run build` e `npm run dev` também os geram.
+- Os arquivos de `game/src/standalone/generated/` são gerados e ficam fora do Git; `npm run build` e `npm run dev` também os geram. O Vite os importa com `?url`, então o build os publica com o hash do conteúdo no nome (um motor em cache nunca sobrevive à página que espera outro).
 
 ## Ferramentas de assets
 

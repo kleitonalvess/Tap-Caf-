@@ -121,7 +121,10 @@ async function boot(): Promise<void> {
     // The browser's café has a single room: the player's.
     const roomId = isOffline() ? session.playerId : new URLSearchParams(window.location.search).get('room') ?? session.playerId;
     if (isOffline()) showOfflineBadge(uiLayer);
-    const roomAddress = new URL(window.location.href); roomAddress.searchParams.set('room', roomId); window.history.replaceState(null, '', roomAddress);
+    // A local profile id never goes into the address: a later server-mode load would look for that room.
+    const roomAddress = new URL(window.location.href);
+    if (isOffline()) roomAddress.searchParams.delete('room'); else roomAddress.searchParams.set('room', roomId);
+    window.history.replaceState(null, '', roomAddress);
     const cookingClient = new CookingClient(roomId);
     const roomClient = new RoomInventoryClient(roomId);
     const roomSnapshot = await roomClient.refresh();
