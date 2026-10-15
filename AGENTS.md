@@ -159,7 +159,7 @@ npm run build:standalone    # site estático em game/dist-standalone/
 npm run preview:standalone  # serve o build estático em http://localhost:4173/
 ```
 
-- `game/dist-standalone/` usa caminhos relativos: publique o conteúdo da pasta em qualquer hospedagem estática (GitHub Pages, Vercel), inclusive numa subpasta. O servidor precisa entregar `.wasm` como `application/wasm` (o jogo tem uma alternativa mais lenta quando não entrega).
+- `game/dist-standalone/` usa caminhos relativos: publique o conteúdo da pasta em qualquer hospedagem estática (GitHub Pages, Vercel), inclusive numa subpasta. O servidor precisa entregar `.wasm` como `application/wasm` (o jogo tem uma alternativa mais lenta quando não entrega). Uma Content-Security-Policy sem `'unsafe-eval'` funciona (o Pixi passa para `pixi.js/unsafe-eval` quando `new Function` é recusado), mas o WebAssembly exige ao menos `'wasm-unsafe-eval'` em `script-src`; sem ele, a página mostra o motivo.
 - O modo também é escolhido por `VITE_STANDALONE=true` no build, por `?offline=1` no endereço ou automaticamente quando `/api/coffe/session` não responde.
 - O save fica no navegador e no aparelho do jogador, separado das contas do servidor. Um café aberto em duas abas é recusado na segunda.
 - Os arquivos de `game/src/standalone/generated/` são gerados e ficam fora do Git; `npm run build` e `npm run dev` também os geram. O Vite os importa com `?url`, então o build os publica com o hash do conteúdo no nome (um motor em cache nunca sobrevive à página que espera outro).

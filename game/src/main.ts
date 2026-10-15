@@ -30,6 +30,7 @@ async function start(): Promise<void> {
       }
       document.body.classList.remove('auth-page');
       host.replaceChildren();
+      await allowStrictHosts();
       await import('./play');
       const checkAccess = async () => {
         if (document.hidden) return;
@@ -50,6 +51,17 @@ async function start(): Promise<void> {
   }
 }
 
+/** Hosts whose Content-Security-Policy forbids eval (some embedded and static
+ * hosts) still run Pixi through its eval-free module, a little slower. Pixi
+ * otherwise refuses to create the renderer there. */
+async function allowStrictHosts(): Promise<void> {
+  try {
+    new Function('return 0')();
+  } catch {
+    await import('pixi.js/unsafe-eval');
+  }
+}
+
 /** Plays with the café in the browser (Go/WASM in a worker, save in IndexedDB). */
 async function playOffline(host: HTMLElement, cause?: unknown): Promise<void> {
   host.innerHTML = '<p class="auth-check" role="status">Abrindo o café offline…</p>';
@@ -64,6 +76,7 @@ async function playOffline(host: HTMLElement, cause?: unknown): Promise<void> {
   }
   document.body.classList.remove('auth-page');
   host.replaceChildren();
+  await allowStrictHosts();
   await import('./play');
 }
 
