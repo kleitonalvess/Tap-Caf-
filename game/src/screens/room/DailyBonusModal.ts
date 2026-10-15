@@ -18,7 +18,13 @@ export class DailyBonusModal extends RoomDialog {
   private claiming = false;
   private message = '';
 
-  constructor(private readonly options: { onClaim: () => Promise<DailyClaim>; onClaimed: (claim: DailyClaim) => void; audio?: SoundPlayer }) {
+  constructor(private readonly options: {
+    onClaim: () => Promise<DailyClaim>;
+    onClaimed: (claim: DailyClaim) => void;
+    /** The server's clock: the countdown is to the server's midnight. */
+    now?: () => number;
+    audio?: SoundPlayer;
+  }) {
     super('daily-bonus-modal', 1220, 660, options.audio);
   }
 
@@ -68,7 +74,7 @@ export class DailyBonusModal extends RoomDialog {
     const waiting = !state.claimable;
     this.button({
       label: 'daily-bonus-claim',
-      caption: this.claiming ? 'Coletando…' : waiting ? `Próximo bônus ${untilText(state.nextAt - Date.now())}` : 'Coletar',
+      caption: this.claiming ? 'Coletando…' : waiting ? `Próximo bônus ${untilText(state.nextAt - (this.options.now?.() ?? Date.now()))}` : 'Coletar',
       color: DIALOG_COLORS.green, width: waiting ? 520 : 340, enabled: !waiting && !this.claiming,
       onTap: () => this.confirmKey(),
     }, (this.width - (waiting ? 520 : 340)) / 2, this.height - 136);

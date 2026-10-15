@@ -73,20 +73,24 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 		if json.Unmarshal(op.Body, &command) != nil || command.StoveID == "" {
 			return fail(400, "Pedido inválido.")
 		}
+		var refund int64
 		switch op.Action {
 		case "cook_start":
 			err = StartCooking(s, op.Owner, command.StoveID, command.RecipeID, now)
 		case "cook_serve":
 			err = ServeCooking(s, op.Owner, command.StoveID, now)
 		case "cook_cancel":
-			err = CancelCooking(s, op.Owner, command.StoveID, now)
+			refund, err = CancelCooking(s, op.Owner, command.StoveID, now)
 		case "cook_clean":
 			err = CleanStove(s, op.Owner, command.StoveID, now)
 		case "cook_season":
 			err = SeasonCooking(s, op.Owner, op.User, command.StoveID, now)
 		}
 		if err == nil {
-			body, err = SnapshotCooking(s, op.Owner, now)
+			var snapshot CookingSnapshot
+			snapshot, err = SnapshotCooking(s, op.Owner, now)
+			snapshot.Refund = refund
+			body = snapshot
 		}
 	case "table_clean":
 		var command struct {

@@ -60,6 +60,10 @@ type CookingSnapshot struct {
 	Stoves    []StoveView `json:"stoves"`
 	// Recipe the owner may cook for free right now (emergency help), if any.
 	EmergencyRecipeID string `json:"emergencyRecipeId,omitempty"`
+	// Coins a cancel just returned; only in a cancel's answer. The client shows
+	// this figure, not its own estimate: the refund depends on the instant the
+	// cancel arrives.
+	Refund int64 `json:"refund,omitempty"`
 }
 
 func EnsureStarterStove(s Store, userID string) error {
@@ -359,8 +363,9 @@ func ServeCooking(s Store, userID, stoveID string, now time.Time) error {
 	})
 }
 
-func CancelCooking(s Store, userID, stoveID string, now time.Time) error {
-	return s.Transaction(func(tx Store) error {
+func CancelCooking(s Store, userID, stoveID string, now time.Time) (int64, error) {
+	var refund int64
+	err := s.Transaction(func(tx Store) error {
 		if _, err := ownedStove(tx, userID, stoveID); err != nil {
 			return err
 		}
@@ -372,7 +377,8 @@ func CancelCooking(s Store, userID, stoveID string, now time.Time) error {
 			return ErrCookingCannotCancel
 		}
 		// The coins come back in full during preparation and in part while it cooks.
-		if refund := gamerules.CancelRefund(job.GetInt64("cost_coins"), now.Before(job.GetTime("started_at"))); refund > 0 {
+		refund = gamerules.CancelRefund(job.GetInt64("cost_coins"), now.Before(job.GetTime("started_at")))
+		if refund > 0 {
 			state, err := tx.First(PlayerCollection, Where{"user": userID})
 			if err != nil {
 				return err
@@ -395,6 +401,10 @@ func CancelCooking(s Store, userID, stoveID string, now time.Time) error {
 		}
 		return tx.Delete(job)
 	})
+	if err != nil {
+		return 0, err
+	}
+	return refund, nil
 }
 
 // CleanStove throws a spoiled dish away; the stove can cook again.

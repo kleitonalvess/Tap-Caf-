@@ -150,6 +150,10 @@ const MOBILE_LANDSCAPE_HUD_SCALE = 1.15;
 const ACTION_BAR_UI_SCALE = 1.15;
 /** Isolated renderer preview only; gameplay duration always comes from the server. */
 const LOCAL_COOKING_PREVIEW_MS = 2000;
+/** The daily bonus waits this long for the welcome (and its away summary) before showing anyway. */
+const DAILY_WELCOME_WAIT_MS = 15_000;
+/** A failed or early daily check asks again after this. */
+const DAILY_RETRY_MS = 60_000;
 const LOCAL_COOKING_DURATION_MS = 30_000;
 const COOKING_PROGRESS_SCALE = 1.2;
 const STOVE_MENU_TOP_DROP = 14;
@@ -312,8 +316,12 @@ export class RoomScreen implements Screen {
   private mailModal?: MailModal;
   /** Unclaimed bonus to show once nothing else is open (after the away summary). */
   private pendingDaily?: DailyState;
-  /** Next São Paulo midnight: a long session asks again for the new day's bonus. */
+  /** Next São Paulo midnight (server clock): a long session asks again for the new day's bonus. */
   private dailyNextAt = 0;
+  /** The bonus waits for the owner's first welcome, which brings the away summary
+   * of a sleeping room; a socket that never connects stops holding it at this instant. */
+  private dailyHeldUntil = Date.now() + DAILY_WELCOME_WAIT_MS;
+  private welcomed = false;
   private mailBadge?: { view: Container; label: Text };
   /** Absence summary waiting for the other windows to close; `to` of the last one shown. */
   private pendingAway?: AwaySummary;
@@ -617,7 +625,8 @@ export class RoomScreen implements Screen {
     });
     this.floatingRewards = new FloatingRewards(this.world, { coin: rewardIcon(1), xp: rewardIcon(2) });
     this.view.addChild(this.levelUpToast.view);
-    this.partyBadge.view.position.set(STAGE_WIDTH / 2, 128);
+    // Below the offline note under the top bars, when there is one.
+    this.partyBadge.view.position.set(STAGE_WIDTH / 2, isOffline() ? 176 : 128);
     this.view.addChild(this.partyBadge.view);
     this.audio = options.audio;
     if (options.audioControl) {
@@ -922,6 +931,7 @@ export class RoomScreen implements Screen {
       if (options.roomSnapshot.awaySummary) this.queueAway(options.roomSnapshot.awaySummary);
       // Daily bonus and mail: the owner's own rewards, credited by the server.
       this.dailyModal = new DailyBonusModal({
+        now: () => this.serverNow(),
         onClaim: () => claimDaily(),
         onClaimed: (claim) => {
           this.dailyNextAt = claim.daily.nextAt;
@@ -1004,6 +1014,7 @@ export class RoomScreen implements Screen {
       this.dirt = event.world?.dirt ?? [];
       if (event.world?.street) this.acceptStreet(event.world.street);
       if (event.away) this.queueAway(event.away);
+      this.welcomed = true;
     }
     // Food and dirt events always carry the whole list; an absent field means none.
     if (event.type === 'food') this.foods = event.foods ?? [];
@@ -1894,22 +1905,37 @@ export class RoomScreen implements Screen {
     });
   }
 
-  /** Cancelling throws the dish away: ask first, saying how many coins come back. */
+  /** Cancelling throws the dish away: ask first, saying how many coins come back.
+   * The server decides the refund when the cancel arrives, so the full cost is
+   * only promised for the preparation and the toast shows what it paid. */
   private confirmCancel(stove: RoomItem, job: StoveCooking | undefined): void {
     this.closeStoveActions();
     const percent = this.rules?.stove.cancelRefundPercent ?? 0;
-    const preparing = job ? stoveStatus(job, this.cookingClient?.serverNowMs() ?? Date.now()) === 'preparing' : false;
-    const refund = cancelRefund(job?.costCoins ?? 0, preparing, percent);
-    const message = refund > 0
-      ? `O prato vai para o lixo e ${refund} ${refund === 1 ? 'moeda volta' : 'moedas voltam'} para você (${preparing ? 'o custo todo, porque ainda está no preparo' : `${percent}% do custo`}).`
-      : 'O prato vai para o lixo e as moedas gastas nele não voltam.';
+    const cost = job?.costCoins ?? 0;
+    const preparing = job ? stoveStatus(job, this.serverNow()) === 'preparing' : false;
+    const cooking = cancelRefund(cost, false, percent);
+    const coins = (n: number) => `${n} ${n === 1 ? 'moeda' : 'moedas'}`;
+    const message = preparing && cost > 0
+      ? `O prato vai para o lixo. Ainda no preparo, ${coins(cost)} ${cost === 1 ? 'volta' : 'voltam'} para você; com o fogo já aceso, ${cooking > 0 ? `${coins(cooking)} (${percent}% do custo)` : 'nada'}.`
+      : cooking > 0
+        ? `O prato vai para o lixo e ${coins(cooking)} ${cooking === 1 ? 'volta' : 'voltam'} para você (${percent}% do custo).`
+        : 'O prato vai para o lixo e as moedas gastas nele não voltam.';
     this.confirmDialog.ask({
       title: 'Cancelar o preparo?', message, confirm: 'Cancelar preparo', cancel: 'Continuar', danger: true,
-      onConfirm: () => this.cancelStoveCooking(stove, refund),
+      onConfirm: () => {
+        // The dish may have finished while the dialog was open: then there is nothing to cancel.
+        const current = stove.instanceId ? this.occupiedStoves.get(stove.instanceId) : undefined;
+        const status = current ? stoveStatus(current, this.serverNow()) : undefined;
+        if (status === 'ready' || status === 'spoiled') {
+          this.showCookingProblem('O prato ficou pronto', status === 'ready' ? 'Sirva-o no balcão em vez de cancelar.' : 'Limpe o fogão para cozinhar de novo.');
+          return;
+        }
+        this.cancelStoveCooking(stove);
+      },
     });
   }
 
-  private cancelStoveCooking(stove: RoomItem, refund = 0): void {
+  private cancelStoveCooking(stove: RoomItem): void {
     if (this.cancellingCook) return;
     this.closeStoveActions();
     if (!this.cookingClient || !stove.instanceId) {
@@ -1922,6 +1948,7 @@ export class RoomScreen implements Screen {
       if (this.destroyed) return;
       this.acceptCookingSnapshot(snapshot, false);
       if (this.cookingProcess?.stove === stove) this.clearCookingProcess();
+      const refund = snapshot.refund ?? 0;
       if (refund > 0) {
         const view = this.playerView.view;
         this.floatingRewards.spawn(view.x, view.y, view.zIndex, refund, 0);
@@ -1931,6 +1958,7 @@ export class RoomScreen implements Screen {
       this.cancellingCook = false;
       console.warn('[cooking] não foi possível cancelar', error);
       if (this.destroyed) return;
+      this.showCookingProblem('Não deu para cancelar', error instanceof Error ? error.message : 'Tente de novo.');
       void this.cookingClient!.refresh().then((snapshot) => {
         if (this.destroyed) return;
         this.acceptCookingSnapshot(snapshot, false);
@@ -2272,16 +2300,21 @@ export class RoomScreen implements Screen {
     this.dailyNextAt = 0;
     void loadDaily().then((daily) => {
       if (this.destroyed) return;
-      this.dailyNextAt = daily.nextAt;
+      // A midnight that has not come yet by the server's clock asks again a bit later, never every frame.
+      this.dailyNextAt = daily.nextAt > this.serverNow() ? daily.nextAt : this.serverNow() + DAILY_RETRY_MS;
       if (daily.claimable) this.pendingDaily = daily;
-    }).catch((error: unknown) => console.warn('[bônus diário] indisponível', error));
+    }).catch((error: unknown) => {
+      console.warn('[bônus diário] indisponível', error);
+      if (!this.destroyed) this.dailyNextAt = this.serverNow() + DAILY_RETRY_MS;
+    });
   }
 
   /** Once a day, after "Bem-vindo de volta!" and any level-up. */
   private showPendingDaily(): void {
-    if (this.dailyNextAt > 0 && Date.now() >= this.dailyNextAt) this.checkDaily();
+    if (this.dailyNextAt > 0 && this.serverNow() >= this.dailyNextAt) this.checkDaily();
     const daily = this.pendingDaily;
     if (!daily || !this.dailyModal || this.pendingAway || this.isModalOpen || this.storeBar?.isOpen) return;
+    if (this.realtime && !this.welcomed && Date.now() < this.dailyHeldUntil) return;
     this.pendingDaily = undefined;
     this.closeStoveActions();
     this.dailyModal.show(daily);

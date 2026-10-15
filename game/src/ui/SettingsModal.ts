@@ -118,6 +118,8 @@ export class SettingsModal {
       window.addEventListener('keydown', this.onKeyDown, true);
       window.addEventListener('blur', this.cancelDrag);
     }
+    // The browser leaves fullscreen by itself too (Esc, F11, a system gesture).
+    if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', this.fullscreenChanged);
   }
 
   get isOpen(): boolean { return this.view.visible; }
@@ -440,6 +442,7 @@ export class SettingsModal {
   }
 
   private readonly cancelDrag = (): void => { this.drag = null; };
+  private readonly fullscreenChanged = (): void => { if (!this.disposed) this.refreshButtons(); };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!this.isOpen) return;
@@ -491,6 +494,7 @@ export class SettingsModal {
       window.removeEventListener('keydown', this.onKeyDown, true);
       window.removeEventListener('blur', this.cancelDrag);
     }
+    if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', this.fullscreenChanged);
     this.view.destroy({ children: true });
   }
 }

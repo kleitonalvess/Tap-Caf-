@@ -97,7 +97,7 @@ func serveCooking(app core.App, userID, stoveID string, now types.DateTime) erro
 	return cafe.ServeCooking(pb(app), userID, stoveID, now.Time())
 }
 
-func cancelCooking(app core.App, userID, stoveID string, now types.DateTime) error {
+func cancelCooking(app core.App, userID, stoveID string, now types.DateTime) (int64, error) {
 	return cafe.CancelCooking(pb(app), userID, stoveID, now.Time())
 }
 

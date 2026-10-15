@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"coffe-mania/shared/cafe"
 	"coffe-mania/shared/gamerules"
+	"coffe-mania/shared/gamewire"
 
 	"github.com/pocketbase/pocketbase/tools/types"
 )
@@ -119,8 +121,8 @@ func TestCancellingRefundsTheBatch(t *testing.T) {
 	if got := gold(t, app, owner); got != 1000-pao.CostCoins {
 		t.Fatalf("after starting: %d", got)
 	}
-	if err := cancelCooking(app, owner, stove, t0.Add(time.Second)); err != nil {
-		t.Fatal(err)
+	if refund, err := cancelCooking(app, owner, stove, t0.Add(time.Second)); err != nil || refund != pao.CostCoins {
+		t.Fatalf("cancel while preparing: refund %d, %v", refund, err)
 	}
 	if got := gold(t, app, owner); got != 1000 {
 		t.Fatalf("cancelled while preparing: %d, want 1000", got)
@@ -133,8 +135,8 @@ func TestCancellingRefundsTheBatch(t *testing.T) {
 	if snapshot.Stoves[0].Cooking == nil || snapshot.Stoves[0].Cooking.CostCoins != pao.CostCoins {
 		t.Fatalf("the snapshot does not report the cost: %+v", snapshot.Stoves[0].Cooking)
 	}
-	if err := cancelCooking(app, owner, stove, t0.Add(gamerules.PrepareDuration()+time.Second)); err != nil {
-		t.Fatal(err)
+	if refund, err := cancelCooking(app, owner, stove, t0.Add(gamerules.PrepareDuration()+time.Second)); err != nil || refund != gamerules.CancelRefund(pao.CostCoins, false) {
+		t.Fatalf("cancel while cooking: refund %d, %v", refund, err)
 	}
 	if got, want := gold(t, app, owner), 1000-pao.CostCoins+gamerules.CancelRefund(pao.CostCoins, false); got != want || want == 1000-pao.CostCoins {
 		t.Fatalf("cancelled while cooking: %d, want %d (a partial refund)", got, want)
@@ -145,10 +147,30 @@ func TestCancellingRefundsTheBatch(t *testing.T) {
 	if err := startCooking(app, owner, stove, free.ID, t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := cancelCooking(app, owner, stove, t0.Add(time.Second)); err != nil {
-		t.Fatal(err)
+	if refund, err := cancelCooking(app, owner, stove, t0.Add(time.Second)); err != nil || refund != 0 {
+		t.Fatalf("cancel emergency batch: refund %d, %v", refund, err)
 	}
 	if got := gold(t, app, owner); got != 0 {
 		t.Fatalf("cancelled emergency batch refunded %d", got)
+	}
+}
+
+// The cancel's answer carries the coins actually returned: the client shows
+// that figure, since the refund depends on when the cancel arrives.
+func TestCancelAnswerReportsTheRefund(t *testing.T) {
+	app, owner, stove := newKitchen(t)
+	coxinha := recipe(t, "coxinha")
+	setLevel(t, app, owner, coxinha.Level)
+	setGold(t, app, owner, 1000)
+	body := []byte(`{"stoveId":"` + stove + `","recipeId":"` + coxinha.ID + `"}`)
+	if result := persistenceOperation(app, gamewire.Operation{Owner: owner, User: owner, Action: "cook_start", Body: body}); result.Status != 201 {
+		t.Fatalf("start: %d %s", result.Status, result.Body)
+	}
+	result := persistenceOperation(app, gamewire.Operation{Owner: owner, User: owner, Action: "cook_cancel", Body: body})
+	var answer struct {
+		Refund int64 `json:"refund"`
+	}
+	if result.Status != 200 || json.Unmarshal(result.Body, &answer) != nil || answer.Refund != coxinha.CostCoins {
+		t.Fatalf("cancel answer: %d %s, want refund %d", result.Status, result.Body, coxinha.CostCoins)
 	}
 }

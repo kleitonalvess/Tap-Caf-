@@ -85,7 +85,7 @@ func TestCancelledFreshBatchReturnsTheCharge(t *testing.T) {
 	if err := startCooking(app, owner, stove, "pao_de_queijo", t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := cancelCooking(app, owner, stove, t0.Add(time.Second)); err != nil {
+	if _, err := cancelCooking(app, owner, stove, t0.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if got := roomRecord(t, app, owner).GetInt("fresh_charges"); got != 1 {
@@ -170,7 +170,7 @@ func TestCancelledFreshBatchKeepsTheFarmLimit(t *testing.T) {
 	if _, err := harvestFarm(app, owner, t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := cancelCooking(app, owner, stove, t0.Add(time.Second)); err != nil {
+	if _, err := cancelCooking(app, owner, stove, t0.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if got, limit := roomRecord(t, app, owner).GetInt("fresh_charges"), gamerules.Street().Farm.MaxCharges; got != limit {

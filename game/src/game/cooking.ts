@@ -32,6 +32,8 @@ export interface CookingSnapshot {
   stoves: OwnedStove[];
   /** Recipe the owner may cook for free right now (emergency help). */
   emergencyRecipeId?: string;
+  /** Coins a cancel just returned (only in a cancel's answer). */
+  refund?: number;
 }
 
 const endpoint = '/api/coffe/cooking';

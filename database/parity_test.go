@@ -214,7 +214,8 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 		stove := stoves.Stoves[0].ID
 		cancelled := t0.Add(3 * time.Hour)
 		log("cook to cancel", outcome(cafe.StartCooking(s, owner, stove, "pao_de_queijo", cancelled)))
-		log("cancel while cooking", outcome(cafe.CancelCooking(s, owner, stove, cancelled.Add(gamerules.PrepareDuration()+time.Second))))
+		refund, err := cafe.CancelCooking(s, owner, stove, cancelled.Add(gamerules.PrepareDuration()+time.Second))
+		log("cancel while cooking", map[string]any{"err": outcome(err), "refund": refund})
 		room("refunded")
 	}
 	world("final")
