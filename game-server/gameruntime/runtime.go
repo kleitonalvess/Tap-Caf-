@@ -461,6 +461,7 @@ func (r *room) run() {
 	defer ticker.Stop()
 	stepTimer := time.NewTimer(time.Hour)
 	defer stepTimer.Stop()
+	var lastTick time.Time
 	defer func() {
 		close(r.done)
 		r.manager.mu.Lock()
@@ -493,6 +494,11 @@ func (r *room) run() {
 		case t := <-r.tasks:
 			t.reply <- t.fn(r)
 		case now := <-ticker.C:
+			// A room still frozen for its sleep shifts on join instead.
+			if pause := frozenFor(lastTick, now, r.manager.options.Tick); pause > 0 && r.frozenAt.IsZero() {
+				r.shiftClocks(pause)
+			}
+			lastTick = now
 			for id, p := range r.peers {
 				if p.Closed.Load() {
 					r.leave(id)
@@ -618,20 +624,7 @@ func (r *room) join(p *Peer) error {
 		r.lastPresence = time.Now()
 	}
 	if !r.frozenAt.IsZero() {
-		pause := time.Since(r.frozenAt)
-		for _, npc := range r.actors {
-			npc.due = npc.due.Add(pause)
-			if npc.Action != nil {
-				npc.Action.StartedAt += pause.Milliseconds()
-			}
-			if npc.Move != nil {
-				npc.Move.StartedAt += pause.Milliseconds()
-			}
-			if !npc.patienceUntil.IsZero() {
-				npc.restorePatience(npc.patienceUntil.Add(pause))
-			}
-		}
-		r.spawnAt = r.spawnAt.Add(pause)
+		r.shiftClocks(time.Since(r.frozenAt))
 		r.frozenAt = time.Time{}
 		r.sleepRetry = time.Time{}
 		r.sleepFailures = 0
@@ -654,6 +647,48 @@ func (r *room) join(p *Peer) error {
 	r.send(p, welcome)
 	return nil
 }
+// shiftClocks moves every running timer forward by a pause, so time the room
+// did not run (asleep, or a frozen process) does not expire it all at once.
+func (r *room) shiftClocks(pause time.Duration) {
+	if pause <= 0 {
+		return
+	}
+	for _, a := range r.actors {
+		a.due = a.due.Add(pause)
+		if a.Action != nil {
+			a.Action.StartedAt += pause.Milliseconds()
+		}
+		if a.Move != nil {
+			a.Move.StartedAt += pause.Milliseconds()
+		}
+		if !a.patienceUntil.IsZero() {
+			a.restorePatience(a.patienceUntil.Add(pause))
+		}
+		if !a.fetchAt.IsZero() {
+			a.fetchAt = a.fetchAt.Add(pause)
+		}
+		if !a.doorwaySince.IsZero() {
+			a.doorwaySince = a.doorwaySince.Add(pause)
+		}
+	}
+	r.spawnAt = r.spawnAt.Add(pause)
+}
+
+// freezeGap: ticks this much later than due mean the process was frozen
+// (a laptop asleep, a debugger), not merely busy.
+const freezeGap = 5 * time.Second
+
+// frozenFor is how long the room was frozen between two ticks, if at all.
+func frozenFor(last, now time.Time, tick time.Duration) time.Duration {
+	if last.IsZero() {
+		return 0
+	}
+	if gap := now.Sub(last) - tick; gap > freezeGap {
+		return gap
+	}
+	return 0
+}
+
 func (r *room) leave(id string) {
 	p := r.peers[id]
 	if p == nil {

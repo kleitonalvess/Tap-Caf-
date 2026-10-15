@@ -58,7 +58,8 @@ async function playOffline(host: HTMLElement, cause?: unknown): Promise<void> {
     await startLocalBackend();
   } catch (error) {
     console.error('[offline] o café não abriu', error);
-    renderSessionError(host, cause ?? error);
+    const reason = error instanceof Error ? error.message : 'O café offline não abriu.';
+    renderSessionError(host, new Error(cause ? `O servidor não respondeu, e o café offline não abriu: ${reason}` : reason));
     return;
   }
   document.body.classList.remove('auth-page');

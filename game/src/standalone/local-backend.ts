@@ -287,6 +287,8 @@ export async function startLocalBackend(): Promise<LocalBackend> {
     worker.terminate();
     throw error;
   }
+  // The save made right after opening is stored before the page counts as seen.
+  await writing;
   // A hidden page sleeps the café, as a server room without players does, and
   // the return replays the absence; a hidden tab's timers would not keep time.
   const hide = () => { markSeen(); void backend.suspend(); };

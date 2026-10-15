@@ -28,6 +28,13 @@ export function newest(a: SaveRecord | null, b: SaveRecord | null): SaveRecord |
   return b.savedAt > a.savedAt ? b : a;
 }
 
+/** The save to load: the newer copy of the same café. A backup of another
+ * profile never replaces the primary save, whatever its date. */
+export function pickSave(primary: SaveRecord | null, backup: SaveRecord | null): SaveRecord | null {
+  if (primary && backup && primary.profile.id !== backup.profile.id) return primary;
+  return newest(primary, backup);
+}
+
 export function readStorage(storage: Pick<Storage, 'getItem'> | null): SaveRecord | null {
   try {
     const value: unknown = JSON.parse(storage?.getItem(SAVE_KEY) ?? 'null');
@@ -63,28 +70,37 @@ function safeLocalStorage(): Storage | null {
   try { return window.localStorage; } catch { return null; }
 }
 
-/** IndexedDB first; localStorage when it is missing (some private modes) and for
- * the exit backup. Loading picks whichever copy is newer. */
+const UNREADABLE = 'Não foi possível ler o café salvo neste navegador. Feche outras abas do jogo e tente novamente.';
+
+/** IndexedDB first; localStorage only where IndexedDB does not exist, and for
+ * the exit backup. A browser that has IndexedDB but fails to open or read it
+ * fails here: starting a new café would overwrite the real one. */
 export async function openSaveStore(): Promise<SaveStore> {
   const storage = safeLocalStorage();
   let database: IDBDatabase | null = null;
-  try {
-    database = await openDatabase();
-  } catch (error) {
-    console.warn('[offline] IndexedDB indisponível; o save fica no localStorage', error);
+  if (typeof indexedDB !== 'undefined') {
+    try {
+      database = await openDatabase();
+    } catch (error) {
+      console.warn('[offline] IndexedDB não abriu', error);
+      throw new Error(UNREADABLE);
+    }
   }
   return {
     async load() {
       let stored: SaveRecord | null = null;
       if (database) {
+        let value: unknown;
         try {
-          const value: unknown = await request(database.transaction(OBJECTS).objectStore(OBJECTS).get('main'));
-          if (validRecord(value)) stored = value;
+          value = await request(database.transaction(OBJECTS).objectStore(OBJECTS).get('main'));
         } catch (error) {
           console.warn('[offline] save do IndexedDB ilegível', error);
+          throw new Error(UNREADABLE);
         }
+        if (validRecord(value)) stored = value;
+        else if (value !== undefined) throw new Error(UNREADABLE);
       }
-      return newest(stored, readStorage(storage));
+      return pickSave(stored, readStorage(storage));
     },
     async save(record) {
       if (database) {

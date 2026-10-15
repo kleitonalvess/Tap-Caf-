@@ -73,6 +73,10 @@ async function start(message: Extract<ToEngine, { type: 'start' }>): Promise<voi
   });
   if (failure) throw new Error(failure);
   engine = api;
+  // Saved before 'started': opening may have stamped the absence of a tab
+  // closed without its last save, and the page marks itself seen only after.
+  dirty = true;
+  await flush();
 }
 
 function handle(message: ToEngine): void {

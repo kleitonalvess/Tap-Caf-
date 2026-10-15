@@ -3,6 +3,7 @@ package standalone
 import (
 	"context"
 	"encoding/json"
+	"runtime"
 	"testing"
 	"time"
 
@@ -295,5 +296,73 @@ func TestClosedConnectionLeavesTheRoom(t *testing.T) {
 	}
 	if humans != 1 {
 		t.Fatalf("%d humans in the room, want 1", humans)
+	}
+}
+
+func TestSleptFromNeedsTheOfflineMinimumAndSkipsCountedPauses(t *testing.T) {
+	t0 := time.Now().Round(0)
+	if _, slept := sleptFrom(t0, t0.Add(time.Minute), time.Time{}); slept {
+		t.Fatal("a one-minute gap counted as an absence")
+	}
+	from, slept := sleptFrom(t0, t0.Add(6*time.Hour), time.Time{})
+	if !slept || !from.Equal(t0) {
+		t.Fatalf("six hours asleep: %v from %v", slept, from)
+	}
+	// A hidden page that came back an hour ago already counted its absence.
+	if _, slept := sleptFrom(t0, t0.Add(6*time.Hour), t0.Add(5*time.Hour+59*time.Minute)); slept {
+		t.Fatal("an absence counted by the resume was counted again")
+	}
+}
+
+func TestSuspendAtStampsTheInstantTheCafeStopped(t *testing.T) {
+	store := cafe.NewMemoryStore()
+	e := newEngine(t, store, time.Time{})
+	c := open(t, e)
+	c.send(gamewire.Command{Type: "join", Ticket: "local"})
+	c.wait("welcome")
+	stopped := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Millisecond)
+	if err := e.SuspendAt(context.Background(), stopped); err != nil {
+		t.Fatal(err)
+	}
+	room, _ := store.First("player_rooms", cafe.Where{"user": testProfile.ID})
+	if !room.GetTime("slept_at").Equal(stopped) {
+		t.Fatalf("slept_at = %v, want %v", room.GetTime("slept_at"), stopped)
+	}
+	e.Resume()
+	welcome := c.wait("welcome")
+	if welcome.Away == nil || welcome.Away.From != stopped.UnixMilli() {
+		t.Fatalf("away = %+v", welcome.Away)
+	}
+	// The next pause is stamped now again.
+	if err := e.Suspend(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	room, _ = store.First("player_rooms", cafe.Where{"user": testProfile.ID})
+	if time.Since(room.GetTime("slept_at")) > time.Minute {
+		t.Fatalf("a plain pause kept the old instant: %v", room.GetTime("slept_at"))
+	}
+}
+
+// Every connection the client closes lets go of its room peer and forwarder.
+func TestClosedConnectionsDoNotLeakGoroutines(t *testing.T) {
+	e := newEngine(t, cafe.NewMemoryStore(), time.Time{})
+	warm := open(t, e)
+	warm.send(gamewire.Command{Type: "join", Ticket: "local"})
+	warm.wait("welcome")
+	warm.conn.Close()
+	time.Sleep(200 * time.Millisecond)
+	before := runtime.NumGoroutine()
+	for i := 0; i < 30; i++ {
+		c := open(t, e)
+		c.send(gamewire.Command{Type: "join", Ticket: "local"})
+		c.wait("welcome")
+		c.conn.Close()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for runtime.NumGoroutine() > before+2 && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if after := runtime.NumGoroutine(); after > before+2 {
+		t.Fatalf("goroutines grew from %d to %d after 30 closed connections", before, after)
 	}
 }

@@ -78,7 +78,9 @@ func (c *Connection) Close() {
 	delete(c.engine.conns, c)
 	c.engine.mu.Unlock()
 	if peer != nil {
-		peer.Closed.Store(true)
+		// Kick also stops the peer's forwarder; c.peer is already cleared, so
+		// it does not end the connection a second time.
+		peer.Kick()
 		if m := c.engine.current(); m != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			m.Leave(ctx, peer)

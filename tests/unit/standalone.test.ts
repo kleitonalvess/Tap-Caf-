@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { LocalBackend, type EnginePort } from '../../game/src/standalone/local-backend';
 import { offlineRequested } from '../../game/src/standalone/mode';
 import type { FromEngine, ToEngine } from '../../game/src/standalone/protocol';
-import { newest, newProfileId, readStorage, SAVE_KEY, validRecord, type SaveRecord } from '../../game/src/standalone/save-store';
+import { newest, newProfileId, pickSave, readStorage, SAVE_KEY, validRecord, type SaveRecord } from '../../game/src/standalone/save-store';
 
 /** The worker side of the protocol, driven by the test. */
 function fakeEngine() {
@@ -44,6 +44,13 @@ describe('save do navegador', () => {
     expect(newest(null, record(3))?.savedAt).toBe(3);
     expect(newest(record(3), null)?.savedAt).toBe(3);
     expect(newest(null, null)).toBeNull();
+  });
+
+  it('nunca troca o café principal por uma cópia de outro perfil', () => {
+    const primary = record(5, 'aaaaaaaaaaaaaaa');
+    expect(pickSave(primary, record(9, 'bbbbbbbbbbbbbbb'))).toBe(primary);
+    expect(pickSave(primary, record(9, 'aaaaaaaaaaaaaaa'))?.savedAt).toBe(9);
+    expect(pickSave(null, record(9, 'bbbbbbbbbbbbbbb'))?.savedAt).toBe(9);
   });
 
   it('ignora uma cópia ilegível no localStorage', () => {

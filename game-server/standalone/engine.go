@@ -15,8 +15,12 @@ import (
 
 	"coffe-mania/game-server/gameruntime"
 	"coffe-mania/shared/cafe"
+	"coffe-mania/shared/gamerules"
 	"coffe-mania/shared/gamewire"
 )
+
+// watchEvery: how often the engine compares the wall clock with the last check.
+const watchEvery = 5 * time.Second
 
 // Profile is the local player: one café per save, never a server account.
 type Profile struct {
@@ -47,6 +51,12 @@ type Engine struct {
 	suspended bool
 	conns     map[*Connection]bool
 	peers     int
+	// The instant a pause stamps as slept_at when it is noticed late (zero: now).
+	sleepAt time.Time
+	// The last Resume: the absence before it was already counted.
+	resumedAt time.Time
+	stop      chan struct{}
+	stopOnce  sync.Once
 }
 
 // New opens a café loaded from a save (or a new MemoryStore). lastSeen is
@@ -58,13 +68,65 @@ func New(store *cafe.MemoryStore, profile Profile, lastSeen time.Time, options g
 	if profile.Name == "" {
 		profile.Name = "Jogador"
 	}
-	e := &Engine{store: store, profile: profile, options: options, hooks: hooks, conns: map[*Connection]bool{}}
+	e := &Engine{store: store, profile: profile, options: options, hooks: hooks, conns: map[*Connection]bool{}, stop: make(chan struct{})}
 	store.OnCommit = e.committed
 	if err := e.restore(lastSeen); err != nil {
 		return nil, err
 	}
-	e.manager = gameruntime.New(storage{store}, options)
+	e.manager = gameruntime.New(e.storage(), options)
+	go e.watch()
 	return e, nil
+}
+
+func (e *Engine) storage() storage { return storage{store: e.store, now: e.sleepClock} }
+
+func (e *Engine) sleepClock() time.Time {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if !e.sleepAt.IsZero() {
+		return e.sleepAt
+	}
+	return time.Now()
+}
+
+// sleptFrom: the device slept with the page open when the wall clock jumped
+// past the offline minimum since the last check; the absence starts there,
+// unless a Resume after it already counted it (a hidden page that came back).
+func sleptFrom(last, now, resumed time.Time) (time.Time, bool) {
+	if resumed.After(last) {
+		last = resumed
+	}
+	minimum := time.Duration(gamerules.Offline().MinAwaySeconds) * time.Second
+	return last, now.Sub(last) >= minimum
+}
+
+// watch notices the device sleeping with the page in front: no hidden event
+// arrives, so the café would never count the absence. Wall-clock readings
+// (Round(0) drops the monotonic part, which may stop while asleep) find the
+// gap; the café then sleeps at its start and wakes now, as a hidden page does.
+func (e *Engine) watch() {
+	ticker := time.NewTicker(watchEvery)
+	defer ticker.Stop()
+	last := time.Now().Round(0)
+	for {
+		select {
+		case <-e.stop:
+			return
+		case <-ticker.C:
+		}
+		now := time.Now().Round(0)
+		e.mu.Lock()
+		suspended, resumed := e.suspended, e.resumedAt
+		e.mu.Unlock()
+		if from, slept := sleptFrom(last, now, resumed); slept && !suspended {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			if e.SuspendAt(ctx, from) == nil {
+				e.Resume()
+			}
+			cancel()
+		}
+		last = now
+	}
 }
 
 func (e *Engine) committed(collections []string) {
@@ -132,13 +194,18 @@ func (e *Engine) isSuspended() bool {
 // Suspend puts the café to sleep while the page is hidden: the room saves
 // its customers and stamps slept_at, as a room without players does on the
 // server. Connections stay open and rejoin on Resume with a new welcome.
-func (e *Engine) Suspend(ctx context.Context) error {
+func (e *Engine) Suspend(ctx context.Context) error { return e.SuspendAt(ctx, time.Time{}) }
+
+// SuspendAt is Suspend for a pause noticed late: slept_at is the instant the
+// café actually stopped (zero: now).
+func (e *Engine) SuspendAt(ctx context.Context, at time.Time) error {
 	e.mu.Lock()
 	if e.suspended {
 		e.mu.Unlock()
 		return nil
 	}
 	e.suspended = true
+	e.sleepAt = at
 	m := e.manager
 	e.manager = nil
 	conns := make([]*Connection, 0, len(e.conns))
@@ -149,7 +216,11 @@ func (e *Engine) Suspend(ctx context.Context) error {
 	for _, c := range conns {
 		c.detach()
 	}
-	return m.Close(ctx)
+	err := m.Close(ctx)
+	e.mu.Lock()
+	e.sleepAt = time.Time{}
+	e.mu.Unlock()
+	return err
 }
 
 // Resume wakes the café: joined connections enter the room again, which
@@ -161,7 +232,8 @@ func (e *Engine) Resume() {
 		return
 	}
 	e.suspended = false
-	e.manager = gameruntime.New(storage{e.store}, e.options)
+	e.resumedAt = time.Now().Round(0)
+	e.manager = gameruntime.New(e.storage(), e.options)
 	conns := make([]*Connection, 0, len(e.conns))
 	for c := range e.conns {
 		conns = append(conns, c)
@@ -174,6 +246,7 @@ func (e *Engine) Resume() {
 
 // Close stops the café for good, saving the room first.
 func (e *Engine) Close(ctx context.Context) error {
+	e.stopOnce.Do(func() { close(e.stop) })
 	err := e.Suspend(ctx)
 	e.mu.Lock()
 	conns := make([]*Connection, 0, len(e.conns))
@@ -202,8 +275,12 @@ func (e *Engine) ticket() gamewire.Ticket {
 	return t
 }
 
-// storage is the room simulation's persistence, in the same process.
-type storage struct{ store cafe.Store }
+// storage is the room simulation's persistence, in the same process. now is
+// when a sleeping room says it fell asleep.
+type storage struct {
+	store cafe.Store
+	now   func() time.Time
+}
 
 func (s storage) Load(_ context.Context, id string) (gamewire.Seed, error) {
 	return cafe.LoadSeed(s.store, id, time.Now())
@@ -213,7 +290,7 @@ func (s storage) Load(_ context.Context, id string) (gamewire.Seed, error) {
 func (s storage) Active(context.Context, string, int) error { return nil }
 
 func (s storage) Sleep(_ context.Context, id string, state gamewire.Sleep) error {
-	return cafe.SaveDormant(s.store, id, state, time.Now())
+	return cafe.SaveDormant(s.store, id, state, s.now())
 }
 
 func (s storage) Operate(_ context.Context, op gamewire.Operation) (gamewire.Result, error) {
