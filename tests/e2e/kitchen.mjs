@@ -218,11 +218,13 @@ try {
   const foodsBefore = (await kitchen()).foods.length;
   await tapStove();
   await game.waitFor((count) => window.__kitchen.foods.length > count && window.__kitchen.foods.at(-1).length > 0, foodsBefore, 60000);
-  const counterCheck = await game.room(async () => {
+  const counterCheck = await game.room(async (count) => {
     const screen = window.__coffeMania.screens.active;
     const snapshot = await screen.cookingClient.refresh();
-    return { emergency: snapshot.emergencyRecipeId ?? null, gold: screen.roomSnapshot.playerState.gold, food: window.__kitchen.foods.at(-1) };
-  });
+    // The serve's own event: a seated customer may reserve a portion right after it.
+    const food = window.__kitchen.foods.slice(count).find((list) => list.length > 0);
+    return { emergency: snapshot.emergencyRecipeId ?? null, gold: screen.roomSnapshot.playerState.gold, food };
+  }, foodsBefore);
   const [served] = counterCheck.food;
   run.check(counterCheck.food.length === 1 && served.recipeId === pao.id && served.servings === pao.servings + seasonBonus && served.counterId === furniture.counter,
     `o balcão recebe as ${pao.servings + seasonBonus} porções`, counterCheck.food);
@@ -273,7 +275,8 @@ try {
   const mergeFrom = (await kitchen()).foods.length;
   await tapStove();
   await game.waitFor((count) => window.__kitchen.foods.length > count, mergeFrom, 60000);
-  const merged = (await kitchen()).foods.at(-1);
+  // The serve's own event, as in step 5.
+  const merged = (await kitchen()).foods[mergeFrom];
   run.check(merged.length === 1 && merged[0].id === left[0].id && merged[0].servings === left[0].servings + pao.servings, 'servir a mesma receita soma as porções no balcão', { before: left, after: merged });
 
   // 8. Outra receita com o balcão ocupado: o servidor recusa e o prato fica no fogão.
@@ -296,9 +299,10 @@ try {
     const screen = window.__coffeMania.screens.active;
     const [current] = screen.occupiedStoves.values();
     const ready = Date.parse(current.readyAt.replace(' ', 'T'));
-    return (screen.cookingClient.serverNowMs() - ready) / (Date.parse(current.spoilsAt.replace(' ', 'T')) - ready);
+    // The same clock the screen used to raise the flag.
+    return (screen.serverNow() - ready) / (Date.parse(current.spoilsAt.replace(' ', 'T')) - ready);
   });
-  run.check(urgentAt > 0.6 && urgentAt < 1, 'o prato pronto fica urgente perto de estragar', urgentAt);
+  run.check(urgentAt >= 0.6 && urgentAt < 1, 'o prato pronto fica urgente perto de estragar', urgentAt);
   await game.shot('11-pronto-urgente');
   const spoiledNotice = await notice(/estragou/, (bolo.spoilSeconds + 30) * 1000);
   run.check(spoiledNotice === 'Um prato estragou no fogão! Clique nele para limpar.', 'o dono é avisado quando o prato estraga', spoiledNotice);
