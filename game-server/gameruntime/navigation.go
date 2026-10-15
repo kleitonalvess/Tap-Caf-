@@ -209,3 +209,33 @@ func direction(from, to Tile) int {
 		return 3
 	}
 }
+
+func line(from, to Tile) []Tile {
+	result := []Tile{}
+	for from != to {
+		if from.X != to.X {
+			if from.X < to.X {
+				from.X++
+			} else {
+				from.X--
+			}
+		} else {
+			if from.Y < to.Y {
+				from.Y++
+			} else {
+				from.Y--
+			}
+		}
+		result = append(result, from)
+	}
+	return result
+}
+
+// Moving between the two sidewalks stays outside both walls.
+func streetLine(from, to Tile) []Tile {
+	if from.X <= 0 && to.X <= 0 || from.Y <= 0 && to.Y <= 0 {
+		return line(from, to)
+	}
+	corner := Tile{X: -1, Y: -1}
+	return append(line(from, corner), line(corner, to)...)
+}

@@ -1,7 +1,7 @@
 package migrations
 
 import (
-	"coffe-mania/database/npcappearance"
+	"coffe-mania/shared/npcappearance"
 
 	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"

@@ -43,7 +43,7 @@
   };
 
   const titlebar = make('header', 'app-titlebar',
-    `<div class="app-brand"><span class="brand-mark" data-icon="box"></span><strong>Asset Studio</strong><span class="brand-project">Coffe Mania</span></div><div class="local-badge">${icon('shield-check')}Local e offline</div>`);
+    `<div class="app-brand"><span class="brand-mark" data-icon="box"></span><strong>Asset Studio</strong><span class="brand-project">Coffe Mania</span></div><a class="studio-link" href="sfx-slicer.html">Recortador de SFX</a><div class="local-badge">${icon('shield-check')}Local e offline</div>`);
   document.body.prepend(titlebar);
   const tabs = document.querySelector('nav');
   tabs.className = 'workspace-tabs';

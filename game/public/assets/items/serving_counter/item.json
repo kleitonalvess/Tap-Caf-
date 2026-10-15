@@ -1,0 +1,14 @@
+{
+  "id": 3080000,
+  "classname": "serving_counter",
+  "name": "Balcão de Servir",
+  "type": 3,
+  "kind": "counter",
+  "priceGold": 150,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 52,
+  "placeholder": true,
+  "parts": []
+}

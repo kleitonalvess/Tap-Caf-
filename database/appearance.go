@@ -3,8 +3,8 @@ package main
 import (
 	"net/http"
 
-	"coffe-mania/database/appearance"
 	"coffe-mania/database/playerstate"
+	"coffe-mania/shared/appearance"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )

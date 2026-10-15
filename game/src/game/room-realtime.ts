@@ -1,26 +1,50 @@
 import type { CookingSnapshot } from './cooking';
 import type { RoomUnit } from './room-inventory';
+import type { StreetState } from './street';
+import type { AwaySummary } from './away';
 import type { Tile } from '../world/iso';
+import { apiFetch, openRoomSocket, type RoomSocket } from './backend';
 
-export interface SharedFood { id: string; recipeId: string }
-export interface SharedAction { kind: 'cooking' | 'serving' | 'seated' | 'eating'; stoveId?: string; startedAt: number; duration: number }
-export interface SharedEmotion { id: string; kind: 'satisfied' | 'dissatisfied'; startedAt: number; duration: number }
+/** fresh: servings made with farm ingredients (they pay a bonus). */
+export interface SharedFood { id: string; recipeId: string; servings?: number; counterId?: string; fresh?: number }
+/** Plates left on a table; a dirty table seats nobody until it is cleared. */
+export interface SharedDirt { tableId: string; plates: number; since: number }
+/** How long a seated customer still waits for food. */
+export interface SharedPatience { startedAt: number; duration: number }
+/** Credited by the server when the customer received the serving; the HUD refresh comes from the same save. */
+export interface SharedPayment {
+  /** coins is the total credited; tip (waiter or party) and freshCoins (farm) are parts of it. */
+  actorId?: string; recipeId: string; coins: number; tip?: number; freshCoins?: number; freshXp?: number; freshLeft?: number; xp: number; level: number;
+  levelUp?: boolean; levelReward?: number; servingsLeft: number; popularityTenths: number;
+}
+/** fetching: a customer without a waiter fetching a serving from the counter. */
+export interface SharedAction { kind: 'cooking' | 'serving' | 'cleaning' | 'seated' | 'eating' | 'fetching'; stoveId?: string; startedAt: number; duration: number }
+export interface SharedEmotion { id: string; kind: 'satisfied' | 'dissatisfied' | 'neutral'; startedAt: number; duration: number }
 export interface SharedActor {
-  id: string; kind?: 'human' | 'npc'; name?: string; appearance?: string;
+  id: string; kind?: 'human' | 'npc' | 'staff'; name?: string; appearance?: string;
   tx: number; ty: number; direction: number; outside: boolean; state: string;
   move?: { from: Tile; to: Tile; startedAt: number; duration: number };
   chairId?: string; tableId?: string; food?: SharedFood; actionRemaining?: number;
-  action?: SharedAction; emotion?: SharedEmotion;
+  action?: SharedAction; emotion?: SharedEmotion; patience?: SharedPatience;
+  /** Came in while nothing could be served: leaving unserved costs nothing. */
+  browsing?: boolean;
+  /** Staff only. */
+  role?: 'waiter' | 'cleaner';
 }
 export interface SharedWorld {
   roomId: string; revision: number; tilesX: number; tilesY: number;
-  units: RoomUnit[]; foods: SharedFood[]; cooking?: CookingSnapshot;
+  units: RoomUnit[]; foods: SharedFood[]; dirt?: SharedDirt[]; cooking?: CookingSnapshot; street?: StreetState;
 }
 export interface RoomEvent {
-  type: 'welcome' | 'actors' | 'world' | 'food' | 'ack' | 'error'; epoch: string; seq: number; serverNow: number;
+  type: 'welcome' | 'actors' | 'world' | 'food' | 'dirt' | 'payment' | 'ack' | 'error'; epoch: string; seq: number; serverNow: number;
   selfId?: string; world?: SharedWorld; actors?: SharedActor[]; removed?: string[];
-  units?: RoomUnit[]; revision?: number; foods?: SharedFood[]; cooking?: CookingSnapshot;
+  units?: RoomUnit[]; revision?: number;
+  /** Set on a world event when the café grew (expansion) or a street building changed. */
+  tilesX?: number; tilesY?: number; street?: StreetState;
+  foods?: SharedFood[]; dirt?: SharedDirt[]; cooking?: CookingSnapshot; payment?: SharedPayment;
   requestId?: string; message?: string;
+  /** Welcome to the owner only: what the café did while they were away. */
+  away?: AwaySummary;
 }
 
 export interface RoomLatency { type: 'latency'; rttMs: number }
@@ -31,7 +55,7 @@ export class RoomRealtime {
   pingMs: number | null = null;
   selfId = '';
   readonly actors = new Map<string, SharedActor>();
-  private socket?: WebSocket;
+  private socket?: RoomSocket;
   private timer?: ReturnType<typeof setTimeout>;
   private stopped = false;
   private generation = 0;
@@ -47,18 +71,20 @@ export class RoomRealtime {
   onEvent(listener: (event: RoomEvent) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   onStatus(listener: (connected: boolean) => void): () => void { this.statuses.add(listener); return () => this.statuses.delete(listener); }
   serverNowMs(): number { return this.serverAnchor + performance.now() - this.localAnchor; }
+  /** False until the first event has synced the clock. */
+  get hasClock(): boolean { return this.serverAnchor > 0; }
   async connect(): Promise<void> {
     if (this.stopped) return;
     const generation = ++this.generation;
     try {
-      const response = await fetch('/api/coffe/game-ticket', { method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      const response = await apiFetch('/api/coffe/game-ticket', { method: 'POST', credentials: 'same-origin', cache: 'no-store',
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roomId: this.roomId }), signal: AbortSignal.timeout(10000) });
       if (response.status === 401) { this.destroy(); window.location.replace('/'); return; }
       if (!response.ok) throw new Error('Quarto indisponível.');
       const { ticket } = await response.json() as { ticket: string };
       if (this.stopped || generation !== this.generation) return;
       const address = new URL('/game/ws', window.location.href); address.protocol = address.protocol === 'https:' ? 'wss:' : 'ws:';
-      const socket = new WebSocket(address.href); this.socket = socket;
+      const socket = openRoomSocket(address.href); this.socket = socket;
       let joined = false;
       const timeout = setTimeout(() => { if (!joined) socket.close(); }, 15000);
       socket.onopen = () => socket.send(JSON.stringify({ type: 'join', ticket }));
@@ -84,7 +110,7 @@ export class RoomRealtime {
           this.serverAnchor = event.serverNow; this.localAnchor = performance.now();
           for (const state of event.actors ?? []) {
             const old = this.actors.get(state.id);
-            this.actors.set(state.id, { ...old, ...state, move: state.move, chairId: state.chairId, tableId: state.tableId, food: state.food, action: state.action, emotion: state.emotion });
+            this.actors.set(state.id, { ...old, ...state, move: state.move, chairId: state.chairId, tableId: state.tableId, food: state.food, action: state.action, emotion: state.emotion, patience: state.patience });
           }
           for (const id of event.removed ?? []) this.actors.delete(id);
           if (event.requestId) {

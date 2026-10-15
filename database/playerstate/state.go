@@ -1,86 +1,37 @@
-// Package playerstate owns the persisted HUD snapshot. Percentages and emotion
-// frames are presentation data and deliberately aren't stored in SQLite.
+// Package playerstate is the PocketBase side of the player's HUD values: the
+// rules live in shared/cafe; this package adds the server-only validation.
 package playerstate
 
 import (
-	"database/sql"
-	"errors"
-
-	"coffe-mania/database/appearance"
+	"coffe-mania/database/pbstore"
+	"coffe-mania/shared/appearance"
+	"coffe-mania/shared/cafe"
 
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/core"
 )
 
-const Collection = "player_state"
-const DefaultCafeName = "Coffe Mania"
+const Collection = cafe.PlayerCollection
+const DefaultCafeName = cafe.DefaultCafeName
+const StarterCash = cafe.StarterCash
 
-type Resource struct {
-	Current float64 `json:"current"`
-	Maximum float64 `json:"maximum"`
-}
+type Resource = cafe.Resource
+type Snapshot = cafe.PlayerSnapshot
+type Progress = cafe.Progress
 
-type Snapshot struct {
-	Appearance   string   `json:"appearance"`
-	CafeName     string   `json:"cafeName"`
-	Cash         int64    `json:"cash"`
-	Gold         int64    `json:"gold"`
-	Level        int      `json:"level"`
-	Experience   Resource `json:"experience"`
-	Energy       Resource `json:"energy"`
-	Crates       Resource `json:"crates"`
-	Satisfaction Resource `json:"satisfaction"`
-}
-
-// Initial resources for newly provisioned players.
+// NewRecord holds the initial resources of a new player (migrations backfill with it).
 func NewRecord(collection *core.Collection, userID string) *core.Record {
 	record := core.NewRecord(collection)
-	record.Load(map[string]any{
-		"cafe_name": DefaultCafeName,
-		"user":      userID, "cash": 1000, "gold": 100, "level": 1,
-		"experience_current": 2500, "experience_max": 10000,
-		"energy_current": 50, "energy_max": 50,
-		"crates_current": 4, "crates_max": 4,
-		"satisfaction_current_tenths": 800, "satisfaction_max_tenths": 1050,
-	})
+	record.Load(cafe.NewPlayerFields(userID))
 	return record
 }
 
-func View(record *core.Record) Snapshot {
-	resource := func(current, maximum string, divisor float64) Resource {
-		return Resource{record.GetFloat(current) / divisor, record.GetFloat(maximum) / divisor}
-	}
-	return Snapshot{
-		Appearance: record.GetString("appearance"),
-		CafeName:   record.GetString("cafe_name"),
-		Cash:       record.GetInt64("cash"), Gold: record.GetInt64("gold"), Level: record.GetInt("level"),
-		Experience:   resource("experience_current", "experience_max", 1),
-		Energy:       resource("energy_current", "energy_max", 1),
-		Crates:       resource("crates_current", "crates_max", 1),
-		Satisfaction: resource("satisfaction_current_tenths", "satisfaction_max_tenths", 10),
-	}
-}
+func View(record *core.Record) Snapshot { return cafe.PlayerView(pbstore.Wrap(record)) }
 
-// Existing players cost one indexed lookup; new accounts are provisioned once.
-// Recheck inside the transaction so simultaneous tabs cannot create duplicates.
+// GetOrCreate finds the player's state and provisions a new player once.
 func GetOrCreate(app core.App, userID string) (*core.Record, error) {
-	record, err := app.FindFirstRecordByData(Collection, "user", userID)
-	if err == nil || !errors.Is(err, sql.ErrNoRows) {
-		return record, err
-	}
-	err = app.RunInTransaction(func(txApp core.App) error {
-		record, err = txApp.FindFirstRecordByData(Collection, "user", userID)
-		if err == nil || !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		collection, err := txApp.FindCollectionByNameOrId(Collection)
-		if err != nil {
-			return err
-		}
-		record = NewRecord(collection, userID)
-		return txApp.Save(record)
-	})
-	return record, err
+	record, err := cafe.GetOrCreatePlayer(pbstore.New(app), userID)
+	return pbstore.Unwrap(record), err
 }
 
 // Field validation enforces integers/nonnegative values; these cross-field

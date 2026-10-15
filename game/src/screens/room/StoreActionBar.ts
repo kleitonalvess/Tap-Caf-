@@ -14,6 +14,8 @@ export interface StoreActions {
   onInventoryToggle(): void;
   onDragStart?(entry: StoreEntry, event: FederatedPointerEvent): void;
   onDragEnd?(event: FederatedPointerEvent): void;
+  /** Opens the Expansão window (owner only). */
+  onExpand?(): void;
 }
 
 /** Visible silhouette of cafe_action_bar.png, excluding its transparent canvas. */
@@ -50,6 +52,8 @@ const TOP_TAB_ACTIVE_ICON_SCALE = 1.358;
 const TOP_TAB_EXPANDED_ICON_SIZE_MULTIPLIER = 1.1025;
 const TOP_TAB_ICON_PADDING = 1 / MAIN_ACTION_BAR_SCALE;
 const TOP_TABS = ['news', 'shop', 'inventory'] as const;
+const EXPAND_BUTTON_WIDTH = 190;
+const EXPAND_BUTTON_HEIGHT = 58;
 
 /** Store category toolbar: room stays visible, only the bottom toolbar swaps. */
 export class StoreActionBar {
@@ -249,11 +253,20 @@ export class StoreActionBar {
     close.label = 'store-close-button';
     close.position.set(confirmX, 8);
     content.addChild(close);
+    let headerRight = confirmX - close.width / 2;
+    let messageRight = barWidth - 12;
     if (storeToolbarTextures) {
       const register = this.createButton(storeToolbarTextures.cashRegister, CLOSE_BUTTON_SIZE * 0.81, () => {});
       register.label = 'store-cash-register-icon';
       register.position.set(confirmX - close.width / 2 - register.width / 2 - 8, 8);
       content.addChild(register);
+      headerRight = register.x - register.width / 2;
+    }
+    if (actions?.onExpand) {
+      const expand = this.expandButton(() => actions.onExpand?.());
+      expand.position.set(headerRight - 12 - EXPAND_BUTTON_WIDTH / 2, 8);
+      content.addChild(expand);
+      messageRight = expand.x - EXPAND_BUTTON_WIDTH / 2 - 12;
     }
     if (actions) {
       if (topButtonTexture) {
@@ -352,11 +365,42 @@ export class StoreActionBar {
         });
       }
       const messageX = TOP_TAB_LEFT + TOP_TABS.length * (topTabWidth + TOP_TAB_GAP) + 12;
-      this.message = new Text({ text: 'Selecione um item. Alt + arraste para mover.', style: { fontFamily: FONT_FAMILY, fontSize: 16, fill: 0xffffff, stroke: { color: 0x38210e, width: 3 }, wordWrap: true, wordWrapWidth: barWidth - messageX - 12 } });
-      this.message.position.set(messageX, -30); this.message.eventMode = 'none'; this.message.label = 'store-status'; content.addChild(this.message);
+      this.message = new Text({ text: 'Selecione um item. Alt + arraste para mover.', style: { fontFamily: FONT_FAMILY, fontSize: 16, fill: 0xffffff, stroke: { color: 0x38210e, width: 3 }, wordWrap: true, wordWrapWidth: messageRight - messageX } });
+      // Anchored at its base: a wrapped second line grows upwards, never over the categories.
+      this.message.anchor.set(0, 1); this.message.position.set(messageX, -10); this.message.eventMode = 'none'; this.message.label = 'store-status'; content.addChild(this.message);
       this.syncTopTabs.forEach((sync) => sync());
     }
     this.view.addChild(content);
+  }
+
+  /** "Expandir café": a purple pill with the growing-floor glyph, centred on its position. */
+  private expandButton(onTap: () => void): Container {
+    const button = new Container();
+    button.label = 'store-expand-button';
+    const w = EXPAND_BUTTON_WIDTH;
+    const h = EXPAND_BUTTON_HEIGHT;
+    const face = new Graphics()
+      .roundRect(-w / 2, -h / 2, w, h, h / 2).fill(0x5b3596)
+      .roundRect(-w / 2 + 3, -h / 2 + 3, w - 6, h - 8, h / 2 - 3).fill(0x7b4fc9);
+    const glyph = new Graphics()
+      .moveTo(-w / 2 + 34, -14).lineTo(-w / 2 + 58, -2).lineTo(-w / 2 + 34, 10).lineTo(-w / 2 + 10, -2).closePath()
+      .fill(0xe6dafa).stroke({ color: 0xffffff, width: 2 })
+      .moveTo(-w / 2 + 34, -20).lineTo(-w / 2 + 34, -26).moveTo(-w / 2 + 62, -2).lineTo(-w / 2 + 68, -2)
+      .stroke({ color: 0xffffff, width: 3, cap: 'round' });
+    const label = new Text({ text: 'Expandir café', style: { fontFamily: FONT_FAMILY, fontSize: 21, fontWeight: '700', fill: 0xffffff, stroke: { color: 0x3b1f6b, width: 3 } } });
+    label.anchor.set(0.5);
+    label.position.set(18, -1);
+    if (label.width > w - 80) label.scale.set((w - 80) / label.width);
+    for (const part of [face, glyph, label]) part.eventMode = 'none';
+    button.addChild(face, glyph, label);
+    button.eventMode = 'static';
+    button.cursor = 'pointer';
+    button.hitArea = new Rectangle(-w / 2, -h / 2, w, h);
+    button.on('pointerdown', (event) => event.stopPropagation());
+    button.on('pointerover', () => { button.scale.set(1.05); });
+    button.on('pointerout', () => { button.scale.set(1); });
+    button.on('pointertap', (event) => { event.stopPropagation(); onTap(); });
+    return button;
   }
 
   get isOpen(): boolean { return this.view.visible; }

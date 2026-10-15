@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"coffe-mania/database/npcappearance"
 	"coffe-mania/database/playerstate"
+	"coffe-mania/shared/cafe"
 	"coffe-mania/shared/gamewire"
 	"github.com/google/uuid"
 	"github.com/pocketbase/dbx"
@@ -59,6 +59,12 @@ func (c *roomServiceClient) request(ctx context.Context, path string, body, out 
 	return nil
 }
 func proxyRoomOperation(r *core.RequestEvent, userID, action string, body any) error {
+	return proxyRoomOperationAs(r, userID, userID, action, body)
+}
+
+// proxyRoomOperationAs runs an operation in owner's room on behalf of user;
+// both services still check which actions a visitor may perform.
+func proxyRoomOperationAs(r *core.RequestEvent, owner, user, action string, body any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -66,148 +72,12 @@ func proxyRoomOperation(r *core.RequestEvent, userID, action string, body any) e
 	var result gamewire.Result
 	ctx, cancel := context.WithTimeout(r.Request.Context(), 12*time.Second)
 	defer cancel()
-	err = roomService(r.App).request(ctx, "operation", gamewire.Operation{Owner: userID, User: userID, Action: action, Body: data}, &result)
+	err = roomService(r.App).request(ctx, "operation", gamewire.Operation{Owner: owner, User: user, Action: action, Body: data}, &result)
 	if err != nil {
-		r.App.Logger().Warn("Falha ao comunicar uma operação do quarto", "action", action, "room", userID, "error", err)
+		r.App.Logger().Warn("Falha ao comunicar uma operação do quarto", "action", action, "room", owner, "error", err)
 		return apis.NewApiError(503, "O serviço do quarto está indisponível. Tente novamente.", nil)
 	}
 	return r.JSON(result.Status, json.RawMessage(result.Body))
-}
-func publicWorld(app core.App, owner string) (gamewire.World, error) {
-	snapshot, err := snapshotRoom(app, owner)
-	if err != nil {
-		return gamewire.World{}, err
-	}
-	w := gamewire.World{RoomID: owner, Revision: snapshot.Revision, TilesX: snapshot.TilesX, TilesY: snapshot.TilesY, Units: []gamewire.Unit{}, Foods: []gamewire.Food{}}
-	for _, u := range snapshot.Inventory {
-		if u.Placed {
-			w.Units = append(w.Units, gamewire.Unit{ID: u.UnitID, ItemID: u.ItemID, Placed: true, X: u.TX, Y: u.TY, Rotation: u.Rotation, StoveID: u.StoveID})
-		}
-	}
-	cooking, err := snapshotCooking(app, owner, types.NowDateTime())
-	if err != nil {
-		return w, err
-	}
-	w.Cooking, _ = json.Marshal(cooking)
-	foods, err := app.FindRecordsByFilter("room_food", "user={:owner}", "created", 0, 0, dbx.Params{"owner": owner})
-	if err != nil {
-		return w, err
-	}
-	for _, food := range foods {
-		w.Foods = append(w.Foods, gamewire.Food{ID: food.Id, Recipe: food.GetString("recipe_id")})
-	}
-	return w, nil
-}
-func persistenceOperation(app core.App, op gamewire.Operation) gamewire.Result {
-	fail := func(status int, message string) gamewire.Result {
-		data, _ := json.Marshal(map[string]string{"message": message})
-		return gamewire.Result{Status: status, Body: data}
-	}
-	if op.Owner == "" || op.Owner != op.User {
-		return fail(403, "Somente o dono pode alterar o quarto.")
-	}
-	var body any
-	var err error
-	switch op.Action {
-	case "purchase", "move", "store":
-		var command roomCommand
-		if json.Unmarshal(op.Body, &command) != nil || command.Revision == nil || !requestKeyPattern.MatchString(command.RequestID) || (op.Action != "store" && (command.TX == nil || command.TY == nil || command.Rotation == nil)) {
-			return fail(400, "Pedido inválido.")
-		}
-		body, err = mutateRoom(app, op.Owner, op.Action, command)
-	case "cook_start", "cook_serve", "cook_cancel":
-		var command struct {
-			StoveID  string `json:"stoveId"`
-			RecipeID string `json:"recipeId"`
-		}
-		if json.Unmarshal(op.Body, &command) != nil || command.StoveID == "" {
-			return fail(400, "Pedido inválido.")
-		}
-		switch op.Action {
-		case "cook_start":
-			err = startCooking(app, op.Owner, command.StoveID, command.RecipeID, types.NowDateTime())
-		case "cook_serve":
-			err = serveCooking(app, op.Owner, command.StoveID, types.NowDateTime())
-		case "cook_cancel":
-			err = cancelCooking(app, op.Owner, command.StoveID, types.NowDateTime())
-		}
-		if err == nil {
-			body, err = snapshotCooking(app, op.Owner, types.NowDateTime())
-		}
-	default:
-		return fail(400, "Operação desconhecida.")
-	}
-	if err != nil {
-		switch {
-		case errors.Is(err, errRoomOwned), errors.Is(err, errStoveNotOwned):
-			return fail(404, "Item indisponível.")
-		case errors.Is(err, errRoomPosition):
-			return fail(400, err.Error())
-		case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy), errors.Is(err, errStoveOccupied), errors.Is(err, errDishNotReady), errors.Is(err, errCookingCannotCancel):
-			return fail(409, err.Error())
-		default:
-			return fail(500, "Não foi possível salvar a operação.")
-		}
-	}
-	data, _ := json.Marshal(body)
-	w, err := publicWorld(app, op.Owner)
-	if err != nil {
-		return fail(503, "Operação salva; tente novamente para atualizar o quarto.")
-	}
-	status := 200
-	if op.Action == "cook_start" {
-		status = 201
-	}
-	return gamewire.Result{Status: status, Body: data, World: &w}
-}
-func saveDormantRoom(app core.App, owner string, state gamewire.Sleep) error {
-	if len(state.NPCs) > 32 {
-		return errors.New("too many NPCs")
-	}
-	return app.RunInTransaction(func(tx core.App) error {
-		room, err := tx.FindFirstRecordByData("player_rooms", "user", owner)
-		if err != nil {
-			return err
-		}
-		existing, err := tx.FindRecordsByFilter("room_npcs", "user={:owner}", "", 0, 0, dbx.Params{"owner": owner})
-		if err != nil {
-			return err
-		}
-		byID := map[string]*core.Record{}
-		for _, r := range existing {
-			byID[r.GetString("npc_id")] = r
-		}
-		collection, err := tx.FindCollectionByNameOrId("room_npcs")
-		if err != nil {
-			return err
-		}
-		seen := map[string]bool{}
-		for _, npc := range state.NPCs {
-			if !strings.HasPrefix(npc.ID, "npc:") || seen[npc.ID] || len(npc.Path) > 256 {
-				return errors.New("invalid NPC")
-			}
-			seen[npc.ID] = true
-			record := byID[npc.ID]
-			delete(byID, npc.ID)
-			if record == nil {
-				record = core.NewRecord(collection)
-				record.Set("user", owner)
-				record.Set("npc_id", npc.ID)
-			}
-			record.Set("state", npc)
-			if err = tx.Save(record); err != nil {
-				return err
-			}
-		}
-		for _, r := range byID {
-			if err = tx.Delete(r); err != nil {
-				return err
-			}
-		}
-		room.Set("active", false)
-		room.Set("human_count", 0)
-		return tx.Save(room)
-	})
 }
 func registerGameBridge(e *core.ServeEvent) error {
 	secret, err := gamewire.Secret(true)
@@ -273,35 +143,12 @@ func registerGameBridge(e *core.ServeEvent) error {
 		return r.Next()
 	})
 	group.GET("/{owner}/load", func(r *core.RequestEvent) error {
-		owner := r.Request.PathValue("owner")
-		if err := ensureRoom(r.App, owner); err != nil {
-			return err
-		}
-		world, err := publicWorld(r.App, owner)
+		// Waking replays the absence first, so the seed's world already has it.
+		seed, err := cafe.LoadSeed(pb(r.App), r.Request.PathValue("owner"), time.Now())
 		if err != nil {
 			return err
 		}
-		rows, err := r.App.FindRecordsByFilter("room_npcs", "user={:owner}", "id", 32, 0, dbx.Params{"owner": owner})
-		if err != nil {
-			return err
-		}
-		npcs := []gamewire.Actor{}
-		for _, row := range rows {
-			var npc gamewire.Actor
-			if err = row.UnmarshalJSONField("state", &npc); err != nil {
-				return err
-			}
-			npcs = append(npcs, npc)
-		}
-		policy, err := npcappearance.Load(r.App)
-		if err != nil {
-			return err
-		}
-		looks, err := npcappearance.GenerateLooks(policy, 16)
-		if err != nil {
-			return err
-		}
-		return r.JSON(200, gamewire.Seed{World: world, NPCs: npcs, Looks: looks})
+		return r.JSON(200, seed)
 	})
 	group.POST("/{owner}/active", func(r *core.RequestEvent) error {
 		var body struct {
@@ -336,19 +183,55 @@ func registerGameBridge(e *core.ServeEvent) error {
 	}).Bind(apis.BodyLimit(4096))
 	group.POST("/{owner}/consume", func(r *core.RequestEvent) error {
 		var body struct {
-			FoodID string `json:"foodId"`
+			FoodID  string `json:"foodId"`
+			TableID string `json:"tableId"`
+			// The room confirms a waiter handed the dish over: the customer tips.
+			Waiter bool `json:"waiter"`
+		}
+		if r.BindBody(&body) != nil || body.FoodID == "" {
+			return r.BadRequestError("Inválido.", nil)
+		}
+		payment, err := serveCustomerBy(r.App, r.Request.PathValue("owner"), body.FoodID, body.TableID, body.Waiter)
+		if errors.Is(err, errFoodGone) {
+			return r.NotFoundError("Prato indisponível.", nil)
+		}
+		if err != nil {
+			return err
+		}
+		return r.JSON(200, payment)
+	})
+	// Staff clear tables without the owner's reward; the room has already
+	// checked that the employee stands beside the table.
+	group.POST("/{owner}/clean-table", func(r *core.RequestEvent) error {
+		var body struct {
+			TableID string `json:"tableId"`
+		}
+		if r.BindBody(&body) != nil || body.TableID == "" {
+			return r.BadRequestError("Inválido.", nil)
+		}
+		plates, err := cleanTable(r.App, r.Request.PathValue("owner"), body.TableID, false)
+		switch {
+		case errors.Is(err, errTableClean):
+			return r.JSON(409, map[string]string{"message": err.Error()})
+		case errors.Is(err, errRoomOwned):
+			return r.NotFoundError("Mesa indisponível.", nil)
+		case err != nil:
+			return err
+		}
+		return r.JSON(200, map[string]int{"plates": plates})
+	})
+	group.POST("/{owner}/feedback", func(r *core.RequestEvent) error {
+		var body struct {
+			Satisfied bool `json:"satisfied"`
 		}
 		if r.BindBody(&body) != nil {
 			return r.BadRequestError("Inválido.", nil)
 		}
-		food, err := r.App.FindRecordById("room_food", body.FoodID)
-		if err != nil || food.GetString("user") != r.Request.PathValue("owner") {
-			return r.NotFoundError("Prato indisponível.", nil)
-		}
-		if err = r.App.Delete(food); err != nil {
+		popularity, err := recordVerdict(r.App, r.Request.PathValue("owner"), body.Satisfied)
+		if err != nil {
 			return err
 		}
-		return r.JSON(200, map[string]bool{"ok": true})
+		return r.JSON(200, map[string]int{"popularityTenths": popularity})
 	})
 	return nil
 }

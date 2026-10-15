@@ -56,6 +56,12 @@ const COLOUR_PANEL_WIDTH = 390;
 const COLOUR_PANEL_HEIGHT = 318;
 const COLOUR_PANEL_GAP = 16;
 const COLOUR_SWATCH_SIZE = 50;
+/** The catalogue has 16 visible colours per palette: 6 × 3 fit above the divider. */
+const PALETTE_COLUMNS = 6;
+const PALETTE_SWATCH_SIZE = 44;
+const PALETTE_STEP_X = 52;
+const PALETTE_STEP_Y = 54;
+const PALETTE_MAX = 18;
 const CUSTOM_COLOURS_PER_GROUP = 4;
 const CONFIRM_BUTTON_WIDTH = 226;
 const CONFIRM_BUTTON_HEIGHT = 68;
@@ -284,7 +290,8 @@ export class WardrobeScreenModal {
     this.syncCloseFeedback();
     this.confirmHovered = false;
     this.confirmPressed = false;
-    this.confirmEdited = false;
+    // A draft kept from the last visit can still be confirmed.
+    this.confirmEdited = this.lookDirty;
     if (!this.confirmSaving) this.confirmStatus.text = '';
     this.syncConfirmFeedback();
     this.view.visible = true;
@@ -527,13 +534,13 @@ export class WardrobeScreenModal {
       heading.eventMode = 'none';
       const grid = new Container();
       grid.label = `wardrobe-${group}-colours`;
-      grid.position.set((COLOUR_PANEL_WIDTH - (COLOUR_SWATCH_SIZE * 4 + 12 * 3)) / 2, 56);
+      grid.position.set((COLOUR_PANEL_WIDTH - (PALETTE_STEP_X * (PALETTE_COLUMNS - 1) + PALETTE_SWATCH_SIZE)) / 2, 62);
       const divider = new Graphics();
       divider.roundRect(28, 237, COLOUR_PANEL_WIDTH - 56, 5, 2.5).fill(0xd6d4bf);
       divider.eventMode = 'none';
       const customGrid = new Container();
       customGrid.label = `wardrobe-${group}-custom-colours`;
-      customGrid.position.set(grid.x, 253);
+      customGrid.position.set((COLOUR_PANEL_WIDTH - (COLOUR_SWATCH_SIZE * 4 + 12 * 3)) / 2, 253);
       panel.addChild(frame, heading, grid, divider, customGrid);
       this.colourPanels.addChild(panel);
       this.colourGrids.set(group, grid);
@@ -547,7 +554,7 @@ export class WardrobeScreenModal {
       grid.removeChildren().forEach((child) => child.destroy());
       const colours = this.wardrobeData.inGroup(group)
         .filter((item) => !item.invisible && item.colour)
-        .slice(0, 12);
+        .slice(0, PALETTE_MAX);
       colours.forEach((item, index) => {
         const colour = Number.parseInt(item.colour!.replace(/^#/, ''), 16);
         if (!Number.isFinite(colour)) return;
@@ -555,8 +562,8 @@ export class WardrobeScreenModal {
         const selected = this.look?.[group === 'SkinColour' ? 'skinColour' : 'hairColour'] === colour;
         const expansion = selected ? 3 : 0;
         swatch.label = `wardrobe-${group}-colour-${item.id}`;
-        swatch.position.set((index % 4) * 62 - expansion, Math.floor(index / 4) * 60 - expansion);
-        swatch.roundRect(0, 0, COLOUR_SWATCH_SIZE + expansion * 2, COLOUR_SWATCH_SIZE + expansion * 2, 5)
+        swatch.position.set((index % PALETTE_COLUMNS) * PALETTE_STEP_X - expansion, Math.floor(index / PALETTE_COLUMNS) * PALETTE_STEP_Y - expansion);
+        swatch.roundRect(0, 0, PALETTE_SWATCH_SIZE + expansion * 2, PALETTE_SWATCH_SIZE + expansion * 2, 5)
           .fill(colour)
           .stroke({ color: 0x704721, width: 4 });
         swatch.eventMode = 'static';

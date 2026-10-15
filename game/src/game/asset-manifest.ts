@@ -3,15 +3,8 @@ import { Assets, Rectangle, Texture } from 'pixi.js';
 import { LOADING_ASSET_URLS } from '../screens/loading/assets';
 import { Wardrobe } from '../avatar/wardrobe';
 import { IndoorArt } from './indoor-art';
-import { ItemCatalog } from './item-catalog';
 
 const base = import.meta.env.BASE_URL ?? '/';
-const dataUrl = (file: string) =>
-  new URL(`assets/data/${file}`, new URL(base, document.baseURI)).href;
-
-/** Catálogo de itens de interior disponível nos assets do cliente. */
-export const ITEM_CATALOG_URL = dataUrl('interior-items.json');
-
 const avatarUrl = (file: string) =>
   new URL(`assets/avatar/${file}`, new URL(base, document.baseURI)).href;
 
@@ -102,6 +95,10 @@ export const UI_EMOTION_BUNDLE_URL = new URL('assets/ui/emotion_bundle_1.png', n
 
 /** Música de fundo padrão (BGM). */
 export const BGM_URL = new URL('assets/songs/music_1.opus', new URL(base, document.baseURI)).href;
+/** Gravação incluída na distribuição sem referência no código anterior; oferecida como faixa alternativa. */
+export const BGM_ALT_URL = new URL('assets/songs/default_song.mp3', new URL(base, document.baseURI)).href;
+/** Recortes de ripped/compiled_sfx.mp3 gerados por tools/sfx-slicer. */
+export const SFX_SPRITES_URL = new URL('assets/sfx/sfx-sprites.json', new URL(base, document.baseURI)).href;
 
 /** Efeitos sonoros ao abrir o livro de receitas (book_1 e book_2). */
 export const SFX_BOOK_URLS = [
@@ -163,7 +160,6 @@ export const GAME_ASSET_URLS: readonly string[] = [
   ...Object.values(AVATAR_PLACEHOLDER_URLS),
   LOADING_ASSET_URLS.frame,
   ...LOADING_ASSET_URLS.banners,
-  ITEM_CATALOG_URL,
   INDOOR_ART_URL,
   UI_ACTION_BAR_URL,
   UI_STORE_ACTION_BAR_URL,
@@ -187,15 +183,7 @@ export const GAME_ASSET_URLS: readonly string[] = [
   FOOD_CAKE_STAGE_2_URL,
 ];
 
-let catalogCache: ItemCatalog | null = null;
 let artCache: IndoorArt | null = null;
-
-/** Passa pelo Assets do Pixi, então aproveita o que a barra já baixou. */
-export async function loadItemCatalog(): Promise<ItemCatalog> {
-  if (catalogCache) return catalogCache;
-  catalogCache = ItemCatalog.from(await Assets.load<unknown>(ITEM_CATALOG_URL));
-  return catalogCache;
-}
 
 export async function loadIndoorArt(): Promise<IndoorArt> {
   if (artCache) return artCache;
@@ -281,6 +269,8 @@ export async function loadStoreActionBarIcons(): Promise<ActionBarIconTexture[]>
 export interface NpcEmotionTextures {
   dissatisfied: readonly Texture[];
   satisfied: readonly Texture[];
+  /** First two faces of the dissatisfied row: a customer who only browsed the menu. */
+  neutral: readonly Texture[];
 }
 
 /** Cinco expressões por linha, recortadas com uma margem mínima sem incluir a vizinha. */
@@ -305,9 +295,11 @@ export async function loadNpcEmotionTextures(): Promise<NpcEmotionTextures> {
       source: sheet.source,
       frame: new Rectangle(x, y, width, height),
     }));
+  const dissatisfied = crop(EMOTION_FRAMES.dissatisfied);
   return {
-    dissatisfied: crop(EMOTION_FRAMES.dissatisfied),
+    dissatisfied,
     satisfied: crop(EMOTION_FRAMES.satisfied),
+    neutral: dissatisfied.slice(0, 2),
   };
 }
 

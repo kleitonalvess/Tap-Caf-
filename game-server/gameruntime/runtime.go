@@ -8,11 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"coffe-mania/shared/gamerules"
 	"coffe-mania/shared/gamewire"
 	"coffe-mania/shared/roomcatalog"
 	"github.com/google/uuid"
@@ -23,7 +23,15 @@ type Storage interface {
 	Active(context.Context, string, int) error
 	Sleep(context.Context, string, gamewire.Sleep) error
 	Operate(context.Context, gamewire.Operation) (gamewire.Result, error)
-	Consume(context.Context, string, string) error
+	// Consume takes one serving for a customer at a table and returns the payment
+	// already credited to the owner; the same transaction leaves the table dirty.
+	// waiter marks a staff delivery, which adds the customer's tip.
+	Consume(ctx context.Context, room, food, table string, waiter bool) (gamewire.Payment, error)
+	// Feedback records a customer verdict that came without a payment.
+	Feedback(context.Context, string, bool) error
+	// Clean clears a table's plates for the staff (no reward); an already
+	// clean or missing table is not an error.
+	Clean(ctx context.Context, room, table string) error
 }
 type Options struct {
 	Tick, Step, Grace            time.Duration
@@ -46,14 +54,18 @@ func (o Options) defaults() Options {
 	if o.MaxHumans <= 0 {
 		o.MaxHumans = 64
 	}
+	// Customers are also limited by dining seats; this caps large cafés.
 	if o.MaxNPCs <= 0 {
-		o.MaxNPCs = 3
+		o.MaxNPCs = 6
 	}
 	return o
 }
 
 var ErrBusy = errors.New("fila do quarto ocupada; tente novamente")
 var ErrClosed = errors.New("instância encerrada")
+
+// ErrFoodGone means persistence no longer has the dish the room listed.
+var ErrFoodGone = errors.New("prato indisponível")
 
 type slot struct {
 	ready chan struct{}
@@ -93,6 +105,19 @@ type entity struct {
 	path   []Tile
 	due    time.Time
 	visits int
+	// Deadline for a seated customer waiting for food; zero otherwise.
+	patienceUntil time.Time
+	// Customer: the waiter bringing the dish, and the wait left when it was paused.
+	servedBy       string
+	pausedPatience time.Duration
+	// Customer fetching a serving from the counter (self-service) until fetchAt.
+	fetch   *gamewire.Food
+	fetchAt time.Time
+	// Consecutive seconds spent waiting for a blocked step (see waitBlocked).
+	waits int
+	// Staff: the job in progress, and since when it stands in the doorway.
+	job          *staffJob
+	doorwaySince time.Time
 }
 type room struct {
 	manager       *Manager
@@ -116,6 +141,15 @@ type room struct {
 	frozenAt      time.Time
 	sleepRetry    time.Time
 	sleepFailures int
+	// Owner popularity in tenths, mirrored from persistence to pace arrivals.
+	popularity int
+	// Last kitchenIdle result, to notice the first dish going on the fire.
+	kitchenWasIdle, kitchenKnown bool
+	// Servings promised to waiters (food id → count) and tables taken by staff.
+	reserved map[string]int
+	// The owner's absence summary from the load, handed over on their welcome.
+	away    *gamewire.AwaySummary
+	claimed map[string]string
 }
 
 func (m *Manager) get(ctx context.Context, id string) (*room, error) {
@@ -147,8 +181,15 @@ func (m *Manager) get(ctx context.Context, id string) (*room, error) {
 			m.wg.Done()
 		} else {
 			r := &room{manager: m, id: id, epoch: uuid.NewString(), world: seed.World, grid: newGrid(seed.World), actors: map[string]*entity{}, peers: map[string]*Peer{}, seats: map[string]string{}, looks: seed.Looks, tasks: make(chan task, 256), done: make(chan struct{}), stop: make(chan struct{}), idleAt: time.Now(), spawnAt: time.Now().Add(time.Second)}
+			r.popularity = seed.PopularityTenths
+			r.away = seed.Away
+			if low, _ := gamerules.PopularityBoundsTenths(); r.popularity < low {
+				r.popularity = low
+			}
 			r.occupancy = map[Tile]map[string]bool{}
 			r.actorTiles = map[string][]Tile{}
+			r.reserved = map[string]int{}
+			r.claimed = map[string]string{}
 			r.frozenAt = time.Now()
 			for _, a := range seed.NPCs {
 				if len(r.actors) >= m.options.MaxNPCs {
@@ -163,11 +204,16 @@ func (m *Manager) get(ctx context.Context, id string) (*room, error) {
 				}
 				r.actors[a.ID] = &entity{Actor: a, path: a.Path, due: r.frozenAt.Add(time.Duration(a.ActionRemaining) * time.Millisecond), visits: a.Visits}
 				r.actors[a.ID].Path = nil
+				if a.Patience != nil {
+					r.actors[a.ID].restorePatience(r.frozenAt.Add(time.Duration(a.PatienceRemaining) * time.Millisecond))
+				}
+				r.actors[a.ID].PatienceRemaining = 0
 				if a.ChairID != "" {
 					r.seats[a.ChairID] = a.ID
 				}
 				r.indexActor(r.actors[a.ID])
 			}
+			r.syncStaff(r.frozenAt)
 			s.room = r
 			go r.run()
 		}
@@ -265,7 +311,8 @@ func (m *Manager) Command(ctx context.Context, p *Peer, c gamewire.Command) erro
 }
 func (m *Manager) Operate(ctx context.Context, op gamewire.Operation) (gamewire.Result, error) {
 	v, err := m.call(ctx, op.Owner, func(r *room) any {
-		if op.User != op.Owner {
+		// A visitor in the café may season a friend's stove; nothing else.
+		if op.User != op.Owner && op.Action != "cook_season" {
 			return gamewire.Result{Status: 403, Body: json.RawMessage(`{"message":"Somente o dono pode alterar o quarto."}`)}
 		}
 		if message := r.validateOperation(op); message != "" {
@@ -279,6 +326,20 @@ func (m *Manager) Operate(ctx context.Context, op gamewire.Operation) (gamewire.
 			return err
 		}
 		if result.Status >= 200 && result.Status < 300 && result.World != nil {
+			// The cleaning pose goes out before the cleared table, so clients keep
+			// the plates until the brush is done.
+			if op.Action == "table_clean" {
+				var body struct {
+					TableID string `json:"tableId"`
+				}
+				_ = json.Unmarshal(op.Body, &body)
+				if a := r.actors["human:"+op.User]; a != nil {
+					if table, ok := r.adjacentUnit(a, body.TableID, "table"); ok {
+						r.startUnitAction(a, table, "cleaning", time.Now(), gamerules.TableCleaning())
+						r.broadcast(gamewire.Event{Type: "actors", Actors: []gamewire.Actor{r.status(a, false)}}, "")
+					}
+				}
+			}
 			r.updateWorld(*result.World)
 			if op.Action == "cook_start" {
 				if a := r.actors["human:"+op.User]; a != nil {
@@ -400,6 +461,7 @@ func (r *room) run() {
 	defer ticker.Stop()
 	stepTimer := time.NewTimer(time.Hour)
 	defer stepTimer.Stop()
+	var lastTick time.Time
 	defer func() {
 		close(r.done)
 		r.manager.mu.Lock()
@@ -432,6 +494,11 @@ func (r *room) run() {
 		case t := <-r.tasks:
 			t.reply <- t.fn(r)
 		case now := <-ticker.C:
+			// A room still frozen for its sleep shifts on join instead.
+			if pause := frozenFor(lastTick, now, r.manager.options.Tick); pause > 0 && r.frozenAt.IsZero() {
+				r.shiftClocks(pause)
+			}
+			lastTick = now
 			for id, p := range r.peers {
 				if p.Closed.Load() {
 					r.leave(id)
@@ -478,6 +545,10 @@ func (r *room) sleep(now time.Time) error {
 	if r.frozenAt.IsZero() {
 		r.frozenAt = now
 	}
+	// Jobs in progress are dropped first: promised servings go back to the
+	// counters and served customers resume their saved wait.
+	r.dropAllJobs(now)
+	r.dropFetches(now)
 	npcs := []gamewire.Actor{}
 	for _, a := range r.actors {
 		if a.Kind != "npc" {
@@ -494,6 +565,9 @@ func (r *room) sleep(now time.Time) error {
 		}
 		state.ActionRemaining = max(0, a.due.Sub(r.frozenAt).Milliseconds())
 		state.Visits = a.visits
+		if !a.patienceUntil.IsZero() {
+			state.PatienceRemaining = max(1, a.patienceUntil.Sub(r.frozenAt).Milliseconds())
+		}
 		npcs = append(npcs, state)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -550,17 +624,7 @@ func (r *room) join(p *Peer) error {
 		r.lastPresence = time.Now()
 	}
 	if !r.frozenAt.IsZero() {
-		pause := time.Since(r.frozenAt)
-		for _, npc := range r.actors {
-			npc.due = npc.due.Add(pause)
-			if npc.Action != nil {
-				npc.Action.StartedAt += pause.Milliseconds()
-			}
-			if npc.Move != nil {
-				npc.Move.StartedAt += pause.Milliseconds()
-			}
-		}
-		r.spawnAt = r.spawnAt.Add(pause)
+		r.shiftClocks(time.Since(r.frozenAt))
 		r.frozenAt = time.Time{}
 		r.sleepRetry = time.Time{}
 		r.sleepFailures = 0
@@ -575,9 +639,57 @@ func (r *room) join(p *Peer) error {
 	for _, v := range r.actors {
 		actors = append(actors, r.status(v, true))
 	}
-	r.send(p, gamewire.Event{Type: "welcome", SelfID: id, World: &r.world, Actors: actors})
+	welcome := gamewire.Event{Type: "welcome", SelfID: id, World: &r.world, Actors: actors}
+	// The owner hears once what the café did while they were away (the room id is the owner's).
+	if p.Ticket.User == r.id && r.away != nil {
+		welcome.Away, r.away = r.away, nil
+	}
+	r.send(p, welcome)
 	return nil
 }
+
+// shiftClocks moves every running timer forward by a pause, so time the room
+// did not run (asleep, or a frozen process) does not expire it all at once.
+func (r *room) shiftClocks(pause time.Duration) {
+	if pause <= 0 {
+		return
+	}
+	for _, a := range r.actors {
+		a.due = a.due.Add(pause)
+		if a.Action != nil {
+			a.Action.StartedAt += pause.Milliseconds()
+		}
+		if a.Move != nil {
+			a.Move.StartedAt += pause.Milliseconds()
+		}
+		if !a.patienceUntil.IsZero() {
+			a.restorePatience(a.patienceUntil.Add(pause))
+		}
+		if !a.fetchAt.IsZero() {
+			a.fetchAt = a.fetchAt.Add(pause)
+		}
+		if !a.doorwaySince.IsZero() {
+			a.doorwaySince = a.doorwaySince.Add(pause)
+		}
+	}
+	r.spawnAt = r.spawnAt.Add(pause)
+}
+
+// freezeGap: ticks this much later than due mean the process was frozen
+// (a laptop asleep, a debugger), not merely busy.
+const freezeGap = 5 * time.Second
+
+// frozenFor is how long the room was frozen between two ticks, if at all.
+func frozenFor(last, now time.Time, tick time.Duration) time.Duration {
+	if last.IsZero() {
+		return 0
+	}
+	if gap := now.Sub(last) - tick; gap > freezeGap {
+		return gap
+	}
+	return 0
+}
+
 func (r *room) leave(id string) {
 	p := r.peers[id]
 	if p == nil {
@@ -619,6 +731,7 @@ func (r *room) status(a *entity, identity bool) gamewire.Actor {
 	v := a.Actor
 	v.Path = nil
 	v.Visits = 0
+	v.PatienceRemaining = 0
 	v.ActionRemaining = max(0, time.Until(a.due).Milliseconds())
 	if !identity {
 		v.Kind = ""
@@ -726,6 +839,10 @@ func (r *room) releaseSeat(a *entity) {
 	if a.ChairID != "" && r.seats[a.ChairID] == a.ID {
 		delete(r.seats, a.ChairID)
 	}
+	if a.fetch != nil {
+		r.release(a.fetch.ID)
+		a.fetch = nil
+	}
 	a.ChairID = ""
 	a.TableID = ""
 	a.Food = nil
@@ -740,6 +857,7 @@ func (r *room) route(a *entity, dest Tile, now time.Time) bool {
 		return false
 	}
 	a.path = path
+	a.waits = 0
 	if a.Move == nil {
 		r.nextStep(a, now)
 	}
@@ -759,16 +877,30 @@ func (r *room) nextStep(a *entity, now time.Time) bool {
 	if !external && !r.canWalk(dest, a) {
 		alternative := findPath(from, a.path[len(a.path)-1], func(t Tile) bool { return r.canWalk(t, a) }, r.grid.width*r.grid.height*4)
 		if len(alternative) == 0 {
-			a.due = now.Add(time.Second)
-			return false
+			// Customers wait for the tile to clear. Players and staff give up
+			// after blockedRetries: an employee waiting forever would still
+			// look free to nearestIdle and keep the others from working.
+			if a.Kind == "npc" {
+				a.due = now.Add(time.Second)
+				return false
+			}
+			return r.waitBlocked(a, now)
 		}
 		a.path = alternative
 		dest = alternative[0]
 	}
+	// A diagonal step whose two sides got occupied after planning would cut
+	// through someone: plan around them (findPath never cuts such a corner),
+	// or wait for the corner to clear before giving up.
 	if !external && dest.X != from.X && dest.Y != from.Y && !r.canWalk(Tile{X: dest.X, Y: from.Y}, a) && !r.canWalk(Tile{X: from.X, Y: dest.Y}, a) {
-		a.path = nil
-		return false
+		alternative := findPath(from, a.path[len(a.path)-1], func(t Tile) bool { return r.canWalk(t, a) }, r.grid.width*r.grid.height*4)
+		if len(alternative) == 0 {
+			return r.waitBlocked(a, now)
+		}
+		a.path = alternative
+		dest = alternative[0]
 	}
+	a.waits = 0
 	a.path = a.path[1:]
 	a.Direction = direction(from, dest)
 	a.Move = &gamewire.Movement{From: from, To: dest, StartedAt: now.UnixMilli(), Duration: r.manager.options.Step.Milliseconds()}
@@ -776,6 +908,33 @@ func (r *room) nextStep(a *entity, now time.Time) bool {
 	r.manager.steps.Add(1)
 	return true
 }
+
+// blockedRetries is how many one-second waits an actor spends on a blocked
+// corner before dropping its path; its state machine then picks a new goal,
+// so two actors never wait on each other forever.
+const blockedRetries = 3
+
+// standStill drops a player's walk that is only waiting on a blocked step:
+// an action asked from where they stand replaces it, so the adjacency checks
+// see a standing player and the old walk does not resume afterwards.
+func standStill(a *entity) {
+	if a != nil && a.Move == nil && a.waits > 0 {
+		a.path = nil
+		a.waits = 0
+	}
+}
+
+func (r *room) waitBlocked(a *entity, now time.Time) bool {
+	if a.waits >= blockedRetries {
+		a.waits = 0
+		a.path = nil
+		return false
+	}
+	a.waits++
+	a.due = now.Add(time.Second)
+	return false
+}
+
 func (r *room) command(p *Peer, c gamewire.Command) {
 	a := r.actors["human:"+p.Ticket.User]
 	if a == nil {
@@ -784,12 +943,16 @@ func (r *room) command(p *Peer, c gamewire.Command) {
 	fail := func(message string) {
 		r.send(p, gamewire.Event{Type: "error", RequestID: c.RequestID, Message: message})
 	}
-	if (a.State == "cooking" || a.State == "serving") && time.Now().Before(a.due) {
+	if busyState(a.State) && time.Now().Before(a.due) {
 		if c.Type == "serve_prepare" && a.State == "serving" && a.Action != nil && a.Action.StoveID == c.StoveID {
 			r.send(p, gamewire.Event{Type: "ack", RequestID: c.RequestID})
 			return
 		}
-		fail("Aguarde o preparo.")
+		if a.State == "cleaning" {
+			fail("Aguarde terminar a limpeza.")
+		} else {
+			fail("Aguarde o preparo.")
+		}
 		return
 	}
 	now := time.Now()
@@ -835,6 +998,7 @@ func (r *room) command(p *Peer, c gamewire.Command) {
 			fail("Somente o dono pode servir.")
 			return
 		}
+		standStill(a)
 		if message := r.startServingAction(a, c.StoveID, now); message != "" {
 			fail(message)
 			return
@@ -906,6 +1070,9 @@ func (r *room) sit(a *entity, now time.Time) {
 	a.State = "seated"
 	a.due = now.Add(2 * time.Second)
 	a.Action = &gamewire.ActorAction{Kind: "seated", StartedAt: now.UnixMilli(), Duration: 2000}
+	if a.Kind == "npc" {
+		a.restorePatience(now.Add(gamerules.CustomerPatience()))
+	}
 	for _, u := range r.world.Units {
 		if u.ID == a.ChairID {
 			a.Direction = []int{1, 7, 5, 3}[u.Rotation%4]
@@ -924,6 +1091,7 @@ func (r *room) validateOperation(op gamewire.Operation) string {
 	if json.Unmarshal(op.Body, &body) != nil {
 		return "Pedido inválido."
 	}
+	standStill(r.actors["human:"+op.User])
 	if op.Action == "move" || op.Action == "store" || op.Action == "purchase" {
 		var item roomcatalog.Item
 		if op.Action == "purchase" {
@@ -977,6 +1145,25 @@ func (r *room) validateOperation(op gamewire.Operation) string {
 			return "Aguarde o preparo."
 		}
 	}
+	if op.Action == "table_clean" {
+		var target struct {
+			TableID string `json:"tableId"`
+		}
+		_ = json.Unmarshal(op.Body, &target)
+		a := r.actors["human:"+op.User]
+		if a != nil && a.Action != nil && time.Now().Before(a.due) {
+			return "Aguarde terminar a ação."
+		}
+		if _, ok := r.adjacentUnit(a, target.TableID, "table"); !ok {
+			return "Aproxime seu personagem da mesa."
+		}
+		if r.dirtOn(target.TableID) == nil {
+			return "A mesa já está limpa."
+		}
+	}
+	if op.Action == "cook_season" && r.actors["human:"+op.User] == nil {
+		return "Entre no café para temperar."
+	}
 	return ""
 }
 func (r *room) updateWorld(w gamewire.World) {
@@ -1003,7 +1190,17 @@ func (r *room) updateWorld(w gamewire.World) {
 	}
 	cookingChanged := string(w.Cooking) != string(r.world.Cooking)
 	foodsChanged := fmt.Sprint(w.Foods) != fmt.Sprint(r.world.Foods)
+	dirtChanged := fmt.Sprint(w.Dirt) != fmt.Sprint(r.world.Dirt)
+	streetChanged := fmt.Sprint(w.Street) != fmt.Sprint(r.world.Street)
+	// An expansion only grows the room towards the front (walls stay on tx=0
+	// and ty=0), so every actor and path stays valid; the grid is rebuilt
+	// for the new bounds and the next world event carries them.
+	resized := w.TilesX != r.world.TilesX || w.TilesY != r.world.TilesY
 	r.world = w
+	if resized {
+		r.grid = newGrid(w)
+	}
+	r.syncStaff(time.Now())
 	doorChanged := false
 	for _, u := range changes {
 		if item, _ := roomcatalog.ByID(u.ItemID); item.Kind == "door" {
@@ -1042,18 +1239,30 @@ func (r *room) updateWorld(w gamewire.World) {
 			}
 		}
 	}
-	if len(changes) > 0 || cookingChanged || foodsChanged {
+	if len(changes) > 0 || cookingChanged || resized || streetChanged {
 		e := gamewire.Event{Type: "world", Units: changes, Revision: w.Revision}
 		if cookingChanged {
 			e.Cooking = w.Cooking
 		}
-		if foodsChanged {
-			e.Foods = w.Foods
+		if resized {
+			e.TilesX, e.TilesY = w.TilesX, w.TilesY
+		}
+		if streetChanged {
+			e.Street = w.Street
 		}
 		r.broadcast(e, "")
 	}
+	// A food event always carries the complete list; an absent field means none left.
+	if foodsChanged {
+		r.broadcast(gamewire.Event{Type: "food", Foods: w.Foods}, "")
+	}
+	// Same contract as food: the complete list, absent meaning every table is clean.
+	if dirtChanged {
+		r.broadcast(gamewire.Event{Type: "dirt", Dirt: w.Dirt}, "")
+	}
 }
 func (r *room) tick(now time.Time) {
+	r.watchKitchen(now)
 	updates := []gamewire.Actor{}
 	removed := []string{}
 	for _, a := range r.actors {
@@ -1083,10 +1292,15 @@ func (r *room) tick(now time.Time) {
 			}
 		} else if len(a.path) > 0 && !now.Before(a.due) {
 			changed = r.nextStep(a, now)
-			if !changed && a.Kind == "human" {
+			// A player gives up after waiting blockedRetries seconds, not on the first try.
+			if !changed && a.Kind == "human" && len(a.path) == 0 {
 				a.path = nil
+				a.waits = 0
 				changed = true
 			}
+		}
+		if a.Kind == "staff" && r.clearDoorway(a, now) {
+			changed = true
 		}
 		if a.Move == nil && len(a.path) == 0 {
 			if a.State == "to_seat" {
@@ -1110,9 +1324,13 @@ func (r *room) tick(now time.Time) {
 				}
 				changed = true
 			}
-			if (a.State == "cooking" || a.State == "serving") && !now.Before(a.due) {
+			if busyState(a.State) && !now.Before(a.due) {
 				a.State = "idle"
 				a.Action = nil
+				changed = true
+			}
+			if a.Kind == "staff" && !now.Before(a.due) {
+				r.advanceStaff(a, now)
 				changed = true
 			}
 			if a.Kind == "npc" && !now.Before(a.due) {
@@ -1133,190 +1351,8 @@ func (r *room) tick(now time.Time) {
 	if len(updates) > 0 || len(removed) > 0 {
 		r.broadcast(gamewire.Event{Type: "actors", Actors: updates, Removed: removed}, "")
 	}
-	count := 0
-	for _, a := range r.actors {
-		if a.Kind == "npc" {
-			count++
-		}
-	}
-	if count < r.manager.options.MaxNPCs && !now.Before(r.spawnAt) {
+	if r.shouldSpawn(now) {
 		r.spawnNPC(now)
-		r.spawnAt = now.Add(time.Duration(4+rand.IntN(4)) * time.Second)
+		r.spawnAt = now.Add(r.arrivalInterval(now))
 	}
-}
-func line(from, to Tile) []Tile {
-	result := []Tile{}
-	for from != to {
-		if from.X != to.X {
-			if from.X < to.X {
-				from.X++
-			} else {
-				from.X--
-			}
-		} else {
-			if from.Y < to.Y {
-				from.Y++
-			} else {
-				from.Y--
-			}
-		}
-		result = append(result, from)
-	}
-	return result
-}
-
-// Moving between the two sidewalks stays outside both walls.
-func streetLine(from, to Tile) []Tile {
-	if from.X <= 0 && to.X <= 0 || from.Y <= 0 && to.Y <= 0 {
-		return line(from, to)
-	}
-	corner := Tile{X: -1, Y: -1}
-	return append(line(from, corner), line(corner, to)...)
-}
-func (r *room) spawnNPC(now time.Time) {
-	if len(r.looks) == 0 {
-		return
-	}
-	door, ok := r.grid.door()
-	if !ok {
-		return
-	}
-	entry := opening(door)
-	start := Tile{X: entry.X, Y: -8}
-	turn := Tile{X: entry.X, Y: entry.Y}
-	if entry.Y == 0 {
-		start = Tile{X: r.grid.width + 8, Y: entry.Y}
-		turn = Tile{X: entry.X, Y: entry.Y}
-	}
-	// External actors stay one tile beyond the walls until the actual doorway.
-	if entry.X == 0 {
-		start.X = -1
-		turn.X = -1
-	} else {
-		start.Y = -1
-		turn.Y = -1
-	}
-	look := r.looks[rand.IntN(len(r.looks))]
-	for _, a := range r.actors {
-		if a.Kind == "npc" && a.Appearance == look {
-			return
-		}
-	}
-	a := &entity{Actor: gamewire.Actor{ID: "npc:" + uuid.NewString(), Kind: "npc", Name: "Cliente", Appearance: look, X: start.X, Y: start.Y, Outside: true, State: "entering"}}
-	a.path = append(line(start, turn), line(turn, entry)...)
-	a.path = append(a.path, Tile{X: door.X, Y: door.Y})
-	r.actors[a.ID] = a
-	r.nextStep(a, now)
-	r.broadcast(gamewire.Event{Type: "actors", Actors: []gamewire.Actor{r.status(a, true)}}, "")
-}
-func (r *room) advanceNPC(a *entity, now time.Time) bool {
-	switch a.State {
-	case "entering":
-		a.Outside = false
-		a.State = "wandering"
-		a.due = now.Add(time.Second)
-	case "wandering":
-		if a.visits < 2 {
-			for _, u := range r.world.Units {
-				it, _ := roomcatalog.ByID(u.ItemID)
-				if it.Kind == "chair" && r.seats[u.ID] == "" && r.reserveChair(a, u.ID, now) {
-					return false
-				}
-			}
-		}
-		if a.visits >= 3 {
-			r.exitNPC(a, now)
-			return false
-		}
-		tiles := []Tile{}
-		for y := 1; y < r.grid.height; y++ {
-			for x := 1; x < r.grid.width; x++ {
-				t := Tile{X: x, Y: y}
-				if r.grid.walkable(t) && !r.occupied(t, a.ID) {
-					tiles = append(tiles, t)
-				}
-			}
-		}
-		if len(tiles) > 0 {
-			r.route(a, tiles[rand.IntN(len(tiles))], now)
-		}
-		a.visits++
-		a.due = now.Add(2 * time.Second)
-	case "seated":
-		if a.TableID != "" && len(r.world.Foods) > 0 {
-			food := r.world.Foods[0]
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			err := r.manager.store.Consume(ctx, r.id, food.ID)
-			cancel()
-			if err == nil {
-				r.world.Foods = r.world.Foods[1:]
-				a.Food = &food
-				a.State = "eating"
-				a.due = now.Add(8 * time.Second)
-				a.Action = &gamewire.ActorAction{Kind: "eating", StartedAt: now.UnixMilli(), Duration: 8000}
-				r.broadcast(gamewire.Event{Type: "food", Foods: r.world.Foods}, "")
-				return false
-			}
-		}
-		a.due = now.Add(2 * time.Second)
-		a.visits++
-		if a.visits >= 3 {
-			r.standNPC(a, now)
-		}
-	case "eating":
-		r.standNPC(a, now)
-	case "leaving":
-		if a.Outside {
-			return true
-		}
-		r.exitNPC(a, now)
-	}
-	return false
-}
-func (r *room) standNPC(a *entity, now time.Time) {
-	dest, ok := r.freeNeighbour(Tile{X: a.X, Y: a.Y}, a)
-	if !ok {
-		a.due = now.Add(time.Second)
-		return
-	}
-	r.releaseSeat(a)
-	a.Action = nil
-	if a.State == "eating" {
-		r.startEmotion(a, "satisfied", now)
-	}
-	a.State = "wandering"
-	a.visits = 3
-	r.route(a, dest, now)
-	a.due = now.Add(time.Second)
-}
-func (r *room) exitNPC(a *entity, now time.Time) {
-	door, ok := r.grid.door()
-	if !ok {
-		a.State = "wandering"
-		a.due = now.Add(3 * time.Second)
-		return
-	}
-	entry := Tile{X: door.X, Y: door.Y}
-	a.State = "leaving"
-	a.Action = nil
-	r.startEmotion(a, "dissatisfied", now)
-	if (Tile{X: a.X, Y: a.Y}) != entry {
-		if !r.route(a, entry, now) {
-			a.due = now.Add(time.Second)
-		}
-		return
-	}
-	a.Outside = true
-	openingTile := opening(door)
-	turn := openingTile
-	exit := Tile{X: -1, Y: r.grid.height + 8}
-	if openingTile.X == 0 {
-		turn.X = -1
-	} else {
-		turn.Y = -1
-		exit = Tile{X: r.grid.width + 8, Y: -1}
-	}
-	a.path = append(line(entry, openingTile), line(openingTile, turn)...)
-	a.path = append(a.path, line(turn, exit)...)
-	r.nextStep(a, now)
 }

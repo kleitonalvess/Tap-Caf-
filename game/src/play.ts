@@ -9,11 +9,15 @@ import { loadFonts } from './core/fonts';
 import { PacedProgress } from './core/paced-progress';
 import { ScreenManager } from './core/screen-manager';
 import { Stage } from './core/stage';
-import { BgmPlayer } from './audio/bgm';
+import { AudioEngine, type MusicTrack } from './audio/AudioEngine';
+import { BOSSA_DO_BALCAO, FIM_DE_EXPEDIENTE } from './audio/music';
 import { DEFAULT_AUDIO_PREFERENCES, loadAudioPreferences, saveAudioPreferences, sanitizeAudioPreferences, type AudioPreferences } from './audio/preferences';
-import { setSfxMuted, setSfxVolumePercent } from './audio/sfx';
 import {
+  BGM_ALT_URL,
   BGM_URL,
+  SFX_BOOK_URLS,
+  SFX_SPRITES_URL,
+  SFX_START_COOKING_URL,
   indoorTexture,
   loadActionBarButtons,
   loadActionBarIcons,
@@ -30,10 +34,12 @@ import {
   loadIndoorArt,
 } from './game/asset-manifest';
 import { loadRoomItemArt, roomModelItems, RoomInventoryClient } from './game/room-inventory';
-import { resolveSession } from './game/session';
+import { logout, resolveSession } from './game/session';
+import { isOffline } from './game/backend';
 import { loadPlayerState } from './game/player-state';
 import { loadNpcAppearancePolicy } from './game/npc-appearance';
 import { CookingClient } from './game/cooking';
+import { loadGameRules } from './game/game-rules';
 import { subscribePlayerState } from './game/player-state-realtime';
 import { RoomRealtime } from './game/room-realtime';
 import { loadBitterMode, saveBitterMode } from './game/zoom-preferences';
@@ -74,14 +80,25 @@ async function boot(): Promise<void> {
   const paced = new PacedProgress(TIMING.minDisplayMs);
   let loading: LoadingScreen | null = null;
   let secondLoading: SecondLoadingOverlay | null = null;
-  const bgm = new BgmPlayer(BGM_URL);
+  // Recordings shipped with the game come first; synthesized tracks follow.
+  const musicTracks: Array<MusicTrack & { detail: string }> = [
+    { id: 'original', name: 'Tema padrão', detail: 'gravação', url: BGM_URL },
+    { id: 'bossa', name: BOSSA_DO_BALCAO.name, detail: 'sintetizada · bossa nova', song: BOSSA_DO_BALCAO },
+    { id: 'lounge', name: FIM_DE_EXPEDIENTE.name, detail: 'sintetizada · jazz lounge', song: FIM_DE_EXPEDIENTE },
+    // Mastered about 5.5 dB louder than the default theme (−15 vs −20.5 LUFS).
+    { id: 'classic', name: 'Tema alternativo', detail: 'gravação', url: BGM_ALT_URL, gain: 0.53 },
+  ];
+  const audio = new AudioEngine({
+    tracks: musicTracks,
+    samples: { bookPage: SFX_BOOK_URLS, cookStart: [SFX_START_COOKING_URL] },
+    spritesUrl: SFX_SPRITES_URL,
+  });
   let soundPreferences: AudioPreferences = { ...DEFAULT_AUDIO_PREFERENCES };
   let soundPlayerId: string | null = null;
   const applySoundPreferences = (): void => {
-    bgm.setVolumePercent(soundPreferences.musicPercent);
-    setSfxVolumePercent(soundPreferences.effectsPercent);
-    bgm.setMuted(soundPreferences.muted);
-    setSfxMuted(soundPreferences.muted);
+    audio.setPreferences(soundPreferences);
+    // The engine replaces a track id it does not know; keep the saved value in step.
+    soundPreferences = { ...soundPreferences, track: audio.trackId };
   };
   const updateSoundPreferences = (preferences: AudioPreferences): void => {
     soundPreferences = sanitizeAudioPreferences(preferences);
@@ -101,14 +118,22 @@ async function boot(): Promise<void> {
     saveAudioPreferences(safeStorage(), soundPlayerId, soundPreferences);
     applySoundPreferences();
     console.info('[session]', session.displayName);
-    const roomId = new URLSearchParams(window.location.search).get('room') ?? session.playerId;
-    const roomAddress = new URL(window.location.href); roomAddress.searchParams.set('room', roomId); window.history.replaceState(null, '', roomAddress);
+    // The browser's café has a single room: the player's.
+    const roomId = isOffline() ? session.playerId : new URLSearchParams(window.location.search).get('room') ?? session.playerId;
+    // A local profile id never goes into the address: a later server-mode load would look for that room.
+    const roomAddress = new URL(window.location.href);
+    if (isOffline()) roomAddress.searchParams.delete('room'); else roomAddress.searchParams.set('room', roomId);
+    window.history.replaceState(null, '', roomAddress);
     const cookingClient = new CookingClient(roomId);
     const roomClient = new RoomInventoryClient(roomId);
     const roomSnapshot = await roomClient.refresh();
 
     // Catálogo fornece comportamento e pegada; manifesto fornece geometria visual.
-    const [playerState, cookingSnapshot, art, actionBarTexture, actionBarButtons, actionBarIcons, npcEmotionTextures, topBarsTextures, cookTextures, wardrobeTextures, storeBarTexture, storeBarIcons, npcAppearancePolicy, placeholderAvatar, storeTopButtonTexture, storeToolbarTextures] = await Promise.all([
+    const [gameRules, playerState, cookingSnapshot, art, actionBarTexture, actionBarButtons, actionBarIcons, npcEmotionTextures, topBarsTextures, cookTextures, wardrobeTextures, storeBarTexture, storeBarIcons, npcAppearancePolicy, placeholderAvatar, storeTopButtonTexture, storeToolbarTextures] = await Promise.all([
+      loadGameRules().catch((error) => {
+        console.warn('[regras] indisponíveis; o livro de receitas fica fechado', error);
+        return undefined;
+      }),
       loadPlayerState(),
       cookingClient.refresh(),
       loadIndoorArt().catch((error) => {
@@ -203,6 +228,11 @@ async function boot(): Promise<void> {
         onChange: updateSoundPreferences,
         getBitterMode: () => loadBitterMode(safeStorage(), session.playerId),
         onBitterModeChange: (enabled) => saveBitterMode(safeStorage(), session.playerId, enabled),
+        tracks: musicTracks.map(({ id, name }) => ({ id, name })),
+        isFullscreen: () => fullscreen.isFullscreen,
+        onToggleFullscreen: () => fullscreen.toggle(),
+        // The browser's café has no account to leave.
+        ...(isOffline() ? {} : { onLogout: async () => { await logout(); window.location.replace('/'); } }),
       },
       ...(topBarsTextures ? { topBarsTextures } : {}),
       ...(cookTextures ? { cookTextures } : {}),
@@ -210,13 +240,21 @@ async function boot(): Promise<void> {
       onWardrobeVisibilityChange: (open) => {
         fullscreen.setWardrobeOpen(open);
       },
+      audio,
+      ...(gameRules ? { rules: gameRules } : {}),
+      audioControl: {
+        tracks: musicTracks.map(({ id, name, detail }) => ({ id, name, detail })),
+        getPreferences: () => ({ ...soundPreferences }),
+        onChange: updateSoundPreferences,
+        audio,
+      },
     });
     screens.show(room);
     const stopPlayerState = subscribePlayerState((state) => room.setPlayerState(state));
     room.view.once('destroyed', stopPlayerState);
     if (import.meta.hot) import.meta.hot.dispose(stopPlayerState);
 
-    bgm.play();
+    audio.startMusic();
   }
 
   if (flags.startScreen === 'avatar' && import.meta.env.DEV) {
@@ -293,7 +331,7 @@ async function boot(): Promise<void> {
   if (import.meta.env.DEV) {
     Object.assign(window, {
       __coffeMania: {
-        app, stage, screens, loading, fullscreen, paced, bgm,
+        app, stage, screens, loading, fullscreen, paced, audio,
         get secondLoading() { return secondLoading; },
       },
     });

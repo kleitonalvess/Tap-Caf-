@@ -1,4 +1,4 @@
-import { ROOM_ASSET_SCALE, tileIndex, type OcclusionAnchor } from './iso';
+import { MAX_NUM_TILES_X, MAX_NUM_TILES_Y, ROOM_ASSET_SCALE, tileIndex, type OcclusionAnchor } from './iso';
 import { WALL_HEIGHT } from './wallGeometry';
 import { doorOpeningTile } from './doorGeometry';
 
@@ -11,6 +11,7 @@ export type RoomItemKind =
   | 'table'
   | 'chair'
   | 'stove'
+  | 'counter'
   | 'bush'
   | 'panel'
   | 'letterbox'
@@ -82,6 +83,7 @@ export const ITEM_STYLES: Record<RoomItemKind, RoomItemStyle> = {
   table: { height: 46 * ROOM_ASSET_SCALE, topColor: 0xf6f1e4, leftColor: 0xd8cfb8, rightColor: 0xc2b79c, blocks: true, inset: 0.86 },
   chair: { height: 34 * ROOM_ASSET_SCALE, topColor: 0xb9754a, leftColor: 0x9c5f3a, rightColor: 0x82502f, blocks: true, inset: 0.6 },
   stove: { height: 58 * ROOM_ASSET_SCALE, topColor: 0x9aa3ad, leftColor: 0x7c848d, rightColor: 0x656c74, blocks: true, inset: 0.9 },
+  counter: { height: 26 * ROOM_ASSET_SCALE, topColor: 0xf3ead8, leftColor: 0xa0703f, rightColor: 0x7c5331, blocks: true, inset: 0.9 },
   bush: { height: 40 * ROOM_ASSET_SCALE, topColor: 0x5fae3f, leftColor: 0x4a8c31, rightColor: 0x3d7428, blocks: true, inset: 0.7 },
   panel: { height: 90 * ROOM_ASSET_SCALE, topColor: 0xefc84a, leftColor: 0xd0aa36, rightColor: 0xb0902c, blocks: true, inset: 0.7 },
   letterbox: { height: 52 * ROOM_ASSET_SCALE, topColor: 0xc9503f, leftColor: 0xa93f31, rightColor: 0x8c3326, blocks: true, inset: 0.5 },
@@ -138,8 +140,9 @@ export interface RoomModelOptions {
 }
 
 export class RoomModel {
-  readonly tilesX: number;
-  readonly tilesY: number;
+  /** Changes only through resize() (café expansion). */
+  tilesX: number;
+  tilesY: number;
   readonly items: RoomItem[];
 
   /** índice do tile -> item que ocupa o tile. */
@@ -236,6 +239,19 @@ export class RoomModel {
 
   itemAt(tx: number, ty: number): RoomItem | undefined {
     return this.itemMap.get(tileIndex(tx, ty));
+  }
+
+  /**
+   * Expansion: the same model (navigation, NPCs and the store hold it) takes
+   * the new bounds; replaceItems() then registers the new floor and walls.
+   * The tile index packs ty * MAX_NUM_TILES_X + tx, which caps the side.
+   */
+  resize(tilesX: number, tilesY: number): void {
+    if (!Number.isInteger(tilesX) || !Number.isInteger(tilesY) || tilesX < 2 || tilesY < 2 || tilesX > MAX_NUM_TILES_X || tilesY > MAX_NUM_TILES_Y) {
+      throw new Error(`Tamanho de sala inválido: ${tilesX}×${tilesY}.`);
+    }
+    this.tilesX = tilesX;
+    this.tilesY = tilesY;
   }
 
   /** Rebuild occupancy while preserving the model used by navigation and NPCs. */

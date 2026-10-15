@@ -3,14 +3,14 @@ import { AVATAR_URLS, loadAvatarAssets } from '../game/asset-manifest';
 import { bakeAvatarIncrementally } from './AvatarBaker';
 import type { AvatarRenderer } from './AvatarRenderer';
 import { parseAtlas } from './AvatarTexture';
-import { DEFAULT_CELL, ROOM_CLIPS, PLAYER_ROOM_CLIPS, type BakedAvatarBundle } from './bake';
+import { DEFAULT_CELL, ROOM_CLIPS, type BakedAvatarBundle } from './bake';
 import { NpcLookHistory, npcLookKey, type NpcAppearancePolicy } from './npc-looks';
 import { resolveLook, type Wardrobe } from './wardrobe';
 import { restoreAppearance } from './appearance';
 
 export interface NpcAvatarSource {
   next(): Promise<BakedAvatarBundle>;
-  bakeAppearance?(appearance: string, human?: boolean, signal?: AbortSignal): Promise<BakedAvatarBundle>;
+  bakeAppearance?(appearance: string, clips?: readonly number[], signal?: AbortSignal): Promise<BakedAvatarBundle>;
   destroy(): void;
 }
 
@@ -47,11 +47,11 @@ class IncrementalNpcAvatarSource implements NpcAvatarSource {
     return this.bakeLook();
   }
 
-  bakeAppearance(appearance: string, human = false, signal?: AbortSignal): Promise<BakedAvatarBundle> {
-    return this.bakeLook(appearance, human, signal);
+  bakeAppearance(appearance: string, clips: readonly number[] = ROOM_CLIPS, signal?: AbortSignal): Promise<BakedAvatarBundle> {
+    return this.bakeLook(appearance, clips, signal);
   }
 
-  private bakeLook(appearance?: string, human = false, actorSignal?: AbortSignal): Promise<BakedAvatarBundle> {
+  private bakeLook(appearance?: string, clips: readonly number[] = ROOM_CLIPS, actorSignal?: AbortSignal): Promise<BakedAvatarBundle> {
     const signal = actorSignal ? AbortSignal.any([this.controller.signal, actorSignal]) : this.controller.signal;
     const task = this.queue.then(async () => {
       signal.throwIfAborted();
@@ -59,7 +59,7 @@ class IncrementalNpcAvatarSource implements NpcAvatarSource {
       const missing = this.renderer.setLook(resolveLook(this.wardrobe, look));
       if (missing.length) throw new Error('O visual do NPC possui texturas indisponíveis.');
       const baked = await bakeAvatarIncrementally(this.renderer, {
-        clips: human ? PLAYER_ROOM_CLIPS : ROOM_CLIPS, cell: DEFAULT_CELL, signal,
+        clips, cell: DEFAULT_CELL, signal,
       });
       if (signal.aborted) {
         baked.canvas.width = 0;

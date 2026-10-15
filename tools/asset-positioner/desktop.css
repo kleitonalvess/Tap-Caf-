@@ -32,6 +32,8 @@ button.primary:disabled { color: #9fa0a1; background: #48433b; border-color: #51
 .brand-mark { color: var(--accent); }
 .brand-mark .ui-icon { width: 21px; height: 21px; }
 .brand-project { padding-left: 12px; border-left: 1px solid #4b4f54; color: var(--muted); font-size: 12px; }
+.studio-link { margin-left: auto; color: var(--accent); font-size: 12px; text-decoration: none; }
+.studio-link:hover { text-decoration: underline; }
 .local-badge { display: flex; gap: 6px; align-items: center; color: #b7c7bd; font-size: 11px; }
 .local-badge .ui-icon { width: 13px; height: 13px; }
 .workspace-tabs { height: 38px; display: flex; align-items: stretch; padding: 0 12px; gap: 3px; background: #25282c; border-bottom: 1px solid var(--line); }

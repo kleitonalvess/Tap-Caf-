@@ -8,9 +8,10 @@ const items = readdirSync(directory, { withFileTypes: true }).filter((entry) => 
   if (item.classname !== entry.name || !/^[a-z][a-z0-9_]*$/.test(item.classname) ||
     !Number.isSafeInteger(item.id) || item.id <= 0 || typeof item.name !== 'string' ||
     ![0, 1, 2, 3].includes(item.type) || !Number.isSafeInteger(item.priceGold) || item.priceGold < 0 || typeof item.purchasable !== 'boolean' ||
-    !['wall', 'window', 'door', 'table', 'chair', 'stove', 'bush', 'panel', 'letterbox', 'decor'].includes(item.kind) ||
+    !['wall', 'window', 'door', 'table', 'chair', 'stove', 'counter', 'bush', 'panel', 'letterbox', 'decor'].includes(item.kind) ||
     ![item.sizeX, item.sizeY].every((n) => Number.isInteger(n) && n >= 1 && n <= 8) ||
-    !Array.isArray(item.parts) || item.parts.length === 0 || !Number.isFinite(item.itemHeight) || item.itemHeight < 0 ||
+    // Placeholder items have no PNG yet; the client draws them until parts are registered.
+    !Array.isArray(item.parts) || (item.parts.length === 0 && item.placeholder !== true) || !Number.isFinite(item.itemHeight) || item.itemHeight < 0 ||
     (item.type === 2 && item.kind !== 'door') ||
     (item.type === 2 && (!Number.isFinite(item.wall_cutter_index) || item.wall_cutter_index < 0 || item.wall_cutter_index > 1))) {
     throw new Error(`Manifesto inválido: ${entry.name}`);

@@ -1,8 +1,8 @@
-import { Container, Rectangle, Sprite, Text, TextStyle, Texture } from 'pixi.js';
+import { Container, Graphics, Rectangle, Sprite, Text, TextStyle, Texture } from 'pixi.js';
 
 import { FONT_FAMILY, FONT_WEIGHT } from '../../core/font-tokens';
 import { STAGE_WIDTH } from '../../core/stage';
-import { emptyPlayerState, resourcePercentage, type PlayerState } from '../../game/player-state';
+import { emptyPlayerState, levelProgress, resourcePercentage, type PlayerState } from '../../game/player-state';
 import { ProgressBar } from '../loading/ProgressBar';
 import { COLORS, type RoundedRect } from '../loading/layout';
 
@@ -60,7 +60,8 @@ export class TopBars {
   private normalEnergyTexture!: Texture;
   private readonly bonusEnergyTexture?: Texture;
 
-  constructor(textures: TopBarsTextures, state?: PlayerState) {
+  /** levels: the rules' table, so the XP bar fills within the current level. */
+  constructor(textures: TopBarsTextures, state?: PlayerState, private readonly levels?: readonly { requiredXp: number }[]) {
     this.bonusEnergyTexture = textures.energyIcons?.bonus;
     this.view.label = 'room-top-bars';
     this.view.x = (STAGE_WIDTH - textures.back.width) / 2;
@@ -180,7 +181,7 @@ export class TopBars {
   /** Apply a server snapshot without rounding resource counts or their ratios. */
   setState(state: PlayerState, immediate = false): void {
     this.view.visible = true;
-    this.values = [100, 100, ...[state.experience, state.energy, state.crates].map(resourcePercentage)];
+    this.values = [100, 100, levelProgress(state, this.levels), ...[state.energy, state.crates].map(resourcePercentage)];
     this.bars.forEach((bar, index) => bar.setProgress(this.values[index], immediate));
     const texts = [String(state.cash), String(state.gold), String(state.experience.current),
       `${state.energy.current}/${state.energy.maximum}`, `${state.crates.current}/${state.crates.maximum}`];
@@ -194,6 +195,20 @@ export class TopBars {
       this.energyIcon.height = ICON_HEIGHT * 1.15 * 1.2 * 1.15;
       this.energyIcon.scale.x = this.energyIcon.scale.y;
     }
+  }
+
+  /** A short line under the bars, below any window (the offline mode says where the save lives). */
+  setNote(text: string): void {
+    this.view.getChildByLabel('room-top-bars-note')?.destroy({ children: true });
+    const label = new Text({ text, style: new TextStyle({ fontFamily: [FONT_FAMILY, 'sans-serif'], fontSize: 17, fontWeight: '600', fill: 0xf4efe2 }) });
+    label.anchor.set(0.5);
+    const width = label.width + 28;
+    const note = new Container();
+    note.label = 'room-top-bars-note';
+    note.eventMode = 'none';
+    note.addChild(new Graphics().roundRect(-width / 2, -14, width, 28, 14).fill({ color: 0x38210e, alpha: 0.72 }), label);
+    note.position.set(TOP_BARS_VISIBLE_FRAME.x + TOP_BARS_VISIBLE_FRAME.width / 2, TOP_BARS_VISIBLE_FRAME.y + TOP_BARS_VISIBLE_FRAME.height + 22);
+    this.view.addChild(note);
   }
 
   update(deltaMs: number): void {

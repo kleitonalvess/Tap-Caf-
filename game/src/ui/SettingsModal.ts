@@ -10,6 +10,21 @@ export interface SettingsModalOptions {
   onChange?: (preferences: AudioPreferences) => void;
   getBitterMode?: () => boolean;
   onBitterModeChange?: (enabled: boolean) => void;
+  /** Music tracks the Faixa button cycles through (same list as the HUD). */
+  tracks?: readonly { id: string; name: string }[];
+  isFullscreen?: () => boolean;
+  onToggleFullscreen?: () => void | Promise<void>;
+  /** Absent in the offline mode: the browser's café has no account to leave. */
+  onLogout?: () => void | Promise<void>;
+}
+
+interface SettingsButton {
+  id: string;
+  holder: Container;
+  background: Graphics;
+  focus: Graphics;
+  caption: Text;
+  run: () => void;
 }
 
 type VolumeChannel = 'musicPercent' | 'effectsPercent';
@@ -24,7 +39,9 @@ interface VolumeSlider {
 }
 
 const PANEL_WIDTH = 920;
-const PANEL_HEIGHT = 820;
+const PANEL_HEIGHT = 920;
+const BUTTON_ROW_Y = 790;
+const BUTTON_HEIGHT = 74;
 const TRACK_WIDTH = 520;
 const DARK_BROWN = 0x603a1e;
 const LIGHT_BROWN = 0xc69a60;
@@ -40,6 +57,8 @@ export class SettingsModal {
   private readonly bitterControl = new Container();
   private readonly bitterCheckbox = new Graphics();
   private readonly bitterFocus = new Graphics();
+  private readonly buttons: SettingsButton[] = [];
+  private loggingOut = false;
   private bitterMode = false;
   private preferences: AudioPreferences = { ...DEFAULT_AUDIO_PREFERENCES };
   private drag: { slider: VolumeSlider; pointerId: number } | null = null;
@@ -93,11 +112,14 @@ export class SettingsModal {
     this.buildSlider('musicPercent', 'Música', 382);
     this.buildSlider('effectsPercent', 'Efeitos sonoros', 522);
     this.buildBitterControl();
+    this.buildButtons();
     this.view.addChild(backdrop, this.panel);
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', this.onKeyDown, true);
       window.addEventListener('blur', this.cancelDrag);
     }
+    // The browser leaves fullscreen by itself too (Esc, F11, a system gesture).
+    if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', this.fullscreenChanged);
   }
 
   get isOpen(): boolean { return this.view.visible; }
@@ -108,6 +130,7 @@ export class SettingsModal {
     this.refreshSliders();
     this.bitterMode = this.options.getBitterMode?.() ?? this.bitterMode;
     this.refreshBitterCheckbox();
+    this.refreshButtons();
     this.focusedControl = 0;
     this.keyboardFocus = false;
     this.closeHovered = false;
@@ -289,22 +312,20 @@ export class SettingsModal {
 
   private setVolume(channel: VolumeChannel, value: number): void {
     const current = this.preferences;
-    // Editing a legacy global mute must not unexpectedly unmute the other channel.
-    const next = sanitizeAudioPreferences({
-      musicPercent: current.muted ? 0 : current.musicPercent,
-      effectsPercent: current.muted ? 0 : current.effectsPercent,
-      [channel]: value,
-      muted: false,
-    });
+    // Mute is a separate HUD toggle that keeps both volumes; choosing a volume
+    // here is a request to hear it, so it unmutes without touching the other one.
+    const next = sanitizeAudioPreferences({ ...current, [channel]: value, muted: false });
     if (next.musicPercent === current.musicPercent && next.effectsPercent === current.effectsPercent && next.muted === current.muted) return;
     this.preferences = next;
     this.refreshSliders();
+    this.refreshButtons();
     this.options.onChange?.({ ...this.preferences });
   }
 
   private refreshSliders(): void {
     for (const slider of this.sliders) {
-      const value = this.preferences.muted ? 0 : this.preferences[slider.channel];
+      const value = this.preferences[slider.channel];
+      slider.track.alpha = this.preferences.muted ? 0.45 : 1;
       slider.track.clear().roundRect(0, -10, TRACK_WIDTH, 20, 10).fill(0x704721)
         .roundRect(3, -7, TRACK_WIDTH - 6, 14, 7).fill(0xf5eee3);
       const width = (TRACK_WIDTH - 6) * value / 100;
@@ -314,13 +335,114 @@ export class SettingsModal {
     }
   }
 
+  /** Som (mute), Faixa, Tela cheia and Sair, in one row under the bitter mode. */
+  private buildButtons(): void {
+    const specs: Array<{ id: string; run: () => void }> = [
+      { id: 'mute', run: () => this.applyAudio({ ...this.preferences, muted: !this.preferences.muted }) },
+    ];
+    if (this.options.tracks?.length) specs.push({ id: 'track', run: () => this.nextTrack() });
+    if (this.options.onToggleFullscreen) specs.push({ id: 'fullscreen', run: () => {
+      void Promise.resolve(this.options.onToggleFullscreen?.()).finally(() => this.refreshButtons());
+    } });
+    if (this.options.onLogout) specs.push({ id: 'logout', run: () => {
+      if (this.loggingOut) return;
+      this.loggingOut = true;
+      this.refreshButtons();
+      void Promise.resolve(this.options.onLogout?.()).catch((error: unknown) => console.warn('[sessão] não foi possível sair', error))
+        .finally(() => { this.loggingOut = false; this.refreshButtons(); });
+    } });
+    const gap = 20;
+    const width = (PANEL_WIDTH - 120 - gap * (specs.length - 1)) / specs.length;
+    specs.forEach((spec, index) => {
+      const holder = new Container();
+      holder.label = `settings-${spec.id}-button`;
+      holder.position.set(60 + index * (width + gap), BUTTON_ROW_Y);
+      holder.eventMode = 'static';
+      holder.cursor = 'pointer';
+      holder.hitArea = new Rectangle(0, 0, width, BUTTON_HEIGHT);
+      const background = new Graphics();
+      const focus = new Graphics().roundRect(-6, -6, width + 12, BUTTON_HEIGHT + 12, 22).stroke({ color: 0x01a9fd, width: 4 });
+      const caption = new Text({ text: '', style: new TextStyle({
+        fontFamily: [FONT_FAMILY, 'sans-serif'], fontSize: 26, fontWeight: '600', fill: 0xffffff, align: 'center',
+        wordWrap: true, wordWrapWidth: width - 16,
+      }) });
+      caption.anchor.set(0.5);
+      caption.position.set(width / 2, BUTTON_HEIGHT / 2);
+      for (const graphic of [background, focus, caption]) graphic.eventMode = 'none';
+      this.texts.push(caption);
+      holder.addChild(focus, background, caption);
+      const button: SettingsButton = { id: spec.id, holder, background, focus, caption, run: spec.run };
+      holder.on('pointerover', () => { holder.scale.set(1.03); });
+      holder.on('pointerout', () => { holder.scale.set(1); });
+      holder.on('pointertap', (event) => {
+        event.stopPropagation();
+        if (!this.isOpen) return;
+        this.focusedControl = this.sliders.length + 2 + this.buttons.indexOf(button);
+        this.keyboardFocus = false;
+        this.syncFocus();
+        button.run();
+      });
+      this.buttons.push(button);
+      this.panel.addChild(holder);
+    });
+    this.refreshButtons();
+  }
+
+  private refreshButtons(): void {
+    for (const button of this.buttons) {
+      const width = (button.holder.hitArea as Rectangle).width;
+      let caption = '';
+      let color = 0x3f9a4a;
+      if (button.id === 'mute') {
+        caption = this.preferences.muted ? 'Som: mudo' : 'Som: ligado';
+        color = this.preferences.muted ? 0x9b8b78 : 0x3f9a4a;
+      } else if (button.id === 'track') {
+        const track = this.options.tracks?.find((item) => item.id === this.preferences.track) ?? this.options.tracks?.[0];
+        caption = `Faixa: ${track?.name ?? '—'}`;
+        color = 0x8a5a2b;
+      } else if (button.id === 'fullscreen') {
+        caption = this.options.isFullscreen?.() ? 'Sair da tela cheia' : 'Tela cheia';
+        color = 0x0084ed;
+      } else if (button.id === 'logout') {
+        caption = this.loggingOut ? 'Saindo…' : 'Sair do jogo';
+        color = 0xc0392b;
+      }
+      button.caption.text = caption;
+      button.caption.scale.set(1);
+      if (button.caption.width > width - 16) button.caption.scale.set((width - 16) / button.caption.width);
+      button.background.clear().roundRect(0, 0, width, BUTTON_HEIGHT, 20).fill(color).stroke({ color: 0x3d2a14, width: 3 });
+    }
+  }
+
+  private nextTrack(): void {
+    const tracks = this.options.tracks ?? [];
+    if (!tracks.length) return;
+    const index = tracks.findIndex((track) => track.id === this.preferences.track);
+    this.applyAudio({ ...this.preferences, track: tracks[(index + 1) % tracks.length]!.id });
+  }
+
+  private applyAudio(preferences: AudioPreferences): void {
+    this.preferences = sanitizeAudioPreferences(preferences);
+    this.refreshSliders();
+    this.refreshButtons();
+    this.options.onChange?.({ ...this.preferences });
+    // The engine may replace a track it cannot play; show what it chose.
+    const actual = this.options.getPreferences?.();
+    if (actual) {
+      this.preferences = sanitizeAudioPreferences(actual);
+      this.refreshButtons();
+    }
+  }
+
   private syncFocus(): void {
     this.closeFocus.visible = this.keyboardFocus && this.focusedControl === 0;
     this.sliders.forEach((slider, index) => { slider.focus.visible = this.keyboardFocus && this.focusedControl === index + 1; });
     this.bitterFocus.visible = this.keyboardFocus && this.focusedControl === this.sliders.length + 1;
+    this.buttons.forEach((button, index) => { button.focus.visible = this.keyboardFocus && this.focusedControl === this.sliders.length + 2 + index; });
   }
 
   private readonly cancelDrag = (): void => { this.drag = null; };
+  private readonly fullscreenChanged = (): void => { if (!this.disposed) this.refreshButtons(); };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (!this.isOpen) return;
@@ -331,7 +453,7 @@ export class SettingsModal {
     } else if (event.key === 'Tab') {
       event.preventDefault();
       this.keyboardFocus = true;
-      const count = this.sliders.length + 2;
+      const count = this.sliders.length + 2 + this.buttons.length;
       this.focusedControl = (this.focusedControl + (event.shiftKey ? count - 1 : 1)) % count;
       this.syncFocus();
     } else if (this.focusedControl === 0 && (event.key === 'Enter' || event.key === ' ')) {
@@ -342,10 +464,16 @@ export class SettingsModal {
         event.preventDefault();
         if (!event.repeat) this.toggleBitterMode();
       }
+    } else if (this.focusedControl >= this.sliders.length + 2) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        if (!event.repeat) this.buttons[this.focusedControl - this.sliders.length - 2]?.run();
+      }
     } else {
       const slider = this.sliders[this.focusedControl - 1];
       if (!slider) return;
-      const current = this.preferences.muted ? 0 : this.preferences[slider.channel];
+      // Muted keeps the volumes: the arrows move from the stored one (and unmute).
+      const current = this.preferences[slider.channel];
       const step = event.shiftKey ? 5 : 1;
       const value = event.key === 'Home' ? 0 : event.key === 'End' ? 100
         : event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? current - step
@@ -366,6 +494,7 @@ export class SettingsModal {
       window.removeEventListener('keydown', this.onKeyDown, true);
       window.removeEventListener('blur', this.cancelDrag);
     }
+    if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', this.fullscreenChanged);
     this.view.destroy({ children: true });
   }
 }

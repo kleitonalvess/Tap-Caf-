@@ -1,4 +1,5 @@
 import { parseNpcAppearancePolicy, type NpcAppearancePolicy } from '../avatar/npc-looks';
+import { apiFetch } from './backend';
 
 export const NPC_APPEARANCE_CACHE_KEY = 'coffe-mania.npc-appearance.v1';
 let policyPromise: Promise<NpcAppearancePolicy> | undefined;
@@ -12,7 +13,7 @@ export function loadNpcAppearancePolicy(storage = localStorageIfAvailable()): Pr
 async function fetchPolicy(storage: Pick<Storage, 'setItem'> | undefined): Promise<NpcAppearancePolicy> {
   let response: Response;
   try {
-    response = await fetch('/api/coffe/npc-appearance', {
+    response = await apiFetch('/api/coffe/npc-appearance', {
       credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000),
     });
   } catch {
