@@ -173,7 +173,7 @@ try {
   await game.click(`cook-card-${pao.id}`);
   await game.waitFor(() => window.__coffeMania.screens.active.occupiedStoves.size > 0, undefined, 60000);
 
-  // 3. Temperar uma vez no fogo: mais porções e XP para quem temperou.
+  // 3. Temperar uma vez no fogo: mais porções na hora; o XP do dono só ao servir no balcão.
   const actions = await openMenu();
   const seasonCaption = await game.texts('stove-action-season');
   await game.click('stove-action-season');
@@ -184,7 +184,7 @@ try {
   const seasoned = await job();
   const afterSeason = await game.player();
   run.check(seasoned.servings === pao.servings + seasonBonus, `o tempero rende ${pao.servings + seasonBonus} porções`, seasoned);
-  run.check(afterSeason.xp - beforeSeason.xp === rules.stove.seasonXp, `temperar dá ${rules.stove.seasonXp} XP`, { before: beforeSeason.xp, after: afterSeason.xp });
+  run.check(afterSeason.xp === beforeSeason.xp, 'o tempero do dono não dá XP enquanto o prato está no fogo', { before: beforeSeason.xp, after: afterSeason.xp });
 
   // The free batch: nothing charged, and the help is gone while it cooks.
   run.check(seasoned.recipeId === pao.id && seasoned.costCoins === 0 && afterSeason.gold === cheapest - 1, 'dois toques no cartão cozinham sem cobrar', { job: seasoned, gold: afterSeason.gold });
@@ -226,6 +226,8 @@ try {
   const [served] = counterCheck.food;
   run.check(counterCheck.food.length === 1 && served.recipeId === pao.id && served.servings === pao.servings + seasonBonus && served.counterId === furniture.counter,
     `o balcão recebe as ${pao.servings + seasonBonus} porções`, counterCheck.food);
+  const afterServe = await game.player();
+  run.check(afterServe.xp - afterSeason.xp === rules.stove.seasonXp, `servir o prato temperado credita os ${rules.stove.seasonXp} XP do tempero`, { before: afterSeason.xp, after: afterServe.xp });
   run.check(await game.waitFor(() => window.__coffeMania.screens.active.occupiedStoves.size === 0, undefined, 15000).then(() => true, () => false), 'servir libera o fogão');
   run.check(counterCheck.gold < cheapest && counterCheck.emergency === null, 'com comida no balcão não há ajuda de emergência, mesmo sem moedas', counterCheck);
   const badge = await game.waitFor(() => {

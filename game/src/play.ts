@@ -36,6 +36,7 @@ import {
 import { loadRoomItemArt, roomModelItems, RoomInventoryClient } from './game/room-inventory';
 import { logout, resolveSession } from './game/session';
 import { isOffline } from './game/backend';
+import { offlineSaveActions } from './standalone/save-actions';
 import { loadPlayerState } from './game/player-state';
 import { loadNpcAppearancePolicy } from './game/npc-appearance';
 import { CookingClient } from './game/cooking';
@@ -214,6 +215,8 @@ async function boot(): Promise<void> {
       placeholderAvatar,
       npcAvatarSource,
       outsideNpcs: true,
+      // The debug HUD is for developers: only with ?debug=1.
+      showHud: flags.debug,
       ...(actionBarTexture ? { actionBarTexture } : {}),
       ...(storeBarTexture && roomSnapshot.canEdit !== false ? { storeBarTexture } : {}),
       ...(storeBarIcons ? { storeBarIcons } : {}),
@@ -233,6 +236,8 @@ async function boot(): Promise<void> {
         onToggleFullscreen: () => fullscreen.toggle(),
         // The browser's café has no account to leave.
         ...(isOffline() ? {} : { onLogout: async () => { await logout(); window.location.replace('/'); } }),
+        // The offline café lives in this browser: the save moves between devices as a file.
+        ...(offlineSaveActions() ?? {}),
       },
       ...(topBarsTextures ? { topBarsTextures } : {}),
       ...(cookTextures ? { cookTextures } : {}),
@@ -302,7 +307,13 @@ async function boot(): Promise<void> {
     app.stage.addChildAt(loading.viewportBackground, 0);
     screens.show(loading);
 
-    void loadGameAssets((progress) => paced.setReal(progress));
+    // A file that fails to download would leave the bar stuck: say so and offer "Tentar novamente".
+    void loadGameAssets((progress) => paced.setReal(progress)).catch((error: unknown) => {
+      console.error('[assets] falha no carregamento', error);
+      app.stop();
+      uiLayer.remove();
+      renderSessionError(host, new Error('Não foi possível baixar os arquivos do jogo. Verifique a conexão e tente novamente.'));
+    });
   }
 
   stage.onResize((transform) => {

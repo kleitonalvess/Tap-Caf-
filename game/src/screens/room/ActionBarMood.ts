@@ -1,4 +1,4 @@
-import { Container, Sprite, Text, TextStyle } from 'pixi.js';
+import { Container, Rectangle, Sprite, Text, TextStyle } from 'pixi.js';
 
 import { FONT_FAMILY } from '../../core/font-tokens';
 import type { NpcEmotionTextures } from '../../game/asset-manifest';
@@ -75,6 +75,15 @@ export class ActionBarMood {
     this.view.addChild(this.icon, this.valueText, this.maximumText, this.testerText);
     this.setSatisfaction(satisfaction ?? { current: 0, maximum: 105 });
     this.view.visible = satisfaction !== undefined;
+  }
+
+  /** The face, the score and the name open the Popularidade window. */
+  setTapHandler(onTap: () => void): void {
+    this.view.eventMode = 'static';
+    this.view.cursor = 'pointer';
+    this.view.hitArea = new Rectangle(220, 662, 280, 92);
+    this.view.on('pointerdown', (event) => event.stopPropagation());
+    this.view.on('pointertap', (event) => { event.stopPropagation(); onTap(); });
   }
 
   setCafeName(name: string): void {

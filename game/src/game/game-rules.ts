@@ -35,6 +35,10 @@ export interface GameRules {
     farm: { cooldownSeconds: number; bonusPercent: number; maxCharges: number };
     disco: { durationSeconds: number; cooldownSeconds: number; arrivalFactor: number; tipMultiplier: number };
   };
+  /** Whole popularity points; the café keeps tenths. */
+  popularity?: { min: number; max: number; satisfiedDelta: number; unsatisfiedDelta: number };
+  customerFrequency?: { popularity: number; perMinute: number }[];
+  daily?: { days: { day: number; coins: number; cash: number }[] };
 }
 
 export async function loadGameRules(signal?: AbortSignal): Promise<GameRules> {
@@ -76,21 +80,35 @@ export function formatDuration(totalSeconds: number): string {
   return rest ? `${minutes} min ${rest} s` : `${minutes} min`;
 }
 
-export interface RecipePage {
-  label: string;
-  recipes: RecipeRule[];
+/** The book's four tabs: every recipe, the quick ones, the most profitable and the unlocked ones. */
+export const RECIPE_TABS = [
+  { id: 'all', label: 'Todas' },
+  { id: 'quick', label: 'Rápidas' },
+  { id: 'profitable', label: 'Lucrativas' },
+  { id: 'unlocked', label: 'Desbloqueadas' },
+] as const;
+export type RecipeTab = typeof RECIPE_TABS[number]['id'];
+/** "Rápidas": ready within ten minutes. */
+export const QUICK_RECIPE_SECONDS = 600;
+
+/** Coins a batch returns over its cost when every serving is paid. */
+export function recipeProfit(recipe: RecipeRule): number {
+  return recipe.servings * recipe.pricePerServing - recipe.costCoins;
 }
 
-/** Book pages in catalogue order, labelled by the levels they unlock at. */
-export function recipePages(recipes: readonly RecipeRule[], perPage = 6, maxPages = 4): RecipePage[] {
-  const pages: RecipePage[] = [];
-  for (let i = 0; i < recipes.length && pages.length < maxPages; i += perPage) {
-    const slice = recipes.slice(i, i + perPage);
-    const low = Math.min(...slice.map((recipe) => recipe.level));
-    const high = Math.max(...slice.map((recipe) => recipe.level));
-    pages.push({ label: low === high ? `Nível ${low}` : `Nível ${low}–${high}`, recipes: slice });
+/** The recipes of a tab, in the order the tab shows them. */
+export function recipeTab(recipes: readonly RecipeRule[], tab: RecipeTab, level: number): RecipeRule[] {
+  const list = [...recipes];
+  switch (tab) {
+    case 'quick':
+      return list.filter((recipe) => recipe.cookSeconds <= QUICK_RECIPE_SECONDS).sort((a, b) => a.cookSeconds - b.cookSeconds);
+    case 'profitable':
+      return list.sort((a, b) => recipeProfit(b) - recipeProfit(a) || b.servings - a.servings);
+    case 'unlocked':
+      return list.filter((recipe) => recipe.level <= level);
+    default:
+      return list;
   }
-  return pages;
 }
 
 export interface LevelUnlocks {

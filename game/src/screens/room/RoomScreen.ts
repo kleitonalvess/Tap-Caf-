@@ -88,6 +88,10 @@ import { RoomDepthSorter, setItemOverlayDepth } from './RoomDepthSorter';
 import { StreetScenery } from './StreetScenery';
 import { TableDirt } from './TableDirt';
 import { StaffModal } from './StaffModal';
+import { AchievementsModal } from './AchievementsModal';
+import { CurrencyModal, type Currency } from './CurrencyModal';
+import { PopularityModal } from './PopularityModal';
+import { claimProgress, currencySources, loadProgress, popularityLines, renameCafe, type ProgressClaim, type ProgressSnapshot } from '../../game/progress';
 import { LevelUpModal } from './LevelUpModal';
 import { levelUnlocks, nextUnlocks } from '../../game/game-rules';
 import { StaffClient } from '../../game/staff';
@@ -140,7 +144,6 @@ const SCENE_CAMERA_TOP_INSET = 150;
 const SCENE_DIAGONAL_PAN_TILE = 25;
 /** Bottom-bar systems not built yet: the toast names each one. */
 const SOON_SYSTEMS: Record<string, string> = {
-  trophy: 'Conquistas: desafios com prêmio a cada marca alcançada.',
   gift: 'Presentes: troque presentes com os vizinhos todos os dias.',
   'yellow-box': 'Caixas misteriosas: itens surpresa para o seu café.',
   map: 'Mapa do bairro: visite a rua e os cafés vizinhos.',
@@ -154,6 +157,8 @@ const LOCAL_COOKING_PREVIEW_MS = 2000;
 const DAILY_WELCOME_WAIT_MS = 15_000;
 /** A failed or early daily check asks again after this. */
 const DAILY_RETRY_MS = 60_000;
+/** Game events that may move a counter refresh the trophy's badge once, this long after the burst. */
+const PROGRESS_REFRESH_MS = 1500;
 const LOCAL_COOKING_DURATION_MS = 30_000;
 const COOKING_PROGRESS_SCALE = 1.2;
 const STOVE_MENU_TOP_DROP = 14;
@@ -323,6 +328,14 @@ export class RoomScreen implements Screen {
   private dailyHeldUntil = Date.now() + DAILY_WELCOME_WAIT_MS;
   private welcomed = false;
   private mailBadge?: { view: Container; label: Text };
+  private trophyBadge?: { view: Container; label: Text };
+  private achievementsModal?: AchievementsModal;
+  private popularityModal?: PopularityModal;
+  private currencyModal?: CurrencyModal;
+  private progressTimer?: ReturnType<typeof setTimeout>;
+  private progressLoading = false;
+  private progressAgain = false;
+  private progressNextAt = 0;
   /** Absence summary waiting for the other windows to close; `to` of the last one shown. */
   private pendingAway?: AwaySummary;
   private shownAway?: AwaySummary;
@@ -710,10 +723,10 @@ export class RoomScreen implements Screen {
           event.stopPropagation();
           this.onActionIcon(name);
         });
-        if (isMail) {
-          // Unread letters, over the envelope's corner.
+        if (isMail || isTrophy) {
+          // Unread letters over the envelope's corner; rewards to claim over the trophy.
           const badge = new Container();
-          badge.label = 'room-action-bar-mail-badge';
+          badge.label = isMail ? 'room-action-bar-mail-badge' : 'room-action-bar-trophy-badge';
           badge.addChild(new Graphics().circle(0, 0, 15 * growth).fill(0xd23b2a).stroke({ color: 0xffffff, width: 3 * growth }));
           const label = new Text({ text: '', style: new TextStyle({ fontFamily: FONT_FAMILY, fontSize: 18 * growth, fontWeight: '700', fill: 0xffffff }) });
           label.anchor.set(0.5);
@@ -722,7 +735,8 @@ export class RoomScreen implements Screen {
           badge.eventMode = 'none';
           badge.visible = false;
           holder.addChild(badge);
-          this.mailBadge = { view: badge, label };
+          if (isMail) this.mailBadge = { view: badge, label };
+          else this.trophyBadge = { view: badge, label };
         }
         this.actionBarLayer.addChild(holder);
       });
@@ -882,6 +896,7 @@ export class RoomScreen implements Screen {
     }
     this.settingsModal = new SettingsModal({
       ...options.settings,
+      portrait: () => this.playerView instanceof AvatarActorView ? this.playerView.portraitTexture() : undefined,
       getBitterMode: () => this.camera.bitterMode,
       onBitterModeChange: (enabled) => {
         this.camera.setBitterMode(enabled);
@@ -987,6 +1002,39 @@ export class RoomScreen implements Screen {
       });
       this.view.addChild(this.levelUpModal.view);
     }
+    // Trophy (each player's own achievements and missions), popularity and the
+    // currency "+" buttons: for owners and visitors alike.
+    this.achievementsModal = new AchievementsModal({
+      now: () => this.serverNow(),
+      onClaim: (kind, id) => claimProgress(kind, id),
+      onClaimed: (claim) => this.collectProgress(claim),
+      ...(options.audio ? { audio: options.audio } : {}),
+    });
+    this.view.addChild(this.achievementsModal.view);
+    this.popularityModal = new PopularityModal({
+      lines: () => popularityLines(this.rules),
+      onRename: async (name) => {
+        const state = await renameCafe(name);
+        this.setPlayerState(state);
+        return state.cafeName;
+      },
+      ...(options.audio ? { audio: options.audio } : {}),
+    });
+    this.view.addChild(this.popularityModal.view);
+    this.currencyModal = new CurrencyModal({
+      sources: (kind) => currencySources(kind, this.rules),
+      onAchievements: () => this.openAchievements(),
+      ...(options.audio ? { audio: options.audio } : {}),
+    });
+    this.view.addChild(this.currencyModal.view);
+    this.topBars?.setPlusHandler((kind) => this.openCurrency(kind));
+    this.actionBarMood?.setTapHandler(() => this.openPopularity());
+    if (options.roomSnapshot?.canEdit === false && options.roomSnapshot.cafe) {
+      // A visitor's mood column shows the café being visited, not their own.
+      this.actionBarMood?.setSatisfaction({ current: options.roomSnapshot.cafe.popularity, maximum: options.playerState?.satisfaction.maximum ?? 105 });
+      this.actionBarMood?.setCafeName(options.roomSnapshot.cafe.name);
+    }
+    this.scheduleProgress(0);
     this.confirmDialog = new ConfirmDialog(options.audio);
     this.view.addChild(this.confirmDialog.view);
     // Short notices go over the windows: a level-up while one is open falls back to them.
@@ -1052,7 +1100,15 @@ export class RoomScreen implements Screen {
         if (state.emotion?.kind === 'dissatisfied' && state.emotion.id !== previous.emotion?.id) this.audio?.play('buzzer', 0.8);
       }
     }
-    if (event.type === 'payment' && event.payment) this.showPayment(event.payment);
+    if (event.type === 'payment' && event.payment) {
+      this.showPayment(event.payment);
+      const visited = this.roomSnapshot?.canEdit === false ? this.roomSnapshot.cafe : undefined;
+      if (visited) {
+        visited.popularity = event.payment.popularityTenths / 10;
+        this.actionBarMood?.setSatisfaction({ current: visited.popularity, maximum: this.roomSnapshot?.playerState?.satisfaction.maximum ?? 105 });
+      }
+    }
+    if (event.type === 'payment' || event.type === 'food' || event.type === 'dirt' || event.type === 'world') this.scheduleProgress();
     for (const id of event.removed ?? []) { const entry = this.liveActors.get(id); if (entry) { this.removeLiveActor(id, entry); this.liveActors.delete(id); } }
     if (event.type === 'world' && this.roomSnapshot && event.revision !== undefined && event.revision >= this.roomSnapshot.revision) {
       const units = new Map(this.roomSnapshot.inventory.map((unit) => [unit.unitId, unit]));
@@ -1882,7 +1938,8 @@ export class RoomScreen implements Screen {
       this.acceptCookingSnapshot(snapshot, false);
       this.stoveEffects.get(stove.instanceId!)?.burst();
       this.audio?.play('season');
-      const xp = this.rules?.stove.seasonXp ?? 0;
+      // A visitor earns the XP now; the owner's waits for the dish to reach the counter.
+      const xp = this.roomSnapshot?.canEdit === false ? this.rules?.stove.seasonXp ?? 0 : 0;
       if (xp > 0) this.floatingRewards.spawn(tileToScreenX(stove.tx, stove.ty), tileToScreenY(stove.tx, stove.ty) + 60, itemDepth(stove.tx, stove.ty), 0, xp);
     }).catch((error: unknown) => {
       if (!this.destroyed) this.showNotice(error instanceof Error ? error.message : 'Não foi possível temperar.');
@@ -2039,8 +2096,14 @@ export class RoomScreen implements Screen {
     void this.cookingClient.serve(process.stove.instanceId).then((snapshot) => {
       if (this.destroyed) return;
       this.acceptCookingSnapshot(snapshot, false);
+      // The owner's seasoning pays its XP now that the dish reached the counter.
+      if (snapshot.seasonXp) {
+        const stove = process.stove;
+        this.floatingRewards.spawn(tileToScreenX(stove.tx, stove.ty), tileToScreenY(stove.tx, stove.ty) + 60, itemDepth(stove.tx, stove.ty), 0, snapshot.seasonXp);
+      }
       this.clearServingProcess();
       this.clearCookingProcess();
+      this.scheduleProgress();
     }).catch((error: unknown) => {
       console.warn('[cooking] não foi possível servir', error);
       if (this.destroyed) return;
@@ -2253,7 +2316,8 @@ export class RoomScreen implements Screen {
   private get isModalOpen(): boolean {
     return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen || this.staffModal?.isOpen ||
       this.levelUpModal?.isOpen || this.expansionModal?.isOpen || this.streetModal?.isOpen || this.welcomeBack?.isOpen ||
-      this.confirmDialog?.isOpen || this.dailyModal?.isOpen || this.mailModal?.isOpen);
+      this.confirmDialog?.isOpen || this.dailyModal?.isOpen || this.mailModal?.isOpen || this.achievementsModal?.isOpen ||
+      this.popularityModal?.isOpen || this.currencyModal?.isOpen);
   }
 
   /** Bottom bar: open the system, or say it is not here yet (or not for visitors). */
@@ -2275,6 +2339,72 @@ export class RoomScreen implements Screen {
     else if (name === 'waiter') this.openStaffScreen();
     else if (name === 'striped-chicken') this.onStreetTap('farm');
     else if (name === 'mail') this.openMail();
+    else if (name === 'trophy') this.openAchievements();
+  }
+
+  /** Troféu: the player's own achievements and today's missions. */
+  private openAchievements(): void {
+    if (!this.achievementsModal || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.audio?.play('click');
+    this.closeStoveActions();
+    void loadProgress().then((progress) => {
+      if (this.destroyed || this.isModalOpen || this.storeBar?.isOpen) return;
+      this.acceptProgress(progress);
+      this.achievementsModal?.show(progress);
+    }).catch((error: unknown) => this.showNotice(error instanceof Error ? error.message : 'Conquistas indisponíveis.'));
+  }
+
+  private openPopularity(): void {
+    if (!this.popularityModal || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.audio?.play('click');
+    this.closeStoveActions();
+    const owner = this.roomSnapshot?.canEdit !== false;
+    const state = this.roomSnapshot?.playerState;
+    const visited = this.roomSnapshot?.cafe;
+    this.popularityModal.show(owner
+      ? { name: state?.cafeName ?? '', popularity: state?.satisfaction.current ?? 0, maximum: state?.satisfaction.maximum ?? 105, owner }
+      : { name: visited?.name ?? '', popularity: visited?.popularity ?? 0, maximum: state?.satisfaction.maximum ?? 105, owner });
+  }
+
+  private openCurrency(kind: Currency): void {
+    if (!this.currencyModal || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.audio?.play('click');
+    this.closeStoveActions();
+    this.currencyModal.show(kind);
+  }
+
+  /** Asks for the trophy's numbers after a burst of game events, never per frame. */
+  private scheduleProgress(delayMs = PROGRESS_REFRESH_MS): void {
+    if (this.destroyed || !this.achievementsModal) return;
+    if (this.progressLoading) { this.progressAgain = true; return; }
+    if (this.progressTimer !== undefined) return;
+    this.progressTimer = setTimeout(() => {
+      this.progressTimer = undefined;
+      this.progressLoading = true;
+      void loadProgress().then((progress) => { if (!this.destroyed) this.acceptProgress(progress); })
+        .catch((error: unknown) => console.warn('[conquistas] indisponíveis', error))
+        .finally(() => {
+          this.progressLoading = false;
+          if (this.progressAgain) { this.progressAgain = false; this.scheduleProgress(); }
+        });
+    }, delayMs);
+  }
+
+  private acceptProgress(progress: ProgressSnapshot): void {
+    this.progressNextAt = progress.nextAt;
+    if (this.trophyBadge) {
+      this.trophyBadge.view.visible = progress.ready > 0;
+      this.trophyBadge.label.text = progress.ready > 9 ? '9+' : String(progress.ready);
+    }
+    this.achievementsModal?.refresh(progress);
+  }
+
+  /** A claimed reward: coins and XP float over the player, the HUD and the badge update. */
+  private collectProgress(claim: ProgressClaim): void {
+    const view = this.playerView.view;
+    if (claim.reward.coins > 0 || claim.reward.xp > 0) this.floatingRewards.spawn(view.x, view.y, view.zIndex, claim.reward.coins, claim.reward.xp);
+    this.acceptProgress(claim.progress);
+    this.setPlayerState(claim.state);
   }
 
   private openMail(): void {
@@ -2923,6 +3053,11 @@ export class RoomScreen implements Screen {
       this.closeStoreBar();
       return;
     }
+    if (event.key === 'Escape' && this.stoveActions) {
+      event.preventDefault();
+      this.closeStoveActions();
+      return;
+    }
 
     const passo = event.shiftKey ? PAN_KEY_STEP * 3 : PAN_KEY_STEP;
 
@@ -3160,8 +3295,12 @@ export class RoomScreen implements Screen {
     if (this.roomSnapshot) this.roomSnapshot.playerState = state;
     if (this.roomSnapshot?.canEdit !== false && state.level > this.knownLevel) this.celebrateLevel(state.level);
     this.topBars?.setState(state);
-    this.actionBarMood?.setSatisfaction(state.satisfaction);
-    this.actionBarMood?.setCafeName(state.cafeName);
+    // Visitors keep the visited café in the mood column.
+    if (this.roomSnapshot?.canEdit !== false) {
+      this.actionBarMood?.setSatisfaction(state.satisfaction);
+      this.actionBarMood?.setCafeName(state.cafeName);
+    }
+    this.scheduleProgress();
     const appearance = state.appearance ?? '';
     this.wardrobeModal?.setSavedAppearance(appearance);
     if (appearance !== this.playerAppearance) {
@@ -3260,6 +3399,11 @@ export class RoomScreen implements Screen {
     this.confirmDialog.update(deltaMs);
     this.dailyModal?.update(deltaMs);
     this.mailModal?.update(deltaMs);
+    this.achievementsModal?.update(deltaMs);
+    this.popularityModal?.update(deltaMs);
+    this.currencyModal?.update(deltaMs);
+    // New missions at São Paulo midnight, by the server's clock.
+    if (this.progressNextAt > 0 && this.serverNow() >= this.progressNextAt) { this.progressNextAt = 0; this.scheduleProgress(); }
     this.streetScenery?.update(deltaMs);
     this.partyLights.update(deltaMs);
     this.partyBadge.update(deltaMs);
@@ -3344,6 +3488,9 @@ export class RoomScreen implements Screen {
     this.confirmDialog.setStageScale(scale);
     this.dailyModal?.setStageScale(scale);
     this.mailModal?.setStageScale(scale);
+    this.achievementsModal?.setStageScale(scale);
+    this.popularityModal?.setStageScale(scale);
+    this.currencyModal?.setStageScale(scale);
     this.audioControl?.setStageScale(scale);
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
@@ -3407,6 +3554,10 @@ export class RoomScreen implements Screen {
     this.confirmDialog.destroy();
     this.dailyModal?.destroy();
     this.mailModal?.destroy();
+    clearTimeout(this.progressTimer);
+    this.achievementsModal?.destroy();
+    this.popularityModal?.destroy();
+    this.currencyModal?.destroy();
     this.partyLights.destroy();
     this.partyBadge.destroy();
     this.audio?.setOverride?.(null);

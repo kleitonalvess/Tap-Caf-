@@ -49,7 +49,7 @@ export function untilText(ms: number): string {
   return hours > 0 ? `em ${hours} h ${String(minutes % 60).padStart(2, '0')} min` : `em ${minutes} min`;
 }
 
-async function request<T>(path: string, body?: unknown): Promise<T> {
+export async function request<T>(path: string, body?: unknown): Promise<T> {
   let response: Response;
   try {
     response = await apiFetch(path, {

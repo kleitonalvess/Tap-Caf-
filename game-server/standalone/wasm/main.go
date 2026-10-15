@@ -7,6 +7,7 @@
 //	fetch(method, path, body) → Promise<{status, body}>
 //	connect(id), send(id, text), disconnect(id)
 //	suspend() → Promise, resume(), export() → Promise<string>
+//	check(save, profileId) → "" or why an imported save cannot be opened
 //
 // hooks: message(id, text) and close(id) for connections, state() when the
 // HUD values changed and commit() after every saved change.
@@ -41,6 +42,7 @@ func main() {
 		"suspend":    js.FuncOf(suspend),
 		"resume":     js.FuncOf(resume),
 		"export":     js.FuncOf(export),
+		"check":      js.FuncOf(check),
 	}))
 	select {}
 }
@@ -202,4 +204,14 @@ func export(js.Value, []js.Value) any {
 		}
 		return string(data), nil
 	})
+}
+
+func check(_ js.Value, args []js.Value) any {
+	if len(args) < 2 || args[0].Type() != js.TypeString || args[1].Type() != js.TypeString {
+		return "argumentos inválidos"
+	}
+	if err := standalone.CheckSave([]byte(args[0].String()), args[1].String()); err != nil {
+		return err.Error()
+	}
+	return ""
 }

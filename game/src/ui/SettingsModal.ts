@@ -1,4 +1,4 @@
-import { Container, Graphics, Rectangle, Text, TextStyle, type FederatedPointerEvent } from 'pixi.js';
+import { Container, Graphics, Rectangle, Sprite, Text, TextStyle, type FederatedPointerEvent, type Texture } from 'pixi.js';
 
 import { DEFAULT_AUDIO_PREFERENCES, sanitizeAudioPreferences, type AudioPreferences } from '../audio/preferences';
 import { FONT_FAMILY } from '../core/font-tokens';
@@ -16,6 +16,19 @@ export interface SettingsModalOptions {
   onToggleFullscreen?: () => void | Promise<void>;
   /** Absent in the offline mode: the browser's café has no account to leave. */
   onLogout?: () => void | Promise<void>;
+  /** The player's face for the frame next to the name (the avatar's idle frame). */
+  portrait?: () => Texture | undefined;
+  /** Offline mode only: downloads the save; resolves to what to tell the player. */
+  onExportSave?: () => Promise<string>;
+  /** Offline mode only: picks and checks a file; null when the player gave up.
+   * The café is replaced only by apply, after a second tap confirms. */
+  onImportSave?: () => Promise<PendingImport | null>;
+}
+
+export interface PendingImport {
+  /** "Nível 7 · 1.234 moedas · salvo em 15/10/2026". */
+  summary: string;
+  apply: () => Promise<void>;
 }
 
 interface SettingsButton {
@@ -40,7 +53,11 @@ interface VolumeSlider {
 
 const PANEL_WIDTH = 920;
 const PANEL_HEIGHT = 920;
+/** The offline mode adds a row for the save and a line for its messages. */
+const SAVE_PANEL_HEIGHT = 1050;
 const BUTTON_ROW_Y = 790;
+const SAVE_ROW_Y = 874;
+const PORTRAIT_SIZE = 96;
 const BUTTON_HEIGHT = 74;
 const TRACK_WIDTH = 520;
 const DARK_BROWN = 0x603a1e;
@@ -59,6 +76,10 @@ export class SettingsModal {
   private readonly bitterFocus = new Graphics();
   private readonly buttons: SettingsButton[] = [];
   private loggingOut = false;
+  private readonly portraitHolder = new Container();
+  private saveMessage?: Text;
+  private saveBusy = false;
+  private pendingImport: PendingImport | null = null;
   private bitterMode = false;
   private preferences: AudioPreferences = { ...DEFAULT_AUDIO_PREFERENCES };
   private drag: { slider: VolumeSlider; pointerId: number } | null = null;
@@ -83,26 +104,31 @@ export class SettingsModal {
     }
     backdrop.on('pointertap', (event) => { event.stopPropagation(); this.close(); });
 
+    const saves = Boolean(options.onExportSave || options.onImportSave);
+    const panelHeight = saves ? SAVE_PANEL_HEIGHT : PANEL_HEIGHT;
     this.panel.label = 'settings-modal-panel';
-    this.panel.position.set((STAGE_WIDTH - PANEL_WIDTH) / 2, (STAGE_HEIGHT - PANEL_HEIGHT) / 2);
+    this.panel.position.set((STAGE_WIDTH - PANEL_WIDTH) / 2, (STAGE_HEIGHT - panelHeight) / 2);
     this.panel.eventMode = 'static';
-    this.panel.hitArea = new Rectangle(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+    this.panel.hitArea = new Rectangle(0, 0, PANEL_WIDTH, panelHeight);
     for (const name of ['pointerdown', 'pointerup', 'pointertap', 'wheel'] as const) {
       this.panel.on(name, (event) => event.stopPropagation());
     }
     const frame = new Graphics()
-      .roundRect(0, 0, PANEL_WIDTH, PANEL_HEIGHT, 40).fill(DARK_BROWN)
-      .roundRect(12, 12, PANEL_WIDTH - 24, PANEL_HEIGHT - 24, 28).fill(LIGHT_BROWN)
-      .roundRect(22, 22, PANEL_WIDTH - 44, PANEL_HEIGHT - 44, 18).fill(0xffffff);
+      .roundRect(0, 0, PANEL_WIDTH, panelHeight, 40).fill(DARK_BROWN)
+      .roundRect(12, 12, PANEL_WIDTH - 24, panelHeight - 24, 28).fill(LIGHT_BROWN)
+      .roundRect(22, 22, PANEL_WIDTH - 44, panelHeight - 44, 18).fill(0xffffff);
     frame.eventMode = 'none';
     this.panel.addChild(frame);
 
     const title = this.addText('Configurações', PANEL_WIDTH / 2, 85, 64, 'settings-modal-title');
     title.anchor.set(0.5);
-    const square = new Graphics().roundRect(76, 166, 96, 96, 12)
-      .fill(0xffffff).stroke({ color: 0x704721, width: 6 });
+    const square = new Graphics().roundRect(76, 166, PORTRAIT_SIZE, PORTRAIT_SIZE, 12)
+      .fill(0xf3ece0).stroke({ color: 0x704721, width: 6 });
     square.eventMode = 'none';
-    this.panel.addChild(square);
+    this.portraitHolder.label = 'settings-modal-portrait';
+    this.portraitHolder.position.set(76, 166);
+    this.portraitHolder.eventMode = 'none';
+    this.panel.addChild(square, this.portraitHolder);
     const playerName = this.addText(options.playerName ?? '', 204, 214, 46, 'settings-modal-player-name');
     playerName.anchor.set(0, 0.5);
     // Long authenticated names stay inside the panel without changing its size.
@@ -113,6 +139,14 @@ export class SettingsModal {
     this.buildSlider('effectsPercent', 'Efeitos sonoros', 522);
     this.buildBitterControl();
     this.buildButtons();
+    if (saves) {
+      this.saveMessage = this.addText('', PANEL_WIDTH / 2, SAVE_ROW_Y + BUTTON_HEIGHT + 10, 20, 'settings-save-message', '400');
+      this.saveMessage.anchor.set(0.5, 0);
+      this.saveMessage.style.wordWrap = true;
+      this.saveMessage.style.wordWrapWidth = PANEL_WIDTH - 100;
+      this.saveMessage.style.lineHeight = 25;
+      this.saveMessage.style.align = 'center';
+    }
     this.view.addChild(backdrop, this.panel);
     if (typeof window !== 'undefined') {
       window.addEventListener('keydown', this.onKeyDown, true);
@@ -130,7 +164,10 @@ export class SettingsModal {
     this.refreshSliders();
     this.bitterMode = this.options.getBitterMode?.() ?? this.bitterMode;
     this.refreshBitterCheckbox();
+    this.pendingImport = null;
+    this.setSaveMessage('');
     this.refreshButtons();
+    this.refreshPortrait();
     this.focusedControl = 0;
     this.keyboardFocus = false;
     this.closeHovered = false;
@@ -142,6 +179,8 @@ export class SettingsModal {
 
   close(): void {
     this.view.visible = false;
+    // A chosen file is forgotten unless the second tap confirmed it.
+    this.pendingImport = null;
     this.drag = null;
     this.closeHovered = false;
     this.closePressed = false;
@@ -152,6 +191,61 @@ export class SettingsModal {
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
     const resolution = Math.min(4, Math.max(1, scale * dpr));
     for (const text of this.texts) text.resolution = resolution;
+  }
+
+  /** The avatar's face in the frame, or the initials while it is not baked. */
+  private refreshPortrait(): void {
+    for (const child of this.portraitHolder.removeChildren()) child.destroy();
+    const texture = this.options.portrait?.();
+    if (texture) {
+      const mask = new Graphics().roundRect(5, 5, PORTRAIT_SIZE - 10, PORTRAIT_SIZE - 10, 8).fill(0xffffff);
+      const sprite = new Sprite(texture);
+      sprite.label = 'settings-modal-portrait-avatar';
+      // The cell holds the whole body: head and shoulders, framed like the staff cards.
+      sprite.anchor.set(0.5, 0.42);
+      sprite.scale.set(PORTRAIT_SIZE * 1.3 / texture.height);
+      sprite.position.set(PORTRAIT_SIZE / 2, PORTRAIT_SIZE / 2);
+      sprite.mask = mask;
+      this.portraitHolder.addChild(mask, sprite);
+      return;
+    }
+    const initials = (this.options.playerName ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]!.toUpperCase()).join('') || '?';
+    const letters = new Text({ text: initials, style: new TextStyle({ fontFamily: [FONT_FAMILY, 'sans-serif'], fontSize: 44, fontWeight: '700', fill: DARK_BROWN }) });
+    letters.anchor.set(0.5);
+    letters.position.set(PORTRAIT_SIZE / 2, PORTRAIT_SIZE / 2);
+    this.portraitHolder.addChild(letters);
+  }
+
+  private setSaveMessage(text: string, error = false): void {
+    if (!this.saveMessage) return;
+    this.saveMessage.text = text;
+    this.saveMessage.style.fill = error ? 0xc0392b : DARK_BROWN;
+  }
+
+  private runSave(action: 'export' | 'import'): void {
+    if (this.saveBusy) return;
+    const pending = this.pendingImport;
+    this.saveBusy = true;
+    this.refreshButtons();
+    let work: Promise<void>;
+    if (action === 'export') {
+      this.pendingImport = null;
+      this.setSaveMessage('Salvando o café…');
+      work = (this.options.onExportSave?.() ?? Promise.resolve('')).then((message) => this.setSaveMessage(message));
+    } else if (pending) {
+      this.setSaveMessage('Substituindo o café… o jogo vai recarregar.');
+      work = pending.apply();
+    } else {
+      work = (this.options.onImportSave?.() ?? Promise.resolve(null)).then((chosen) => {
+        if (!this.isOpen) return;
+        this.pendingImport = chosen;
+        this.setSaveMessage(chosen ? `${chosen.summary}\nToque em "Substituir café" para trocar: o café atual será perdido.` : '');
+      });
+    }
+    void work.catch((error: unknown) => {
+      this.pendingImport = null;
+      this.setSaveMessage(error instanceof Error ? error.message : 'Não foi possível concluir.', true);
+    }).finally(() => { this.saveBusy = false; this.refreshButtons(); });
   }
 
   private addText(text: string, x: number, y: number, fontSize: number, label: string, fontWeight: '400' | '600' = '600'): Text {
@@ -335,7 +429,8 @@ export class SettingsModal {
     }
   }
 
-  /** Som (mute), Faixa, Tela cheia and Sair, in one row under the bitter mode. */
+  /** Som (mute), Faixa, Tela cheia and Sair, in one row under the bitter mode;
+   * the offline mode adds the save's row below. */
   private buildButtons(): void {
     const specs: Array<{ id: string; run: () => void }> = [
       { id: 'mute', run: () => this.applyAudio({ ...this.preferences, muted: !this.preferences.muted }) },
@@ -351,12 +446,21 @@ export class SettingsModal {
       void Promise.resolve(this.options.onLogout?.()).catch((error: unknown) => console.warn('[sessão] não foi possível sair', error))
         .finally(() => { this.loggingOut = false; this.refreshButtons(); });
     } });
+    this.buildRow(specs, BUTTON_ROW_Y);
+    const saves: Array<{ id: string; run: () => void }> = [];
+    if (this.options.onExportSave) saves.push({ id: 'export-save', run: () => this.runSave('export') });
+    if (this.options.onImportSave) saves.push({ id: 'import-save', run: () => this.runSave('import') });
+    if (saves.length) this.buildRow(saves, SAVE_ROW_Y);
+    this.refreshButtons();
+  }
+
+  private buildRow(specs: Array<{ id: string; run: () => void }>, y: number): void {
     const gap = 20;
     const width = (PANEL_WIDTH - 120 - gap * (specs.length - 1)) / specs.length;
     specs.forEach((spec, index) => {
       const holder = new Container();
       holder.label = `settings-${spec.id}-button`;
-      holder.position.set(60 + index * (width + gap), BUTTON_ROW_Y);
+      holder.position.set(60 + index * (width + gap), y);
       holder.eventMode = 'static';
       holder.cursor = 'pointer';
       holder.hitArea = new Rectangle(0, 0, width, BUTTON_HEIGHT);
@@ -385,7 +489,6 @@ export class SettingsModal {
       this.buttons.push(button);
       this.panel.addChild(holder);
     });
-    this.refreshButtons();
   }
 
   private refreshButtons(): void {
@@ -406,6 +509,12 @@ export class SettingsModal {
       } else if (button.id === 'logout') {
         caption = this.loggingOut ? 'Saindo…' : 'Sair do jogo';
         color = 0xc0392b;
+      } else if (button.id === 'export-save') {
+        caption = 'Exportar Save (.json)';
+        color = this.saveBusy ? 0x9b8b78 : 0x2e7d32;
+      } else if (button.id === 'import-save') {
+        caption = this.pendingImport ? 'Substituir café' : 'Importar Save';
+        color = this.saveBusy ? 0x9b8b78 : this.pendingImport ? 0xc0392b : 0x8a5a2b;
       }
       button.caption.text = caption;
       button.caption.scale.set(1);

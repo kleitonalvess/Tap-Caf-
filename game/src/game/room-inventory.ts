@@ -22,6 +22,8 @@ export interface RoomSnapshot {
   street?: StreetState;
   /** The owner's unacknowledged absence summary. */
   awaySummary?: AwaySummary;
+  /** The owner's café as visitors see it (playerState is the viewer's own HUD). */
+  cafe?: { name: string; popularity: number };
 }
 export interface ItemManifest extends RoomCatalogItem {
   itemHeight: number; parts: (IndoorArtFrame & { rotation?: number })[];

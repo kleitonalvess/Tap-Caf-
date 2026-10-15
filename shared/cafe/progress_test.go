@@ -334,7 +334,7 @@ func TestDerivedAchievementsReadTheCafe(t *testing.T) {
 }
 
 func TestCleanCafeName(t *testing.T) {
-	for in, want := range map[string]string{"  Café   da Ana ": "Café da Ana", "Bar & Cia!": "Bar & Cia!", "Quiosque 24h": "Quiosque 24h"} {
+	for in, want := range map[string]string{"  Café   da Ana ": "Café da Ana", "Bar & Cia!": "Bar & Cia!", "Quiosque 24h": "Quiosque 24h", "Cafe\u0301 Ana": "Cafe\u0301 Ana"} {
 		if got, err := CleanCafeName(in); err != nil || got != want {
 			t.Errorf("%q → %q, %v", in, got, err)
 		}

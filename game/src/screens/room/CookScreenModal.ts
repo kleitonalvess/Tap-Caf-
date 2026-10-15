@@ -3,7 +3,7 @@ import { Container, Graphics, Rectangle, Sprite, Text, TextStyle, type Texture }
 import type { SoundPlayer } from '../../audio/sound-events';
 import { FONT_FAMILY } from '../../core/fonts';
 import { STAGE_HEIGHT, STAGE_WIDTH } from '../../core/stage';
-import { formatDuration, recipeAvailability, recipePages, type CookingContext, type RecipeAvailability, type RecipeRule } from '../../game/game-rules';
+import { formatDuration, recipeAvailability, recipeProfit, recipeTab, RECIPE_TABS, type CookingContext, type RecipeAvailability, type RecipeRule } from '../../game/game-rules';
 import type { RecipeArtLibrary } from '../../game/recipe-art';
 
 export interface CookScreenTextures {
@@ -58,6 +58,9 @@ const PANEL = { x: 236, y: 236 };
 const CARD = { w: 370, h: 185, padX: 22, padY: 15, gapX: 21, gapY: 21, radius: 14 };
 const TABS = [260, 460, 660, 856].map((x) => new Rectangle(x, 118, 170, 52));
 const DETAILS = { x: 1092, y: 216, w: 348, cx: 1266 };
+const CARDS_PER_PAGE = 6;
+/** Page arrows under the cards, centred on the two columns. */
+const PAGER = { cx: PANEL.x + CARD.padX + CARD.w + CARD.gapX / 2, y: 878 };
 
 const INK = 0x5a3915;
 const GOOD = 0x2f7d32;
@@ -114,8 +117,9 @@ function icon(kind: 'clock' | 'coin' | 'plate' | 'lock'): Graphics {
 }
 
 /**
- * Recipe book opened from an empty stove: tabs are pages of six recipes in
- * unlock order, the right panel details the selected recipe.
+ * Recipe book opened from an empty stove: four tabs filter the catalogue
+ * (all, quick, profitable, unlocked), six cards per page, and the right panel
+ * details the selected recipe.
  */
 export class CookScreenModal {
   readonly view = new Container();
@@ -135,6 +139,7 @@ export class CookScreenModal {
   private readonly audio?: SoundPlayer;
   private readonly cardTexture: Texture;
   private book?: CookBook;
+  private tab = 0;
   private page = 0;
   private selectedId?: string;
   /** Recipe the player tapped since the book opened; a preselected card never cooks on one tap. */
@@ -189,16 +194,34 @@ export class CookScreenModal {
     return this.state !== 'closed';
   }
 
-  /** Replaces the recipes and the player's situation; keeps the page when possible. */
+  /** Replaces the recipes and the player's situation; keeps the tab and page when possible. */
   setBook(book: CookBook): void {
     this.book = book;
-    const pages = recipePages(book.recipes);
+    const pages = this.pages();
     this.page = Math.min(this.page, Math.max(0, pages.length - 1));
     if (!this.selectedId || !book.recipes.some((recipe) => recipe.id === this.selectedId)) {
-      const firstUseful = pages[this.page]?.recipes.find((recipe) => recipeAvailability(recipe, book.context) !== 'locked');
+      const firstUseful = pages[this.page]?.find((recipe) => recipeAvailability(recipe, book.context) !== 'locked');
       this.selectedId = (firstUseful ?? book.recipes[0])?.id;
     }
     this.render();
+  }
+
+  /** The open tab's recipes, six per page. */
+  private pages(): RecipeRule[][] {
+    const book = this.book;
+    if (!book) return [];
+    const list = recipeTab(book.recipes, RECIPE_TABS[this.tab]!.id, book.context.level);
+    const pages: RecipeRule[][] = [];
+    for (let i = 0; i < list.length; i += CARDS_PER_PAGE) pages.push(list.slice(i, i + CARDS_PER_PAGE));
+    return pages.length ? pages : [[]];
+  }
+
+  /** After a tab or page change: select the first recipe there that can be cooked. */
+  private selectOnPage(): void {
+    const book = this.book!;
+    const recipes = this.pages()[this.page] ?? [];
+    const first = recipes.find((recipe) => recipeAvailability(recipe, book.context) !== 'locked') ?? recipes[0];
+    if (first) this.selectedId = first.id;
   }
 
   open(): void {
@@ -223,10 +246,53 @@ export class CookScreenModal {
   private render(): void {
     const book = this.book;
     if (!book) return;
-    const pages = recipePages(book.recipes);
-    this.renderTabs(pages.map((page) => page.label));
-    this.renderCards(pages[this.page]?.recipes ?? [], book);
+    const pages = this.pages();
+    this.renderTabs(RECIPE_TABS.map((tab) => tab.label));
+    this.renderCards(pages[this.page] ?? [], book);
+    this.renderPager(pages.length);
     this.renderDetails(book);
+  }
+
+  private renderPager(pages: number): void {
+    if (pages <= 1 && (this.pages()[0]?.length ?? 0) > 0) return;
+    if (pages <= 1) {
+      // An empty tab says why instead of showing a blank page.
+      const empty = text(this.tab === 1 ? 'Nenhuma receita rápida no cardápio.' : 'Nenhuma receita desbloqueada ainda.', 24, INK, '600');
+      empty.anchor.set(0.5);
+      empty.position.set(PAGER.cx, 520);
+      empty.eventMode = 'none';
+      this.cardsLayer.addChild(empty);
+      return;
+    }
+    const caption = text(`${this.page + 1}/${pages}`, 24, INK, '700');
+    caption.anchor.set(0.5);
+    caption.position.set(PAGER.cx, PAGER.y);
+    caption.eventMode = 'none';
+    this.cardsLayer.addChild(caption);
+    for (const [direction, glyph] of [[-1, '‹'], [1, '›']] as const) {
+      const target = this.page + direction;
+      const arrow = new Container();
+      arrow.label = direction < 0 ? 'cook-page-previous' : 'cook-page-next';
+      arrow.position.set(PAGER.cx + direction * 90, PAGER.y);
+      const enabled = target >= 0 && target < pages;
+      arrow.addChild(new Graphics().circle(0, 0, 24).fill({ color: enabled ? 0xfff3d6 : 0xffffff, alpha: enabled ? 1 : 0.4 }).stroke({ color: INK, width: 3 }));
+      const label = text(glyph, 34, INK, '700');
+      label.anchor.set(0.5, 0.56);
+      arrow.addChild(label);
+      if (enabled) {
+        arrow.eventMode = 'static';
+        arrow.cursor = 'pointer';
+        arrow.hitArea = new Rectangle(-30, -30, 60, 60);
+        arrow.on('pointertap', (event) => {
+          event.stopPropagation();
+          this.page = target;
+          this.audio?.play('bookPage');
+          this.selectOnPage();
+          this.render();
+        });
+      }
+      this.cardsLayer.addChild(arrow);
+    }
   }
 
   private renderTabs(labels: readonly string[]): void {
@@ -239,7 +305,7 @@ export class CookScreenModal {
       tab.eventMode = 'static';
       tab.cursor = 'pointer';
       tab.hitArea = new Rectangle(0, 0, area.width, area.height);
-      const selected = index === this.page;
+      const selected = index === this.tab;
       const face = new Graphics().roundRect(4, 4, area.width - 8, area.height - 8, 14)
         .fill({ color: selected ? 0xfff3d6 : 0xffffff, alpha: selected ? 0.95 : 0.25 });
       if (selected) face.roundRect(4, 4, area.width - 8, area.height - 8, 14).stroke({ color: INK, width: 3 });
@@ -251,12 +317,11 @@ export class CookScreenModal {
       tab.addChild(face, label);
       tab.on('pointertap', (event) => {
         event.stopPropagation();
-        if (this.page === index) return;
-        this.page = index;
+        if (this.tab === index) return;
+        this.tab = index;
+        this.page = 0;
         this.audio?.play('bookPage');
-        const book = this.book!;
-        const recipes = recipePages(book.recipes)[index].recipes;
-        this.selectedId = (recipes.find((recipe) => recipeAvailability(recipe, book.context) !== 'locked') ?? recipes[0]).id;
+        this.selectOnPage();
         this.render();
       });
       this.tabsLayer.addChild(tab);
@@ -378,9 +443,10 @@ export class CookScreenModal {
       ['Venda', `${recipe.pricePerServing} por porção`],
       ['Experiência', `${recipe.xpPerServing} por porção`],
       ['Estraga após', formatDuration(recipe.spoilSeconds)],
+      ['Lucro por lote', `${recipeProfit(recipe)} moedas`],
     ];
     rows.forEach(([label, value], index) => {
-      const y = 492 + index * 42;
+      const y = 488 + index * 37;
       const left = text(label, 22, INK, '400');
       left.anchor.set(0, 0.5);
       left.position.set(DETAILS.x + 22, y);

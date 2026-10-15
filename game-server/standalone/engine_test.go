@@ -366,3 +366,40 @@ func TestClosedConnectionsDoNotLeakGoroutines(t *testing.T) {
 		t.Fatalf("goroutines grew from %d to %d after 30 closed connections", before, after)
 	}
 }
+
+func TestCheckSaveAcceptsOnlyThePlayersCafe(t *testing.T) {
+	store := cafe.NewMemoryStore()
+	e := newEngine(t, store, time.Time{})
+	if status, _ := e.Fetch("GET", "/api/coffe/room", nil); status != 200 {
+		t.Fatalf("room = %d", status)
+	}
+	var progress cafe.ProgressSnapshot
+	if status := fetchJSON(t, e, "GET", "/api/coffe/progress", nil, &progress); status != 200 || len(progress.Missions) == 0 || len(progress.Achievements) == 0 {
+		t.Fatalf("progress = %d %+v", status, progress)
+	}
+	var renamed cafe.PlayerSnapshot
+	if status := fetchJSON(t, e, "POST", "/api/coffe/cafe/name", map[string]string{"name": " Café  Offline "}, &renamed); status != 200 || renamed.CafeName != "Café Offline" {
+		t.Fatalf("rename = %d %+v", status, renamed)
+	}
+	if status, _ := e.Fetch("POST", "/api/coffe/cafe/name", []byte(`{"name":"<x>"}`)); status != 400 {
+		t.Fatalf("invalid name = %d", status)
+	}
+	if status, _ := e.Fetch("POST", "/api/coffe/progress/claim", []byte(`{"kind":"mission","id":"nope"}`)); status != 404 {
+		t.Fatalf("unknown mission = %d", status)
+	}
+	data, err := store.Export()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckSave(data, testProfile.ID); err != nil {
+		t.Fatalf("own save refused: %v", err)
+	}
+	for name, bad := range map[string][]byte{"empty": nil, "not json": []byte("{oops"), "other version": []byte(`{"version":2,"collections":{}}`), "empty café": []byte(`{"version":1,"collections":{}}`)} {
+		if CheckSave(bad, testProfile.ID) == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	if CheckSave(data, "someoneelse0001") == nil {
+		t.Error("a save of another profile was accepted")
+	}
+}

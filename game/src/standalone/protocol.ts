@@ -11,7 +11,9 @@ export type ToEngine =
   | { type: 'disconnect'; conn: number }
   /** The page is hidden: the room sleeps and the café is saved at once. */
   | { type: 'suspend'; id: number }
-  | { type: 'resume' };
+  | { type: 'resume' }
+  /** Can the engine open this save for this profile? (importing a save) */
+  | { type: 'check'; id: number; save: string; profileId: string };
 
 export type FromEngine =
   | { type: 'started' }
@@ -24,4 +26,6 @@ export type FromEngine =
   | { type: 'state' }
   /** The whole café after one or more game transactions. */
   | { type: 'save'; data: string }
-  | { type: 'suspended'; id: number };
+  | { type: 'suspended'; id: number }
+  /** Empty error: the save opens. */
+  | { type: 'checked'; id: number; error: string };

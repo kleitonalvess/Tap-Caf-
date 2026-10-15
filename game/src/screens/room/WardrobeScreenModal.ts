@@ -34,6 +34,10 @@ const IDLE_FRAME_MS = DEFAULT_FRAME_DELAY * CLIP_DELAY_MULTIPLIER[CLIP.IDLE];
 const WARDROBE_ICON_NAMES = [
   'eye', 'eyebrow', 'mouth', 'hair', 'moustache', 'hat', 'glasses', 'pants', 'shirt', 'sneaker',
 ] as const;
+/** What each tab holds, named over the icon. The "glasses" icon opens the face
+ * marks (Miscellaneous), so it reads "Rosto"; the shoe tab stays hidden while
+ * the model has no shoe mesh (its group is empty). */
+const CATEGORY_NAMES = ['Olhos', 'Sobrancelhas', 'Boca', 'Cabelo', 'Barba', 'Chapéu', 'Rosto', 'Calças', 'Camisas', 'Calçados'] as const;
 const ITEM_GROUPS = [
   ['Eyes'], ['Eyebrows'], ['Mouth'], ['Hair'], ['Facial Hair'],
   ['Hat'], ['Miscellaneous'], ['Pants', 'Skirt'], ['Shirt'], [],
@@ -120,6 +124,10 @@ export class WardrobeScreenModal {
   private itemAtlas: AtlasFile | null = null;
   private itemAtlasTexture: Texture | null = null;
   private categoryIndex = 8;
+  private categoryHover = -1;
+  private readonly categoryCaption = new Text({ text: '', style: new TextStyle({
+    fontFamily: [FONT_FAMILY, 'sans-serif'], fontSize: 22, fontWeight: '700', fill: 0xffffff, stroke: { color: 0x704721, width: 5, join: 'round' },
+  }) });
   private categoryPulseMs = 0;
   private categoryPulseDrawMs = 0;
   private pageIndex = 0;
@@ -155,7 +163,13 @@ export class WardrobeScreenModal {
     this.categorySelectionEffect.eventMode = 'none';
     textures.icons.forEach((texture, index) => {
       const holder = new Container();
-      holder.label = `wardrobe-icon-${WARDROBE_ICON_NAMES[index] ?? index}`;
+      holder.label = `wardrobe-icon-${WARDROBE_ICON_NAMES[index] === 'glasses' ? 'face' : WARDROBE_ICON_NAMES[index] ?? index}`;
+      if (!ITEM_GROUPS[index]?.length) {
+        // Nothing to wear in this tab yet (shoes): no dead button in the bar.
+        holder.visible = false;
+        this.categoryIconHolders.push(holder);
+        return;
+      }
       // A borda superior da faixa estreita fica em y≈592 no asset.
       holder.position.set(496 + index * 86, 594);
       holder.eventMode = 'static';
@@ -179,8 +193,8 @@ export class WardrobeScreenModal {
       let hovered = false;
       let pressed = false;
       const syncFeedback = () => icon.scale.set(baseScale * (pressed ? 0.9 : hovered ? 1.1 : 1));
-      holder.on('pointerover', () => { hovered = true; syncFeedback(); });
-      holder.on('pointerout', () => { hovered = false; pressed = false; syncFeedback(); });
+      holder.on('pointerover', () => { hovered = true; this.categoryHover = index; this.syncCategoryCaption(); syncFeedback(); });
+      holder.on('pointerout', () => { hovered = false; pressed = false; if (this.categoryHover === index) this.categoryHover = -1; this.syncCategoryCaption(); syncFeedback(); });
       holder.on('pointerdown', (event) => { event.stopPropagation(); pressed = true; syncFeedback(); });
       holder.on('pointerup', () => { pressed = false; syncFeedback(); });
       holder.on('pointerupoutside', () => { pressed = false; syncFeedback(); });
@@ -194,6 +208,10 @@ export class WardrobeScreenModal {
       this.categoryIconHolders.push(holder);
       this.barIcons.addChild(holder);
     });
+    this.categoryCaption.label = 'wardrobe-category-caption';
+    this.categoryCaption.anchor.set(0.5, 1);
+    this.categoryCaption.eventMode = 'none';
+    this.barIcons.addChild(this.categoryCaption);
     this.syncCategorySelection();
     this.buildItemPanel(textures.pageButtons);
     this.buildColourPanels();
@@ -505,6 +523,15 @@ export class WardrobeScreenModal {
     holder.addChildAt(this.categorySelectionEffect, 0);
     this.categoryPulseMs = 0;
     this.drawCategorySelection();
+    this.syncCategoryCaption();
+  }
+
+  /** The hovered tab's name, or the open one's, over its icon. */
+  private syncCategoryCaption(): void {
+    const index = this.categoryHover >= 0 ? this.categoryHover : this.categoryIndex;
+    const holder = this.categoryIconHolders[index];
+    this.categoryCaption.text = CATEGORY_NAMES[index] ?? '';
+    if (holder) this.categoryCaption.position.set(holder.x, holder.y - 40);
   }
 
   private drawCategorySelection(): void {

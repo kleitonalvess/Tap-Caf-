@@ -197,6 +197,26 @@ export class TopBars {
     }
   }
 
+  /** The "+" at the end of the Grana and Moedas bars: how to earn more. */
+  setPlusHandler(onTap: (kind: 'cash' | 'gold') => void): void {
+    (['cash', 'gold'] as const).forEach((kind, index) => {
+      const slot = TOP_BAR_SLOTS[index]!;
+      const button = new Container();
+      button.label = `room-top-bar-plus-${kind}`;
+      button.position.set(slot.left + slot.width - 4, slot.top + slot.height / 2);
+      button.addChild(new Graphics().circle(0, 0, 17).fill(0x3f9a4a).stroke({ color: 0xffffff, width: 3 })
+        .moveTo(-8, 0).lineTo(8, 0).moveTo(0, -8).lineTo(0, 8).stroke({ color: 0xffffff, width: 5, cap: 'round' }));
+      button.eventMode = 'static';
+      button.cursor = 'pointer';
+      button.hitArea = new Rectangle(-24, -24, 48, 48);
+      button.on('pointerover', () => button.scale.set(1.12));
+      button.on('pointerout', () => button.scale.set(1));
+      button.on('pointerdown', (event) => event.stopPropagation());
+      button.on('pointertap', (event) => { event.stopPropagation(); onTap(kind); });
+      this.view.addChild(button);
+    });
+  }
+
   /** A short line under the bars, below any window (the offline mode says where the save lives). */
   setNote(text: string): void {
     this.view.getChildByLabel('room-top-bars-note')?.destroy({ children: true });

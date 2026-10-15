@@ -8,7 +8,7 @@ import { startStandalone } from './lib/stack.mjs';
 
 const site = await startStandalone();
 const run = await scenario('retention');
-const SOON = ['trophy', 'gift', 'yellow-box', 'map', 'mortar'];
+const SOON = ['gift', 'yellow-box', 'map', 'mortar'];
 
 try {
   const game = await run.page();

@@ -14,7 +14,7 @@ import (
 )
 
 var ErrRoomConflict = errors.New("O quarto mudou em outra janela. A visão foi atualizada; tente novamente.")
-var ErrRoomGold = errors.New("Ouro insuficiente.")
+var ErrRoomGold = errors.New("Moedas insuficientes.")
 var ErrRoomPosition = errors.New("Posição inválida ou ocupada para este item.")
 var ErrRoomOwned = errors.New("Esta unidade não pertence ao seu inventário.")
 var ErrRoomOperation = errors.New("Identificador de operação já utilizado em outro pedido.")

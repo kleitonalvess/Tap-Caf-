@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { staleness, stoveStatus, type StoveCooking } from '../../game/src/game/cooking';
-import { formatDuration, recipeAvailability, recipePages, type RecipeRule } from '../../game/src/game/game-rules';
+import { formatDuration, recipeAvailability, recipeProfit, recipeTab, RECIPE_TABS, type RecipeRule } from '../../game/src/game/game-rules';
 import { fetchProgress, patienceColor, patienceLeft } from '../../game/src/screens/room/PatienceMeter';
 
 const recipe = (id: string, level: number, costCoins: number): RecipeRule => ({
@@ -22,21 +22,30 @@ describe('recipe availability', () => {
   });
 });
 
-describe('recipe book pages', () => {
-  it('groups six recipes per page labelled by level range', () => {
-    const recipes = [1, 1, 2, 3, 5, 8, 10, 12, 15, 20].map((level, index) => recipe(`r${index}`, level, index));
-    const pages = recipePages(recipes);
-    expect(pages.map((page) => page.recipes.length)).toEqual([6, 4]);
-    expect(pages.map((page) => page.label)).toEqual(['Nível 1–8', 'Nível 10–20']);
+describe('recipe book tabs', () => {
+  const book = [
+    { ...recipe('pao', 1, 3), cookSeconds: 15, servings: 3, pricePerServing: 3 },
+    { ...recipe('bolo', 1, 5), cookSeconds: 30 },
+    { ...recipe('lasanha', 10, 120), cookSeconds: 1800, servings: 30, pricePerServing: 8 },
+    { ...recipe('misto', 5, 40), cookSeconds: 600, servings: 18, pricePerServing: 6 },
+  ];
+
+  it('lists every recipe in catalogue order on Todas', () => {
+    expect(recipeTab(book, 'all', 1).map((r) => r.id)).toEqual(['pao', 'bolo', 'lasanha', 'misto']);
   });
 
-  it('labels a single-level page without a range', () => {
-    expect(recipePages([recipe('a', 1, 1), recipe('b', 1, 2)])[0].label).toBe('Nível 1');
+  it('keeps the quick ones (up to ten minutes), fastest first', () => {
+    expect(recipeTab(book, 'quick', 1).map((r) => r.id)).toEqual(['pao', 'bolo', 'misto']);
   });
 
-  it('never makes more pages than the book has tabs', () => {
-    const many = Array.from({ length: 40 }, (_, index) => recipe(`r${index}`, 1, index));
-    expect(recipePages(many)).toHaveLength(4);
+  it('sorts by profit per batch on Lucrativas', () => {
+    expect(recipeProfit(book[2]!)).toBe(30 * 8 - 120);
+    expect(recipeTab(book, 'profitable', 1).map((r) => r.id)).toEqual(['lasanha', 'misto', 'bolo', 'pao']);
+  });
+
+  it('shows only what the level unlocked on Desbloqueadas', () => {
+    expect(recipeTab(book, 'unlocked', 5).map((r) => r.id)).toEqual(['pao', 'bolo', 'misto']);
+    expect(RECIPE_TABS.map((tab) => tab.label)).toEqual(['Todas', 'Rápidas', 'Lucrativas', 'Desbloqueadas']);
   });
 });
 

@@ -30,6 +30,9 @@ export class LocalBackend implements GameBackend {
   private readonly requests = new Map<number, { resolve(status: number, body: string): void; reject(error: Error): void }>();
   private readonly sockets = new Map<number, LocalSocket>();
   private readonly suspends = new Map<number, () => void>();
+  private readonly checks = new Map<number, (error: string) => void>();
+  /** Export and import of the save; set once the café opened (startLocalBackend). */
+  saves: SaveTransfer | null = null;
   private readonly stateListeners = new Set<() => void>();
 
   constructor(private readonly port: EnginePort) {
@@ -83,6 +86,10 @@ export class LocalBackend implements GameBackend {
       case 'suspended':
         this.suspends.get(message.id)?.();
         this.suspends.delete(message.id);
+        break;
+      case 'checked':
+        this.checks.get(message.id)?.(message.error);
+        this.checks.delete(message.id);
         break;
     }
   }
@@ -169,6 +176,23 @@ export class LocalBackend implements GameBackend {
   }
 
   resume(): void { this.post({ type: 'resume' }); }
+
+  /** Asks the engine whether it can open a save; resolves to why not, or ''. */
+  check(save: string, profileId: string): Promise<string> {
+    if (this.failure) return Promise.resolve(this.failure);
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      this.checks.set(id, resolve);
+      this.post({ type: 'check', id, save, profileId });
+    });
+  }
+}
+
+export interface SaveTransfer {
+  /** The current café, saved right now (the room sleeps for a moment). */
+  exportRecord(): Promise<SaveRecord>;
+  /** Replaces the café with a checked save and reloads the page. */
+  importRecord(record: SaveRecord): Promise<void>;
 }
 
 /** The room WebSocket, in the same protocol (join, commands, ordered events). */
@@ -286,7 +310,10 @@ export async function startLocalBackend(): Promise<LocalBackend> {
   worker.addEventListener('messageerror', () => backend.engineFailed('O motor do café enviou uma mensagem ilegível. Recarregue a página.'));
   let latest: SaveRecord | null = saved;
   let writing: Promise<void> = Promise.resolve();
+  // Once an imported save is written, nothing of the old café may be saved over it.
+  let replaced = false;
   backend.onSave = (data) => {
+    if (replaced) return;
     const record: SaveRecord = { version: 1, profile, savedAt: Date.now(), data };
     latest = record;
     writing = writing.then(() => store.save(record)).catch((error: unknown) => {
@@ -320,6 +347,30 @@ export async function startLocalBackend(): Promise<LocalBackend> {
   setInterval(() => { if (!document.hidden) markSeen(); }, HEARTBEAT_MS);
   markSeen();
   if (document.hidden) hide();
+  backend.saves = {
+    async exportRecord() {
+      // Sleeping the room writes the customers inside too, as on a hidden tab.
+      await backend.suspend();
+      await writing;
+      if (!document.hidden) backend.resume();
+      if (!latest) throw new Error('O café ainda não foi salvo.');
+      return latest;
+    },
+    async importRecord(record) {
+      const error = await backend.check(record.data, record.profile.id);
+      if (error) throw new Error(`Este save não abre: ${error}.`);
+      replaced = true;
+      await writing.catch(() => undefined);
+      worker.terminate();
+      const imported: SaveRecord = { ...record, savedAt: Date.now() };
+      latest = imported;
+      await store.save(imported);
+      store.backup(imported);
+      // The imported café counts its absence from now, not from the old café's last visit.
+      try { localStorage.removeItem(SEEN_KEY); } catch { /* sem localStorage */ }
+      window.location.reload();
+    },
+  };
   useLocalBackend(backend);
   return backend;
 }

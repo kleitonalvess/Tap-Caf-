@@ -70,6 +70,7 @@ npm run e2e -- offline server             # só os nomeados
 | `street` | servidor | Sprint 9: Fazenda, Festa do Bairro e expediente offline com "Bem-vindo de volta!" |
 | `offline` | standalone | Sprint 10: café no navegador, save, aba escondida, ausência e uma aba por café |
 | `retention` | standalone | Sprint 11: bônus diário, Correio, ícones, barra de XP, cancelar com reembolso, Configurações e guarda-roupa |
+| `achievements` | standalone | Sprints 11–12: troféu (conquistas e missões, resgate e selo), XP do tempero ao servir, abas do livro, "+" de Moedas e Grana, Popularidade com renomear, retrato, exportar e importar o save, aba "Rosto" e HUD de depuração só com `?debug=1` |
 | `static-build` | build estático | build numa subpasta, recarga com o mesmo perfil e CSP sem eval ou sem WebAssembly |
 | `server` | servidor | login, bônus e Carta gravados no banco, pagamento por WebSocket, HUD por SSE, reembolso e "Sair" |
 

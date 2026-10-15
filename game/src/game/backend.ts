@@ -35,6 +35,9 @@ let local: GameBackend | null = null;
 /** Switches every request of this page to the café in the browser. */
 export function useLocalBackend(backend: GameBackend): void { local = backend; }
 
+/** The café in this browser, if the page runs offline. */
+export function localBackend(): GameBackend | null { return local; }
+
 /** True when the café runs in this browser (no server, save kept locally). */
 export function isOffline(): boolean { return local !== null; }
 

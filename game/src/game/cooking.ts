@@ -34,6 +34,8 @@ export interface CookingSnapshot {
   emergencyRecipeId?: string;
   /** Coins a cancel just returned (only in a cancel's answer). */
   refund?: number;
+  /** XP of the owner's own seasoning, credited when the dish reached the counter (only in a serve's answer). */
+  seasonXp?: number;
 }
 
 const endpoint = '/api/coffe/cooking';

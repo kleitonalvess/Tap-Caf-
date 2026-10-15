@@ -10,6 +10,8 @@ export interface BootFlags {
    * 3D (só em desenvolvimento).
    */
   startScreen: 'loading' | 'room' | 'avatar';
+  /** `?debug=1` (or a bare `?debug`): the room's debug HUD (fps, camera, tile). */
+  debug: boolean;
 }
 
 const truthy = new Set(['1', 'true', 'on', 'yes']);
@@ -22,6 +24,7 @@ export function readBootFlags(search: string): BootFlags {
     forceReducedMotion: (params.get('motion') ?? '').toLowerCase() === 'off',
     grid: truthy.has((params.get('grid') ?? '').toLowerCase()),
     startScreen: readStartScreen(params.get('screen')),
+    debug: params.get('debug') === '' || truthy.has((params.get('debug') ?? '').toLowerCase()),
   };
 }
 

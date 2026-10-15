@@ -115,7 +115,7 @@ export class RoomStoreController {
   select(entry: StoreEntry): void {
     if (this.busy) return;
     this.cancel(); this.selection = entry; this.rotation = entry.unit?.rotation ?? 0;
-    this.message(`${entry.item.name}: mova a prévia e clique para ${entry.unit ? 'colocar' : `comprar por ${entry.item.priceGold} ouro`}. R: girar. Esc: cancelar.${entry.unit ? ' Delete: guardar.' : ''}`);
+    this.message(`${entry.item.name}: mova a prévia e clique para ${entry.unit ? 'colocar' : `comprar por ${entry.item.priceGold} moedas`}. R: girar. Esc: cancelar.${entry.unit ? ' Delete: guardar.' : ''}`);
     if (entry.unit?.placed) this.options.alpha(entry.unit.unitId, 0);
   }
   cancel(): boolean {
@@ -285,7 +285,7 @@ export class RoomStoreController {
       });
       if (this.destroyed) return;
       this.snapshot = snapshot; this.options.apply(snapshot); this.busy = false; this.cancel(); this.refreshEntries();
-      this.message(action === 'purchase' ? `${selection.item.name} comprado por ${selection.item.priceGold} ouro.` : store ? 'Item guardado no inventário.' : 'Posição salva.');
+      this.message(action === 'purchase' ? `${selection.item.name} comprado por ${selection.item.priceGold} moedas.` : store ? 'Item guardado no inventário.' : 'Posição salva.');
     } catch (error) {
       if (this.destroyed) return;
       const message = error instanceof Error ? error.message : 'Não foi possível salvar.';

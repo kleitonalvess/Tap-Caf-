@@ -135,7 +135,7 @@ const CafeNameMin, CafeNameMax = 3, 24
 var ErrCafeName = errors.New("Use de 3 a 24 letras, números, espaços ou . , ' & ! ? -")
 
 // CleanCafeName trims and collapses spaces and accepts letters (any
-// alphabet), digits, spaces and a few punctuation marks; anything else,
+// alphabet, with their accents), digits, spaces and a few punctuation marks; anything else,
 // including control and invisible characters, is refused.
 func CleanCafeName(value string) (string, error) {
 	name := strings.Join(strings.Fields(value), " ")
@@ -143,7 +143,8 @@ func CleanCafeName(value string) (string, error) {
 		return "", ErrCafeName
 	}
 	for _, r := range name {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != ' ' && !strings.ContainsRune(".,'&!?-", r) {
+		// Combining marks keep accents typed as letter + mark (Cafe\u0301).
+		if !unicode.IsLetter(r) && !unicode.Is(unicode.Mn, r) && !unicode.IsDigit(r) && r != ' ' && !strings.ContainsRune(".,'&!?-", r) {
 			return "", ErrCafeName
 		}
 	}
