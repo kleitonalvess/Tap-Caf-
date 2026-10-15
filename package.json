@@ -23,7 +23,8 @@
     "preview:standalone": "npm run preview:standalone --workspace game",
     "assets:room": "node scripts/sync-room-catalog.mjs",
     "tools": "node scripts/serve-tools.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "node tests/e2e/run.mjs"
   },
   "devDependencies": {
     "vitest": "4.1.11"
