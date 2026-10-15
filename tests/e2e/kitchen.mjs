@@ -227,7 +227,9 @@ try {
   run.check(counterCheck.food.length === 1 && served.recipeId === pao.id && served.servings === pao.servings + seasonBonus && served.counterId === furniture.counter,
     `o balcão recebe as ${pao.servings + seasonBonus} porções`, counterCheck.food);
   const afterServe = await game.player();
-  run.check(afterServe.xp - afterSeason.xp === rules.stove.seasonXp, `servir o prato temperado credita os ${rules.stove.seasonXp} XP do tempero`, { before: afterSeason.xp, after: afterServe.xp });
+  // Customers may already have paid XP for servings taken from the counter.
+  const paidXp = await game.room(() => window.__kitchen.payments.reduce((sum, payment) => sum + payment.xp, 0));
+  run.check(afterServe.xp - afterSeason.xp - paidXp === rules.stove.seasonXp, `servir o prato temperado credita os ${rules.stove.seasonXp} XP do tempero`, { before: afterSeason.xp, after: afterServe.xp, paidXp });
   run.check(await game.waitFor(() => window.__coffeMania.screens.active.occupiedStoves.size === 0, undefined, 15000).then(() => true, () => false), 'servir libera o fogão');
   run.check(counterCheck.gold < cheapest && counterCheck.emergency === null, 'com comida no balcão não há ajuda de emergência, mesmo sem moedas', counterCheck);
   const badge = await game.waitFor(() => {
