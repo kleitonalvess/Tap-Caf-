@@ -1,0 +1,18 @@
+{
+  "id": 3000013,
+  "classname": "stained_glass_window",
+  "name": "Vitral Colorido",
+  "type": 3,
+  "kind": "window",
+  "priceGold": 0,
+  "purchasable": false,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 195.2,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "basic_window",
+  "tint": "#a05ad6",
+  "tintMode": "color",
+  "charm": 6
+}

@@ -69,6 +69,7 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 		var command struct {
 			StoveID  string `json:"stoveId"`
 			RecipeID string `json:"recipeId"`
+			Spice    int    `json:"spice"`
 		}
 		if json.Unmarshal(op.Body, &command) != nil || command.StoveID == "" {
 			return fail(400, "Pedido inválido.")
@@ -84,7 +85,7 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 		case "cook_clean":
 			err = CleanStove(s, op.Owner, command.StoveID, now)
 		case "cook_season":
-			err = SeasonCooking(s, op.Owner, op.User, command.StoveID, now)
+			err = SeasonCooking(s, op.Owner, op.User, command.StoveID, command.Spice, now)
 		}
 		if err == nil {
 			var snapshot CookingSnapshot
@@ -189,6 +190,10 @@ func errorStatus(err error) (int, string) {
 		return 409, "Este preparo não pode mais ser cancelado."
 	case is(ErrUnknownRecipe):
 		return 400, err.Error()
+	case is(ErrSpiceUnknown):
+		return 400, err.Error()
+	case is(ErrSpiceEmpty, ErrSpiceOwner):
+		return 409, err.Error()
 	case is(ErrRoomLevel, ErrRoomCash):
 		return 409, err.Error()
 	case is(ErrRoomGold, ErrRoomConflict, ErrRoomOperation, ErrRoomBusy, ErrCounterBusy, ErrRecipeLocked, ErrCookingCoins,

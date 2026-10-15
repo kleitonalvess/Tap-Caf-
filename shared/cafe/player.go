@@ -2,6 +2,7 @@ package cafe
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -34,6 +35,8 @@ type PlayerSnapshot struct {
 	Energy       Resource `json:"energy"`
 	Crates       Resource `json:"crates"`
 	Satisfaction Resource `json:"satisfaction"`
+	// Pantry spices by code ("800001": 2): the stove menu offers them.
+	Pantry map[string]int `json:"pantry"`
 }
 
 // NewPlayerFields are the initial resources of a new player.
@@ -43,7 +46,7 @@ func NewPlayerFields(userID string) map[string]any {
 		"user":      userID, "cash": StarterCash, "gold": 100, "level": 1,
 		"experience_current": 0, "experience_max": gamerules.NextLevelXP(1),
 		"energy_current": 50, "energy_max": 50,
-		"crates_current": 4, "crates_max": 4,
+		"crates_current": 4, "crates_max": gamerules.CrateRulesNow().FreeMax,
 		"satisfaction_current_tenths": 800, "satisfaction_max_tenths": 1050,
 	}
 }
@@ -60,7 +63,16 @@ func PlayerView(record Record) PlayerSnapshot {
 		Energy:       resource("energy_current", "energy_max", 1),
 		Crates:       resource("crates_current", "crates_max", 1),
 		Satisfaction: resource("satisfaction_current_tenths", "satisfaction_max_tenths", 10),
+		Pantry:       pantryCounts(record),
 	}
+}
+
+func pantryCounts(record Record) map[string]int {
+	counts := map[string]int{}
+	for code, count := range readPantry(record) {
+		counts[strconv.Itoa(code)] = count
+	}
+	return counts
 }
 
 // Progress reports one award; the record keeps total XP in experience_current

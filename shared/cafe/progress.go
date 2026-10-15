@@ -180,7 +180,9 @@ type ProgressSnapshot struct {
 
 // ProgressClaim answers "Resgatar": what it paid, the new window and the HUD.
 type ProgressClaim struct {
-	Reward      gamerules.Reward `json:"reward"`
+	Reward gamerules.Reward `json:"reward"`
+	// The trio of missions also fills one of the HUD's free crates.
+	FreeCrate   bool             `json:"freeCrate,omitempty"`
 	LevelReward int64            `json:"levelReward,omitempty"`
 	Progress    ProgressSnapshot `json:"progress"`
 	State       PlayerSnapshot   `json:"state"`
@@ -308,13 +310,14 @@ func SnapshotProgress(s Store, user string, now time.Time) (ProgressSnapshot, er
 
 // claimReward credits a reward and answers with the new window and HUD; the
 // caller already marked the reward as claimed on record.
-func claimReward(tx Store, user string, record Record, reward gamerules.Reward, now time.Time) (ProgressClaim, error) {
+func claimReward(tx Store, user string, record Record, reward gamerules.Reward, now time.Time, crate bool) (ProgressClaim, error) {
 	state, err := GetOrCreatePlayer(tx, user)
 	if err != nil {
 		return ProgressClaim{}, err
 	}
 	progress := Grant(state, reward.Coins, reward.XP)
 	state.Set("cash", state.GetInt64("cash")+reward.Cash)
+	freeCrate := crate && grantFreeCrate(state)
 	if err := tx.Save(state); err != nil {
 		return ProgressClaim{}, err
 	}
@@ -325,7 +328,7 @@ func claimReward(tx Store, user string, record Record, reward gamerules.Reward, 
 	if err != nil {
 		return ProgressClaim{}, err
 	}
-	return ProgressClaim{Reward: reward, LevelReward: progress.LevelReward, Progress: snapshot, State: PlayerView(state)}, nil
+	return ProgressClaim{Reward: reward, FreeCrate: freeCrate, LevelReward: progress.LevelReward, Progress: snapshot, State: PlayerView(state)}, nil
 }
 
 // ClaimAchievement pays the next tier of an achievement once it is reached.
@@ -356,7 +359,7 @@ func ClaimAchievement(s Store, user, id string, now time.Time) (ProgressClaim, e
 		}
 		data.achievement[id] = tier + 1
 		writeStats(record, data)
-		claim, err = claimReward(tx, user, record, goals[tier].Reward, now)
+		claim, err = claimReward(tx, user, record, goals[tier].Reward, now, false)
 		return err
 	})
 	return claim, err
@@ -396,10 +399,11 @@ func ClaimMission(s Store, user, id string, now time.Time) (ProgressClaim, error
 		data.dayClaimed = append(data.dayClaimed, id)
 		writeStats(record, data)
 		reward := mission.Reward
-		if !slices.ContainsFunc(missions, func(m gamerules.Mission) bool { return !slices.Contains(data.dayClaimed, m.ID) }) {
+		trio := !slices.ContainsFunc(missions, func(m gamerules.Mission) bool { return !slices.Contains(data.dayClaimed, m.ID) })
+		if trio {
 			reward.Cash += gamerules.MissionTrioCash()
 		}
-		claim, err = claimReward(tx, user, record, reward, now)
+		claim, err = claimReward(tx, user, record, reward, now, trio)
 		return err
 	})
 	return claim, err

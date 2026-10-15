@@ -92,6 +92,9 @@ import { AchievementsModal } from './AchievementsModal';
 import { CurrencyModal, type Currency } from './CurrencyModal';
 import { PopularityModal } from './PopularityModal';
 import { CashDayModal } from './CashDayModal';
+import { CratesModal } from './CratesModal';
+import { PantryModal } from './PantryModal';
+import { buySpice, loadPantry, openCrate, ownedSpices, type CrateResult } from '../../game/pantry';
 import { claimProgress, currencySources, loadProgress, popularityLines, renameCafe, type ProgressClaim, type ProgressSnapshot } from '../../game/progress';
 import { LevelUpModal } from './LevelUpModal';
 import { levelUnlocks, nextUnlocks } from '../../game/game-rules';
@@ -147,9 +150,7 @@ const SCENE_DIAGONAL_PAN_TILE = 25;
 /** Bottom-bar systems not built yet: the toast names each one. */
 const SOON_SYSTEMS: Record<string, string> = {
   gift: 'Presentes: troque presentes com os vizinhos todos os dias.',
-  'yellow-box': 'Caixas misteriosas: itens surpresa para o seu café.',
   map: 'Mapa do bairro: visite a rua e os cafés vizinhos.',
-  mortar: 'Temperos: condimentos especiais que rendem mais porções.',
 };
 const MOBILE_LANDSCAPE_HUD_SCALE = 1.15;
 const ACTION_BAR_UI_SCALE = 1.15;
@@ -335,6 +336,9 @@ export class RoomScreen implements Screen {
   private popularityModal?: PopularityModal;
   private currencyModal?: CurrencyModal;
   private cashDayModal?: CashDayModal;
+  private pantryModal?: PantryModal;
+  private cratesModal?: CratesModal;
+  private readonly roomClient?: RoomInventoryClient;
   private progressTimer?: ReturnType<typeof setTimeout>;
   private progressLoading = false;
   private progressAgain = false;
@@ -1034,6 +1038,22 @@ export class RoomScreen implements Screen {
     this.view.addChild(this.currencyModal.view);
     this.cashDayModal = new CashDayModal({ ...(options.audio ? { audio: options.audio } : {}) });
     this.view.addChild(this.cashDayModal.view);
+    // Pantry spices and mystery crates: each player's own, credited by the server.
+    this.roomClient = options.roomClient;
+    this.pantryModal = new PantryModal({
+      gold: () => this.roomSnapshot?.playerState?.gold ?? 0,
+      onBuy: (code) => buySpice(code),
+      onBought: (result) => this.setPlayerState(result.state),
+      ...(options.audio ? { audio: options.audio } : {}),
+    });
+    this.view.addChild(this.pantryModal.view);
+    this.cratesModal = new CratesModal({
+      wallet: () => ({ gold: this.roomSnapshot?.playerState?.gold ?? 0, cash: this.roomSnapshot?.playerState?.cash ?? 0 }),
+      onOpen: (crate) => openCrate(crate.id, crypto.randomUUID()),
+      onOpened: (result) => this.collectCrate(result),
+      ...(options.audio ? { audio: options.audio } : {}),
+    });
+    this.view.addChild(this.cratesModal.view);
     this.topBars?.setPlusHandler((kind) => this.openCurrency(kind));
     this.actionBarMood?.setTapHandler(() => this.openPopularity());
     // The owner's mood column shows the score customers see (service + decoration).
@@ -1903,6 +1923,12 @@ export class RoomScreen implements Screen {
     if (job && !job.seasoned && (status === 'preparing' || status === 'cooking')) {
       const bonus = this.rules ? Math.max(1, Math.ceil((this.rules.recipes.find((recipe) => recipe.id === job.recipeId)?.servings ?? 1) * this.rules.stove.seasonBonusPercent / 100)) : 1;
       actions.push({ kind: 'season', caption: `Temperar (+${bonus} ${bonus === 1 ? 'porção' : 'porções'})`, onTap: () => this.seasonStove(stove) });
+      // The owner's pantry spices: the regular seasoning plus the spice's effect.
+      if (owner) {
+        for (const spice of ownedSpices((this.rules?.spices?.list ?? []).map((entry) => ({ ...entry, count: 0 })), this.roomSnapshot?.playerState?.pantry)) {
+          actions.push({ kind: 'season', label: `stove-action-spice-${spice.code}`, caption: `${spice.name} (${spice.count})`, onTap: () => this.seasonStove(stove, spice.code) });
+        }
+      }
     }
     if (owner) actions.push({ kind: 'cancel', caption: 'Cancelar', onTap: () => this.confirmCancel(stove, job) });
     return actions;
@@ -1944,10 +1970,16 @@ export class RoomScreen implements Screen {
   }
 
   /** Owners and visitors: adds the bonus servings once and grants the seasoner XP. */
-  private seasonStove(stove: RoomItem): void {
+  private seasonStove(stove: RoomItem, spice?: number): void {
     this.closeStoveActions();
     if (!this.cookingClient || !stove.instanceId) return;
-    void this.cookingClient.season(stove.instanceId).then((snapshot) => {
+    void this.cookingClient.season(stove.instanceId, spice).then((snapshot) => {
+      // The spice left the pantry: ask for the HUD values the SSE would bring anyway.
+      if (spice) void loadPantry().then((pantry) => {
+        if (this.destroyed || !this.roomSnapshot?.playerState) return;
+        const counts = Object.fromEntries(pantry.spices.map((entry) => [String(entry.code), entry.count]));
+        this.setPlayerState({ ...this.roomSnapshot.playerState, pantry: counts });
+      }).catch(() => undefined);
       if (this.destroyed) return;
       this.acceptCookingSnapshot(snapshot, false);
       this.stoveEffects.get(stove.instanceId!)?.burst();
@@ -2331,7 +2363,7 @@ export class RoomScreen implements Screen {
     return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen || this.staffModal?.isOpen ||
       this.levelUpModal?.isOpen || this.expansionModal?.isOpen || this.streetModal?.isOpen || this.welcomeBack?.isOpen ||
       this.confirmDialog?.isOpen || this.dailyModal?.isOpen || this.mailModal?.isOpen || this.achievementsModal?.isOpen ||
-      this.popularityModal?.isOpen || this.currencyModal?.isOpen || this.cashDayModal?.isOpen);
+      this.popularityModal?.isOpen || this.currencyModal?.isOpen || this.cashDayModal?.isOpen || this.pantryModal?.isOpen || this.cratesModal?.isOpen);
   }
 
   /** Bottom bar: open the system, or say it is not here yet (or not for visitors). */
@@ -2354,6 +2386,37 @@ export class RoomScreen implements Screen {
     else if (name === 'striped-chicken') this.onStreetTap('farm');
     else if (name === 'mail') this.openMail();
     else if (name === 'trophy') this.openAchievements();
+    else if (name === 'mortar') this.openPantry();
+    else if (name === 'yellow-box') this.openCrates();
+  }
+
+  private openPantry(): void {
+    if (!this.pantryModal || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.audio?.play('click');
+    this.closeStoveActions();
+    void loadPantry().then((pantry) => {
+      if (!this.destroyed && !this.isModalOpen && !this.storeBar?.isOpen) this.pantryModal?.show(pantry);
+    }).catch((error: unknown) => this.showNotice(error instanceof Error ? error.message : 'Despensa indisponível.'));
+  }
+
+  private openCrates(): void {
+    if (!this.cratesModal || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.audio?.play('click');
+    this.closeStoveActions();
+    void loadPantry().then((pantry) => {
+      if (!this.destroyed && !this.isModalOpen && !this.storeBar?.isOpen) this.cratesModal?.show(pantry);
+    }).catch((error: unknown) => this.showNotice(error instanceof Error ? error.message : 'Caixas indisponíveis.'));
+  }
+
+  /** A crate's prize: the HUD takes the new values; an item joins the store's inventory. */
+  private collectCrate(result: CrateResult): void {
+    const view = this.playerView.view;
+    if (result.prize.coins) this.floatingRewards.spawn(view.x, view.y, view.zIndex, result.prize.coins, 0);
+    this.setPlayerState(result.state);
+    if (result.prize.unitId && this.roomClient && this.roomSnapshot?.canEdit !== false) {
+      void this.roomClient.refresh().then((snapshot) => { if (!this.destroyed) this.applyRoomSnapshot(snapshot); })
+        .catch((error: unknown) => console.warn('[caixas] inventário não atualizado', error));
+    }
   }
 
   /** Troféu: the player's own achievements and today's missions. */
@@ -3436,6 +3499,8 @@ export class RoomScreen implements Screen {
     this.popularityModal?.update(deltaMs);
     this.currencyModal?.update(deltaMs);
     this.cashDayModal?.update(deltaMs);
+    this.pantryModal?.update(deltaMs);
+    this.cratesModal?.update(deltaMs);
     // New missions at São Paulo midnight, by the server's clock.
     if (this.progressNextAt > 0 && this.serverNow() >= this.progressNextAt) { this.progressNextAt = 0; this.scheduleProgress(); }
     this.streetScenery?.update(deltaMs);
@@ -3526,6 +3591,8 @@ export class RoomScreen implements Screen {
     this.popularityModal?.setStageScale(scale);
     this.currencyModal?.setStageScale(scale);
     this.cashDayModal?.setStageScale(scale);
+    this.pantryModal?.setStageScale(scale);
+    this.cratesModal?.setStageScale(scale);
     this.audioControl?.setStageScale(scale);
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
@@ -3594,6 +3661,8 @@ export class RoomScreen implements Screen {
     this.popularityModal?.destroy();
     this.currencyModal?.destroy();
     this.cashDayModal?.destroy();
+    this.pantryModal?.destroy();
+    this.cratesModal?.destroy();
     this.partyLights.destroy();
     this.partyBadge.destroy();
     this.audio?.setOverride?.(null);

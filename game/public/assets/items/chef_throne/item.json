@@ -1,0 +1,18 @@
+{
+  "id": 3040006,
+  "classname": "chef_throne",
+  "name": "Trono do Chef",
+  "type": 3,
+  "kind": "chair",
+  "priceGold": 0,
+  "purchasable": false,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 97.4,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "classic_chair",
+  "tint": "#7b2cbf",
+  "tintMode": "color",
+  "charm": 7
+}

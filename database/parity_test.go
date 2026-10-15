@@ -17,6 +17,10 @@ import (
 // be compared line by line.
 func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string {
 	t.Helper()
+	// Crates and random spices draw the same sequence on both stores.
+	draws, previous := 0, cafe.RandomIntn
+	cafe.RandomIntn = func(n int) int { draws++; return draws % n }
+	t.Cleanup(func() { cafe.RandomIntn = previous })
 	lines := []string{}
 	log := func(label string, value any) {
 		data, err := json.Marshal(value)
@@ -129,7 +133,7 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 	pao, _ := gamerules.RecipeByID("pao_de_queijo")
 	log("cook", outcome(cafe.StartCooking(s, owner, stove.ID(), pao.ID, t0)))
 	log("cook twice", outcome(cafe.StartCooking(s, owner, stove.ID(), pao.ID, t0)))
-	log("season", outcome(cafe.SeasonCooking(s, owner, owner, stove.ID(), t0.Add(time.Second))))
+	log("season", outcome(cafe.SeasonCooking(s, owner, owner, stove.ID(), 0, t0.Add(time.Second))))
 	cooking("cooking", t0.Add(3*time.Second))
 	ready := t0.Add(gamerules.PrepareDuration() + pao.CookDuration())
 	log("serve early", outcome(cafe.ServeCooking(s, owner, stove.ID(), ready.Add(-time.Second))))
@@ -290,6 +294,18 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 	shop("stored stove back", "move", 0, stoveUnit, 6, 7)
 	stoves, err := cafe.SnapshotCooking(s, owner, t0)
 	log("stoves", map[string]any{"err": outcome(err), "count": len(stoves.Stoves)})
+
+	// Sprint 14: the pantry and mystery crates (a retried opening answers the same prize).
+	spiceBuy, err := cafe.BuySpice(s, owner, 800001, t0)
+	log("buy spice", map[string]any{"err": outcome(err), "pantry": spiceBuy.State.Pantry, "gold": spiceBuy.State.Gold})
+	for _, key := range []string{"parity-crate-000001", "parity-crate-000001", "parity-crate-000002"} {
+		opened, err := cafe.OpenCrate(s, owner, "surprise", key, t0)
+		log("open crate", map[string]any{"err": outcome(err), "prize": opened.Prize.Name, "crates": opened.State.Crates, "pantry": opened.State.Pantry, "gold": opened.State.Gold, "cash": opened.State.Cash})
+	}
+	_, err = cafe.OpenCrate(s, owner, "gold", "parity-crate-000003", t0)
+	log("open gold crate", outcome(err))
+	pantry, err := cafe.SnapshotPantry(s, owner)
+	log("pantry", map[string]any{"err": outcome(err), "free": pantry.FreeCrates, "max": pantry.FreeMax, "spices": len(pantry.Spices)})
 	world("final")
 	return lines
 }

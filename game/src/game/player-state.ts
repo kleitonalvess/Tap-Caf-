@@ -16,6 +16,8 @@ export interface PlayerState {
   energy: ResourceValue;
   crates: ResourceValue;
   satisfaction: ResourceValue;
+  /** Pantry spices by code: {"800001": 2}. */
+  pantry?: Record<string, number>;
 }
 
 export function resourcePercentage(value: ResourceValue): number {

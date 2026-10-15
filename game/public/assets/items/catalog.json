@@ -11,6 +11,11 @@
       "manifest": "blue_window/item.json"
     },
     {
+      "id": 3000013,
+      "classname": "stained_glass_window",
+      "manifest": "stained_glass_window/item.json"
+    },
+    {
       "id": 3010000,
       "classname": "mafia_door",
       "manifest": "mafia_door/item.json"
@@ -26,6 +31,11 @@
       "manifest": "green_door/item.json"
     },
     {
+      "id": 3010003,
+      "classname": "royal_door",
+      "manifest": "royal_door/item.json"
+    },
+    {
       "id": 3020003,
       "classname": "delicate_bush",
       "manifest": "delicate_bush/item.json"
@@ -34,6 +44,11 @@
       "id": 3020004,
       "classname": "cherry_bush",
       "manifest": "cherry_bush/item.json"
+    },
+    {
+      "id": 3020005,
+      "classname": "golden_bush",
+      "manifest": "golden_bush/item.json"
     },
     {
       "id": 3030010,
@@ -84,6 +99,11 @@
       "id": 3040005,
       "classname": "gold_chair",
       "manifest": "gold_chair/item.json"
+    },
+    {
+      "id": 3040006,
+      "classname": "chef_throne",
+      "manifest": "chef_throne/item.json"
     },
     {
       "id": 3050000,

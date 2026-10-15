@@ -14,6 +14,8 @@ export interface StoveAction {
   kind: StoveActionKind;
   caption: string;
   onTap: () => void;
+  /** Distinguishes several actions of one kind (the pantry spices). */
+  label?: string;
 }
 
 function drawIcon(icon: Graphics, kind: StoveActionKind): void {
@@ -70,7 +72,7 @@ export class StoveActionMenu {
 
   private addButton(y: number, action: StoveAction): Text {
     const button = new Container();
-    button.label = `stove-action-${action.kind}`;
+    button.label = action.label ?? `stove-action-${action.kind}`;
     button.y = y;
     button.eventMode = 'static';
     button.cursor = 'pointer';

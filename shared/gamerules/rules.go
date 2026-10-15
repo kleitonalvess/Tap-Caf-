@@ -64,6 +64,8 @@ type DailyReward struct {
 	Day   int   `json:"day"`
 	Coins int64 `json:"coins"`
 	Cash  int64 `json:"cash"`
+	// Random spices from the pantry list (the config's rewardSpice on days 5 and 6).
+	Spices int `json:"spices,omitempty"`
 }
 
 // MailRules: letters the café receives. Welcome arrives once per account.
@@ -167,6 +169,60 @@ type Mission struct {
 type MissionGoal struct {
 	Stat   string `json:"stat"`
 	Target int64  `json:"target"`
+}
+
+// Spice effects on a seasoned batch (the regular seasoning still applies):
+// double doubles its extra servings, rush halves the cooking time left and
+// preserve triples how long the ready dish waits before it spoils.
+const (
+	SpiceDouble   = "double"
+	SpiceRush     = "rush"
+	SpicePreserve = "preserve"
+)
+
+// SpiceRules: the pantry's special spices, codes 800001–800003 of the config
+// (which names no effects; these are the project's).
+type SpiceRules struct {
+	List        []Spice `json:"list"`
+	Provisional bool    `json:"provisional,omitempty"`
+}
+
+type Spice struct {
+	Code        int    `json:"code"`
+	Name        string `json:"name"`
+	Effect      string `json:"effect"`
+	Description string `json:"description"`
+	PriceCoins  int64  `json:"priceCoins"`
+}
+
+// CrateRules: mystery crates. The free crate opens one of the HUD's "Caixas"
+// (player_state.crates_current, at most FreeMax); the others are bought with
+// coins or Grana and opened at once. Each opening draws one prize by weight.
+type CrateRules struct {
+	FreeMax     int     `json:"freeMax"`
+	List        []Crate `json:"list"`
+	Provisional bool    `json:"provisional,omitempty"`
+}
+
+type Crate struct {
+	ID string `json:"id"`
+	// Code of the config's <misteryCrate> it stands for, when there is one.
+	Code   int          `json:"code,omitempty"`
+	Name   string       `json:"name"`
+	Free   bool         `json:"free,omitempty"`
+	Coins  int64        `json:"coins,omitempty"`
+	Cash   int64        `json:"cash,omitempty"`
+	Prizes []CratePrize `json:"prizes"`
+}
+
+// CratePrize is exactly one of coins, cash, spice (with count) or item.
+type CratePrize struct {
+	Weight int   `json:"weight"`
+	Coins  int64 `json:"coins,omitempty"`
+	Cash   int64 `json:"cash,omitempty"`
+	Spice  int   `json:"spice,omitempty"`
+	Count  int   `json:"count,omitempty"`
+	Item   int   `json:"item,omitempty"`
 }
 
 // DecorRules: placed decoration adds its charm to the café's popularity. The
@@ -342,6 +398,8 @@ type Rules struct {
 	Mail              MailRules        `json:"mail"`
 	Achievements      AchievementRules `json:"achievements"`
 	Decor             DecorRules       `json:"decor"`
+	Spices            SpiceRules       `json:"spices"`
+	Crates            CrateRules       `json:"crates"`
 	Missions          MissionRules     `json:"missions"`
 	Levels            []Level          `json:"levels"`
 	CustomerFrequency []Frequency      `json:"customerFrequency"`
@@ -414,7 +472,7 @@ func validate(r Rules) string {
 		return "invalid daily bonus"
 	}
 	for i, day := range r.Daily.Days {
-		if day.Day != i+1 || day.Coins < 0 || day.Cash < 0 || day.Coins == 0 && day.Cash == 0 {
+		if day.Day != i+1 || day.Coins < 0 || day.Cash < 0 || day.Spices < 0 || day.Spices > 5 || day.Coins == 0 && day.Cash == 0 && day.Spices == 0 {
 			return "daily bonus days must be contiguous and pay something"
 		}
 	}
@@ -423,6 +481,9 @@ func validate(r Rules) string {
 	}
 	if d := r.Decor; d.FullCopies < 1 || d.FullCopies > 20 || d.HalfCopies < 0 || d.HalfCopies > 20 || d.MaxBonusTenths < 0 || d.MaxBonusTenths > 1000 {
 		return "invalid decor rules"
+	}
+	if message := validatePantry(r); message != "" {
+		return message
 	}
 	if message := validateProgress(r); message != "" {
 		return message
@@ -490,6 +551,63 @@ func validate(r Rules) string {
 	}
 	if len(seen) == 0 {
 		return "missing recipes"
+	}
+	return ""
+}
+
+func validatePantry(r Rules) string {
+	codes := map[int]bool{}
+	for _, spice := range r.Spices.List {
+		if spice.Code < 800001 || spice.Code > 899999 || codes[spice.Code] || spice.Name == "" || spice.PriceCoins < 0 ||
+			spice.Effect != SpiceDouble && spice.Effect != SpiceRush && spice.Effect != SpicePreserve {
+			return "invalid spice"
+		}
+		codes[spice.Code] = true
+	}
+	c := r.Crates
+	if c.FreeMax < 1 || c.FreeMax > 100 {
+		return "invalid free crate limit"
+	}
+	ids := map[string]bool{}
+	for _, crate := range c.List {
+		paid := 0
+		if crate.Free {
+			paid++
+		}
+		if crate.Coins > 0 {
+			paid++
+		}
+		if crate.Cash > 0 {
+			paid++
+		}
+		if !recipeIDPattern.MatchString(crate.ID) || ids[crate.ID] || crate.Name == "" || paid != 1 || crate.Coins < 0 || crate.Cash < 0 || len(crate.Prizes) == 0 {
+			return "invalid crate " + crate.ID
+		}
+		ids[crate.ID] = true
+		for _, prize := range crate.Prizes {
+			kinds := 0
+			if prize.Coins > 0 {
+				kinds++
+			}
+			if prize.Cash > 0 {
+				kinds++
+			}
+			if prize.Spice > 0 {
+				kinds++
+				if !codes[prize.Spice] || prize.Count < 1 {
+					return "crate prize with an unknown spice: " + crate.ID
+				}
+			}
+			if prize.Item > 0 {
+				kinds++
+				if _, ok := roomcatalog.ByID(prize.Item); !ok {
+					return "crate prize with an unknown item: " + crate.ID
+				}
+			}
+			if kinds != 1 || prize.Weight < 1 || prize.Coins < 0 || prize.Cash < 0 {
+				return "invalid crate prize: " + crate.ID
+			}
+		}
 	}
 	return ""
 }
@@ -629,6 +747,32 @@ func AchievementByID(id string) (Achievement, bool) {
 }
 
 func Decor() DecorRules { return rules.Decor }
+
+func Spices() []Spice { return append([]Spice{}, rules.Spices.List...) }
+
+func SpiceByCode(code int) (Spice, bool) {
+	for _, spice := range rules.Spices.List {
+		if spice.Code == code {
+			return spice, true
+		}
+	}
+	return Spice{}, false
+}
+
+func CrateRulesNow() CrateRules {
+	c := rules.Crates
+	c.List = append([]Crate{}, c.List...)
+	return c
+}
+
+func CrateByID(id string) (Crate, bool) {
+	for _, crate := range rules.Crates.List {
+		if crate.ID == id {
+			return crate, true
+		}
+	}
+	return Crate{}, false
+}
 
 // DecorBonus sums the charm of the placed units (their catalogue item ids).
 func DecorBonus(itemIDs []int) DecorSummary {
@@ -807,6 +951,8 @@ func Public() Rules {
 	snapshot.Daily = Daily()
 	snapshot.Achievements.List = append([]Achievement{}, rules.Achievements.List...)
 	snapshot.Decor = rules.Decor
+	snapshot.Spices.List = Spices()
+	snapshot.Crates = CrateRulesNow()
 	snapshot.Missions.Slots = MissionSlots()
 	return snapshot
 }

@@ -167,12 +167,13 @@ export class CookingClient {
     return this.read(response);
   }
 
-  /** Owners and visitors may season; the room id selects whose stove. */
-  async season(stoveId: string): Promise<CookingSnapshot> {
+  /** Owners and visitors may season; the room id selects whose stove. The
+   * owner may add a pantry spice (its code). */
+  async season(stoveId: string, spice?: number): Promise<CookingSnapshot> {
     const response = await this.request('/season', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(this.roomId ? { stoveId, roomId: this.roomId } : { stoveId }),
+      body: JSON.stringify({ stoveId, ...(this.roomId ? { roomId: this.roomId } : {}), ...(spice ? { spice } : {}) }),
     });
     if (response.status === 409 || response.status === 403) throw await this.conflict(response, 'Não foi possível temperar.');
     return this.read(response);

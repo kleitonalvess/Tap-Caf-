@@ -1,0 +1,27 @@
+{
+  "id": 3010003,
+  "classname": "royal_door",
+  "name": "Porta Real",
+  "type": 2,
+  "kind": "door",
+  "priceGold": 0,
+  "purchasable": false,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 176,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "mafia_door",
+  "tint": "#d4a017",
+  "tintMode": "color",
+  "charm": 6,
+  "wall_cutter_index": 0.85,
+  "door": {
+    "sourceRotation": 0,
+    "hinge": {
+      "x": 87,
+      "y": 179
+    },
+    "baseSlope": -0.5
+  }
+}

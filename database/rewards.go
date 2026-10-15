@@ -148,6 +148,68 @@ func registerRewardRoutes(e *core.ServeEvent) {
 		}
 		return r.JSON(http.StatusOK, state)
 	}).Bind(apis.BodyLimit(512)).BindFunc(mutation)
+	e.Router.GET("/api/coffe/pantry", func(r *core.RequestEvent) error {
+		r.Response.Header().Set("Cache-Control", "no-store")
+		user := sessionRecord(r)
+		if user == nil {
+			return r.UnauthorizedError("Entre para jogar.", nil)
+		}
+		pantry, err := cafe.SnapshotPantry(pb(r.App), user.Id)
+		if err != nil {
+			return r.InternalServerError("Não foi possível carregar a despensa.", err)
+		}
+		return r.JSON(http.StatusOK, pantry)
+	})
+	e.Router.POST("/api/coffe/pantry/buy", func(r *core.RequestEvent) error {
+		r.Response.Header().Set("Cache-Control", "no-store")
+		user := sessionRecord(r)
+		if user == nil {
+			return r.UnauthorizedError("Entre para jogar.", nil)
+		}
+		var body struct {
+			Code int `json:"code"`
+		}
+		decoder := json.NewDecoder(r.Request.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil || decoder.Decode(new(any)) != io.EOF {
+			return r.BadRequestError("Tempero inválido.", nil)
+		}
+		result, err := cafe.BuySpice(pb(r.App), user.Id, body.Code, time.Now())
+		if err != nil {
+			return pantryFailure(r, err)
+		}
+		return r.JSON(http.StatusOK, result)
+	}).Bind(apis.BodyLimit(256)).BindFunc(mutation)
+	e.Router.POST("/api/coffe/crates/open", func(r *core.RequestEvent) error {
+		r.Response.Header().Set("Cache-Control", "no-store")
+		user := sessionRecord(r)
+		if user == nil {
+			return r.UnauthorizedError("Entre para jogar.", nil)
+		}
+		var body struct {
+			Crate     string `json:"crate"`
+			RequestID string `json:"requestId"`
+		}
+		decoder := json.NewDecoder(r.Request.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil || decoder.Decode(new(any)) != io.EOF || len(body.Crate) > 40 {
+			return r.BadRequestError("Caixa inválida.", nil)
+		}
+		result, err := cafe.OpenCrate(pb(r.App), user.Id, body.Crate, body.RequestID, time.Now())
+		if err != nil {
+			return pantryFailure(r, err)
+		}
+		return r.JSON(http.StatusOK, result)
+	}).Bind(apis.BodyLimit(256)).BindFunc(mutation)
+}
+
+// pantryFailure answers a pantry or crate error with its status and message.
+func pantryFailure(r *core.RequestEvent, err error) error {
+	status, message := cafe.PantryErrorStatus(err)
+	if status == http.StatusInternalServerError {
+		return r.InternalServerError(message, err)
+	}
+	return apis.NewApiError(status, message, nil)
 }
 
 // claimProgress pays an achievement tier ("achievement") or a daily mission ("mission").

@@ -106,7 +106,7 @@ func cleanStove(app core.App, userID, stoveID string, now types.DateTime) error 
 }
 
 func seasonCooking(app core.App, owner, seasoner, stoveID string, now types.DateTime) error {
-	return cafe.SeasonCooking(pb(app), owner, seasoner, stoveID, now.Time())
+	return cafe.SeasonCooking(pb(app), owner, seasoner, stoveID, 0, now.Time())
 }
 
 func serveCustomer(app core.App, owner, foodID, tableID string) (gamewire.Payment, error) {

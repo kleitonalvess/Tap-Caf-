@@ -42,6 +42,8 @@ type CookingView struct {
 	Seasoned bool `json:"seasoned,omitempty"`
 	// Cooked with fresh farm ingredients: every serving pays the bonus.
 	Fresh bool `json:"fresh,omitempty"`
+	// The pantry spice used when seasoning (gamerules.Spice code), if any.
+	Spice int `json:"spice,omitempty"`
 	// What the batch cost (0 for the emergency help and for batches started
 	// before the cost was stored); cancelling returns part of it (CancelRefund).
 	CostCoins int64 `json:"costCoins"`
@@ -177,7 +179,7 @@ func SnapshotCooking(s Store, userID string, now time.Time) (CookingSnapshot, er
 				StartedAt:   FormatTime(job.GetTime("started_at")),
 				ReadyAt:     FormatTime(job.GetTime("ready_at")),
 				SpoilsAt:    FormatTime(spoils), Status: status,
-				Servings: jobServings(job), Seasoned: job.GetString("seasoned_by") != "", Fresh: job.GetBool("fresh"),
+				Servings: jobServings(job), Seasoned: job.GetString("seasoned_by") != "", Fresh: job.GetBool("fresh"), Spice: job.GetInt("spice"),
 				CostCoins: job.GetInt64("cost_coins"),
 			}
 		}
@@ -490,8 +492,9 @@ func CleanStove(s Store, userID, stoveID string, now time.Time) error {
 
 // SeasonCooking adds the bonus servings once per batch. Visitors may season a
 // friend's stove and earn the XP at once; the owner's XP waits for the dish to
-// reach the counter (ServeCookingXP).
-func SeasonCooking(s Store, owner, seasoner, stoveID string, now time.Time) error {
+// reach the counter (ServeCookingXP). The owner may add a pantry spice (its
+// code, 0 for none), which is used up in the same transaction.
+func SeasonCooking(s Store, owner, seasoner, stoveID string, spiceCode int, now time.Time) error {
 	return s.Transaction(func(tx Store) error {
 		if _, err := ownedStove(tx, owner, stoveID); err != nil {
 			return err
@@ -512,6 +515,29 @@ func SeasonCooking(s Store, owner, seasoner, stoveID string, now time.Time) erro
 		}
 		job.Set("bonus_servings", gamerules.SeasonBonus(base))
 		job.Set("seasoned_by", seasoner)
+		if spiceCode != 0 {
+			spice, ok := gamerules.SpiceByCode(spiceCode)
+			if !ok {
+				return ErrSpiceUnknown
+			}
+			if seasoner != owner {
+				return ErrSpiceOwner
+			}
+			state, err := tx.First(PlayerCollection, Where{"user": owner})
+			if err != nil {
+				return err
+			}
+			pantry := readPantry(state)
+			if pantry[spiceCode] < 1 {
+				return ErrSpiceEmpty
+			}
+			pantry[spiceCode]--
+			writePantry(state, pantry)
+			if err = tx.Save(state); err != nil {
+				return err
+			}
+			applySpice(job, spice, now)
+		}
 		if err = tx.Save(job); err != nil {
 			return err
 		}

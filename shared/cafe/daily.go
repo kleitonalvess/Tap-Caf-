@@ -29,8 +29,10 @@ type DailyClaim struct {
 	Daily  DailyState            `json:"daily"`
 	Reward gamerules.DailyReward `json:"reward"`
 	// Coins for the level-ups the reward caused, if any (rewards carry no XP today).
-	LevelReward int64          `json:"levelReward,omitempty"`
-	State       PlayerSnapshot `json:"state"`
+	LevelReward int64 `json:"levelReward,omitempty"`
+	// The random spices the day added to the pantry (codes).
+	Spices []int          `json:"spices,omitempty"`
+	State  PlayerSnapshot `json:"state"`
 }
 
 func bonusDate(t time.Time) string { return t.In(bonusZone).Format(time.DateOnly) }
@@ -95,10 +97,11 @@ func ClaimDaily(s Store, user string, now time.Time) (DailyClaim, error) {
 		state.Set("cash", state.GetInt64("cash")+reward.Cash)
 		state.Set("daily_claimed_on", bonusDate(now))
 		state.Set("daily_streak", current.Day)
+		spices := randomSpices(state, reward.Spices)
 		if err := tx.Save(state); err != nil {
 			return err
 		}
-		claim = DailyClaim{Daily: dailyState(state, now), Reward: reward, LevelReward: progress.LevelReward, State: PlayerView(state)}
+		claim = DailyClaim{Daily: dailyState(state, now), Reward: reward, LevelReward: progress.LevelReward, Spices: spices, State: PlayerView(state)}
 		return nil
 	})
 	return claim, err

@@ -143,6 +143,31 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 			return failure(500, "Não foi possível renomear o café.")
 		}
 		return reply(200, state)
+	case "/api/coffe/pantry/buy":
+		var request struct {
+			Code int `json:"code"`
+		}
+		if json.Unmarshal(body, &request) != nil {
+			return failure(400, "Tempero inválido.")
+		}
+		result, err := cafe.BuySpice(e.store, e.profile.ID, request.Code, time.Now())
+		if err != nil {
+			return failure(cafe.PantryErrorStatus(err))
+		}
+		return reply(200, result)
+	case "/api/coffe/crates/open":
+		var request struct {
+			Crate     string `json:"crate"`
+			RequestID string `json:"requestId"`
+		}
+		if json.Unmarshal(body, &request) != nil {
+			return failure(400, "Caixa inválida.")
+		}
+		result, err := cafe.OpenCrate(e.store, e.profile.ID, request.Crate, request.RequestID, time.Now())
+		if err != nil {
+			return failure(cafe.PantryErrorStatus(err))
+		}
+		return reply(200, result)
 	case "/api/coffe/room/away/ack":
 		if err := cafe.AcknowledgeAway(e.store, e.profile.ID); err != nil && !errors.Is(err, cafe.ErrNotFound) {
 			return failure(500, "Não foi possível salvar.")
@@ -215,6 +240,12 @@ func (e *Engine) get(path string, query url.Values) (int, []byte) {
 			return failure(500, "Não foi possível carregar as conquistas.")
 		}
 		return reply(200, progress)
+	case "/api/coffe/pantry":
+		pantry, err := cafe.SnapshotPantry(e.store, owner)
+		if err != nil {
+			return failure(500, "Não foi possível carregar a despensa.")
+		}
+		return reply(200, pantry)
 	case "/api/coffe/staff":
 		snapshot, err := cafe.SnapshotStaff(e.store, owner)
 		if err != nil {

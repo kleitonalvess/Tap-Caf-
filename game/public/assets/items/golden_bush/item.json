@@ -1,0 +1,18 @@
+{
+  "id": 3020005,
+  "classname": "golden_bush",
+  "name": "Arbusto Dourado",
+  "type": 3,
+  "kind": "bush",
+  "priceGold": 0,
+  "purchasable": false,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 127.2,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "delicate_bush",
+  "tint": "#e6b422",
+  "tintMode": "color",
+  "charm": 6
+}

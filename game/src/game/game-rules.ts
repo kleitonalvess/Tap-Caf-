@@ -38,7 +38,9 @@ export interface GameRules {
   /** Whole popularity points; the café keeps tenths. */
   popularity?: { min: number; max: number; satisfiedDelta: number; unsatisfiedDelta: number };
   customerFrequency?: { popularity: number; perMinute: number }[];
-  daily?: { days: { day: number; coins: number; cash: number }[] };
+  daily?: { days: { day: number; coins: number; cash: number; spices?: number }[] };
+  /** The pantry's special spices (codes 800001–800003). */
+  spices?: { list: Array<{ code: number; name: string; effect: 'double' | 'rush' | 'preserve'; description: string; priceCoins: number }> };
 }
 
 export async function loadGameRules(signal?: AbortSignal): Promise<GameRules> {

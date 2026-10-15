@@ -28,8 +28,8 @@
       { "day": 2, "coins": 250, "cash": 0 },
       { "day": 3, "coins": 400, "cash": 2 },
       { "day": 4, "coins": 600, "cash": 0 },
-      { "day": 5, "coins": 800, "cash": 0 },
-      { "day": 6, "coins": 500, "cash": 10 }
+      { "day": 5, "coins": 800, "cash": 0, "spices": 1 },
+      { "day": 6, "coins": 500, "cash": 10, "spices": 1 }
     ]
   },
   "mail": {
@@ -41,6 +41,32 @@
     }
   },
   "decor": { "fullCopies": 3, "halfCopies": 3, "maxBonusTenths": 150 },
+  "spices": {
+    "provisional": true,
+    "list": [
+      { "code": 800001, "name": "Tempero Caseiro", "effect": "double", "description": "Dobra as porções extras do tempero.", "priceCoins": 150 },
+      { "code": 800002, "name": "Tempero do Chef", "effect": "rush", "description": "Adianta pela metade o tempo que falta no fogo.", "priceCoins": 400 },
+      { "code": 800003, "name": "Tempero Real", "effect": "preserve", "description": "O prato pronto demora 3 vezes mais para estragar.", "priceCoins": 800 }
+    ]
+  },
+  "crates": {
+    "provisional": true,
+    "freeMax": 10,
+    "list": [
+      { "id": "surprise", "name": "Caixa Surpresa", "free": true, "prizes": [
+        { "weight": 4, "coins": 100 }, { "weight": 2, "coins": 250 }, { "weight": 3, "spice": 800001, "count": 1 },
+        { "weight": 2, "spice": 800002, "count": 1 }, { "weight": 1, "spice": 800003, "count": 1 }, { "weight": 1, "cash": 1 } ] },
+      { "id": "brown", "code": 980400, "name": "Caixa Marrom", "coins": 2000, "prizes": [
+        { "weight": 3, "coins": 1200 }, { "weight": 2, "coins": 3000 }, { "weight": 2, "spice": 800001, "count": 3 },
+        { "weight": 2, "spice": 800002, "count": 2 }, { "weight": 1, "item": 3020005 }, { "weight": 1, "item": 3040006 } ] },
+      { "id": "purple", "code": 980100, "name": "Caixa Roxa", "cash": 7, "prizes": [
+        { "weight": 2, "item": 3000013 }, { "weight": 2, "item": 3010003 }, { "weight": 2, "item": 3020005 },
+        { "weight": 2, "spice": 800003, "count": 3 }, { "weight": 1, "coins": 6000 }, { "weight": 1, "cash": 10 } ] },
+      { "id": "gold", "code": 980300, "name": "Caixa Dourada", "cash": 15, "prizes": [
+        { "weight": 2, "item": 3040006 }, { "weight": 2, "item": 3010003 }, { "weight": 2, "item": 3000013 },
+        { "weight": 2, "item": 3500004 }, { "weight": 1, "spice": 800002, "count": 4 }, { "weight": 1, "cash": 25 } ] }
+    ]
+  },
   "achievements": {
     "list": [
       { "id": "served_dishes", "code": 1, "name": "Mestre-Cuca", "description": "Leve pratos prontos do fogão ao balcão.", "stat": "dishes", "goals": [

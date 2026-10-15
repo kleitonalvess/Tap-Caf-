@@ -71,7 +71,7 @@ func TestOwnerSeasoningXPWaitsForTheCounter(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := playerXP(t, s, "owner")
-	if err := SeasonCooking(s, "owner", "owner", stove, progressT0.Add(time.Second)); err != nil {
+	if err := SeasonCooking(s, "owner", "owner", stove, 0, progressT0.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if got := playerXP(t, s, "owner"); got != before {
@@ -101,7 +101,7 @@ func TestSeasonThenCancelEarnsNothing(t *testing.T) {
 		if err := StartCooking(s, "owner", stove, pao.ID, at); err != nil {
 			t.Fatal(err)
 		}
-		if err := SeasonCooking(s, "owner", "owner", stove, at.Add(500*time.Millisecond)); err != nil {
+		if err := SeasonCooking(s, "owner", "owner", stove, 0, at.Add(500*time.Millisecond)); err != nil {
 			t.Fatal(err)
 		}
 		if refund, err := CancelCooking(s, "owner", stove, at.Add(time.Second)); err != nil || refund != pao.CostCoins {
@@ -133,7 +133,7 @@ func TestVisitorSeasoningPaysAtOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := playerXP(t, s, "friend")
-	if err := SeasonCooking(s, "owner", "friend", stove, progressT0.Add(time.Second)); err != nil {
+	if err := SeasonCooking(s, "owner", "friend", stove, 0, progressT0.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if got := playerXP(t, s, "friend"); got != before+gamerules.Stove().SeasonXP {

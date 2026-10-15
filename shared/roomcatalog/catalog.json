@@ -53,6 +53,24 @@
       "charm": 3
     },
     {
+      "id": 3000013,
+      "classname": "stained_glass_window",
+      "name": "Vitral Colorido",
+      "type": 3,
+      "kind": "window",
+      "priceGold": 0,
+      "purchasable": false,
+      "sizeX": 1,
+      "sizeY": 1,
+      "itemHeight": 195.2,
+      "placeholder": true,
+      "parts": [],
+      "variantOf": "basic_window",
+      "tint": "#a05ad6",
+      "tintMode": "color",
+      "charm": 6
+    },
+    {
       "id": 3010000,
       "classname": "mafia_door",
       "name": "Porta Máfia",
@@ -140,6 +158,33 @@
       }
     },
     {
+      "id": 3010003,
+      "classname": "royal_door",
+      "name": "Porta Real",
+      "type": 2,
+      "kind": "door",
+      "priceGold": 0,
+      "purchasable": false,
+      "sizeX": 1,
+      "sizeY": 1,
+      "itemHeight": 176,
+      "placeholder": true,
+      "parts": [],
+      "variantOf": "mafia_door",
+      "tint": "#d4a017",
+      "tintMode": "color",
+      "charm": 6,
+      "wall_cutter_index": 0.85,
+      "door": {
+        "sourceRotation": 0,
+        "hinge": {
+          "x": 87,
+          "y": 179
+        },
+        "baseSlope": -0.5
+      }
+    },
+    {
       "id": 3020003,
       "classname": "delicate_bush",
       "name": "Arbusto",
@@ -181,6 +226,24 @@
       "tint": "#f08cb4",
       "tintMode": "color",
       "charm": 4
+    },
+    {
+      "id": 3020005,
+      "classname": "golden_bush",
+      "name": "Arbusto Dourado",
+      "type": 3,
+      "kind": "bush",
+      "priceGold": 0,
+      "purchasable": false,
+      "sizeX": 1,
+      "sizeY": 1,
+      "itemHeight": 127.2,
+      "placeholder": true,
+      "parts": [],
+      "variantOf": "delicate_bush",
+      "tint": "#e6b422",
+      "tintMode": "color",
+      "charm": 6
     },
     {
       "id": 3030010,
@@ -406,6 +469,24 @@
       "priceCash": 3,
       "charm": 5,
       "featured": true
+    },
+    {
+      "id": 3040006,
+      "classname": "chef_throne",
+      "name": "Trono do Chef",
+      "type": 3,
+      "kind": "chair",
+      "priceGold": 0,
+      "purchasable": false,
+      "sizeX": 1,
+      "sizeY": 1,
+      "itemHeight": 97.4,
+      "placeholder": true,
+      "parts": [],
+      "variantOf": "classic_chair",
+      "tint": "#7b2cbf",
+      "tintMode": "color",
+      "charm": 7
     },
     {
       "id": 3050000,
