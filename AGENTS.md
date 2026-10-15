@@ -34,7 +34,7 @@ O zoom de visualização do editor não altera a resolução exportada. A grade 
 
 ## Suites de testes recomendadas
 
-O repositório de trabalho possui suites em tests/unit/, tests/unit/dom/, tests/tools/, tests/e2e/ e testes Go em backend/**/*_test.go. Elas servem de modelo para a cobertura abaixo. **As suites do projeto original ainda não foram copiadas para esta distribuição.** O pacote oferece npm run typecheck, validação de catálogo, inicialização dev e `npm test` (Vitest 4.1.11, com as suites novas em tests/unit/ e tests/tools/); não possui test:e2e. Os testes Go ficam em `*_test.go` de shared/, database/ e game-server/. Antes de portar ou criar as suites, ajuste imports, fixtures e caminhos à organização database/, game-server/, shared/ e game/. Não anuncie cobertura apenas porque go test terminou sem encontrar arquivos de teste.
+O repositório de trabalho possui suites em tests/unit/, tests/unit/dom/, tests/tools/, tests/e2e/ e testes Go em backend/**/*_test.go. Elas servem de modelo para a cobertura abaixo. **As suites do projeto original ainda não foram copiadas para esta distribuição.** O pacote oferece npm run typecheck, validação de catálogo, inicialização dev, `npm test` (Vitest 4.1.11, com as suites novas em tests/unit/ e tests/tools/) e `npm run e2e` (roteiros ao vivo no Chromium em tests/e2e/, descritos abaixo). Os testes Go ficam em `*_test.go` de shared/, database/ e game-server/. Antes de portar ou criar as suites, ajuste imports, fixtures e caminhos à organização database/, game-server/, shared/ e game/. Não anuncie cobertura apenas porque go test terminou sem encontrar arquivos de teste.
 
 | Suite | Ferramentas recomendadas | Cobertura e quando usar |
 | --- | --- | --- |
@@ -48,6 +48,35 @@ O repositório de trabalho possui suites em tests/unit/, tests/unit/dom/, tests/
 | Smoke da distribuição | Instalação e requisições HTTP/WebSocket em ambiente isolado | Banco novo, migrações, login, inventário inicial, entrada no quarto, confirmação de comando, arquivos do cliente e salvamento dos NPCs antes de encerrar o PocketBase. |
 
 Ao portar suites do projeto original, as correspondências são src/ → game/src/, public/ → game/public/, backend/ → database/, backend/gameruntime/ → game-server/gameruntime/ e backend/gamewire/ ou backend/roomcatalog/ → shared/. Configure Vitest e Playwright para essas raízes e adicione suas dependências e scripts de forma explícita; mantenha banco, binários, screenshots e resultados de teste fora dos arquivos de entrega.
+
+### Roteiros E2E (`tests/e2e/`)
+
+Cada roteiro sobe a própria pilha isolada, joga no Chromium e reprova a execução quando uma verificação falha ou aparece um erro inesperado no console. Os servidores do jogo são compilados do código atual, o banco é novo numa pasta temporária (com a conta dev e um superusuário para ajustes entre os passos), e as portas saem de `COFFE_E2E_PORT` (padrão 18300, mais 1 e 2). Nada toca o `npm run dev` nem o banco de `database/pb_data`.
+
+```sh
+npm install --no-save playwright@1.56.1   # o Playwright não é dependência do projeto
+npx playwright install chromium
+npm run e2e                               # todos, em sequência
+npm run e2e -- offline server             # só os nomeados
+```
+
+| Roteiro | Modo | Cobre |
+| --- | --- | --- |
+| `kitchen` | servidor | Sprints 1, 3 e 4: livro de receitas, ajuda de emergência, tempero, paciência, balcão, autosserviço, estragado e limpeza do fogão |
+| `dirt` | servidor | Sprint 5: prato por refeição, mesa suja bloqueada, clientes bravos sem mesa limpa e limpeza com o clipe `CLEAN` |
+| `staff` | servidor | Sprint 6: contratar, taxa por vaga, garçom com bandeja e gorjeta, recolher pratos, faxineiro, trocar função e dispensar |
+| `expansion` | servidor | Sprint 7: expansão por moedas com nível e por Grana, recompensa, recontratar sem taxa e atraso do autosserviço |
+| `level-up` | servidor | Sprint 8: subida de nível por pagamento, janela com desbloqueios e atalhos |
+| `street` | servidor | Sprint 9: Fazenda, Festa do Bairro e expediente offline com "Bem-vindo de volta!" |
+| `offline` | standalone | Sprint 10: café no navegador, save, aba escondida, ausência e uma aba por café |
+| `retention` | standalone | Sprint 11: bônus diário, Correio, ícones, barra de XP, cancelar com reembolso, Configurações e guarda-roupa |
+| `static-build` | build estático | build numa subpasta, recarga com o mesmo perfil e CSP sem eval ou sem WebAssembly |
+| `server` | servidor | login, bônus e Carta gravados no banco, pagamento por WebSocket, HUD por SSE, reembolso e "Sair" |
+
+- O Playwright é procurado em `COFFE_PLAYWRIGHT` (pasta do pacote ou `index.mjs`), no `node_modules` do projeto e no global. `COFFE_E2E_HEADED=1` mostra o navegador; `COFFE_E2E_OUT` muda a pasta das capturas (padrão: `coffe-e2e/<roteiro>` na pasta temporária do sistema); `COFFE_E2E_KEEP=1` mantém o banco e os logs da pilha; `COFFE_E2E_SKIP_BUILD=1` faz o `static-build` reaproveitar o `game/dist-standalone`.
+- Com WebGL por software (máquina sem GPU, contêineres), o Pixi roda a 2–3 fps: um roteiro leva de 2 a 8 minutos, e as esperas usam tempos generosos.
+- Os roteiros leem o estado pelos ganchos `window.__coffeMania`, que só existem no cliente de desenvolvimento do Vite; o `static-build` confere o build de produção pelo save no IndexedDB.
+- Ao criar um roteiro novo, use `lib/stack.mjs` e `lib/browser.mjs`, tire os valores esperados das regras (`rules.json` ou `screens.active.rules`) e leia os atores pelo estado mesclado de `realtime.actors`: as atualizações de ator não repetem `kind`, nome e aparência.
 
 Para alterações de renderização, registre posição, direção, tile lógico e instante da animação nos quadros comparados. Isso ajuda a distinguir erro de geometria, interpolação e camada. Screenshots isoladas não confirmam todas as condições de uma sala ao vivo.
 

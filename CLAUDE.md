@@ -13,7 +13,7 @@ AGENTS.md (importado acima) é a fonte das regras de trabalho, comandos, portas,
 | Persistência | PocketBase 0.40 (SQLite), migrações em Go, SSE; regras em `shared/cafe` | `database/` |
 | Modo standalone | o mesmo Go compilado para WebAssembly num Web Worker, save em IndexedDB | `game-server/standalone/`, `game/src/standalone/` |
 | Contratos | Go sem dependências: protocolo (`gamewire`), itens (`roomcatalog`), regras (`gamerules`) | `shared/` |
-| Testes JS | Vitest 4.1.11 (raiz), lógica pura do cliente e das ferramentas | `tests/unit/`, `tests/tools/` |
+| Testes JS | Vitest 4.1.11 (raiz), lógica pura do cliente e das ferramentas; roteiros E2E no Chromium (Playwright) | `tests/unit/`, `tests/tools/`, `tests/e2e/` |
 
 ## Autoridade do estado
 
@@ -216,7 +216,7 @@ Fruto da auditoria abaixo. Cada sprint fecha botões ou abas que hoje não fazem
     - **Perfis de funcionário com atributo** (hoje só mudam nome e frase).
     - **Motor de dicas** (`<suggestions>`, `<inactivity>`).
 17. **Testes e distribuição**:
-    - Suites Playwright conforme AGENTS.md, com os roteiros E2E dentro do repositório.
+    - Roteiros E2E: versionados em `tests/e2e/` desde a Sprint 11 (`npm run e2e`); falta rodá-los em CI e cobrir as suites de interface com jsdom.
     - Limpeza dos assets órfãos (o download duplicado já foi resolvido).
     - `DevPanel` só em DEV ou removido.
     - Medição em LUFS da faixa "Festa do Bairro".
@@ -296,4 +296,4 @@ Feita por leitura do código (sem execução) e conferida por amostragem. Estado
 - Go: `go vet ./...` e `go test ./shared/... ./database/ ./game-server/...` (use `-race` em `gameruntime` e `standalone`). Testes de persistência usam banco temporário e as migrações reais; `database/parity_test.go` compara PocketBase e `MemoryStore`. O motor compila com `npm run wasm` (`GOOS=js GOARCH=wasm`).
 - Cliente: `npm run typecheck` e `npm test` (Vitest: música, preferências, manifesto de sprites, detecção do Recortador, disponibilidade e páginas do livro, estados do fogão, paciência e busca do prato, prédios da rua, vagas e taxas de funcionários, desbloqueios de nível, oferta de expansão, `RoomModel.resize`, o backend local do modo standalone, barra de XP por nível, cartões do bônus diário e reembolso do cancelamento).
 - Standalone: Vite com `--mode standalone` numa porta própria (os ganchos `__coffeMania` só existem no dev) e os builds de produção servidos como arquivos estáticos. No Chromium com `--use-gl=swiftshader` a carga é lenta (2–3 fps; o Pixi limita cada quadro a 100 ms, então a animação "Abrindo seu café" demora dezenas de segundos): use `?screen=room`.
-- E2E manual: binários compilados do código atual, banco novo em diretório temporário, portas próprias (ex.: 18090/18091/15173) e Chromium com `--use-gl=swiftshader`. Para testar a ajuda de emergência, crie um superusuário no banco temporário e ajuste `gold` em `player_state`. Encerre o servidor do jogo (SIGINT) antes do PocketBase para o salvamento final.
+- E2E: `npm run e2e` (ou `npm run e2e -- <roteiros>`) roda os roteiros de `tests/e2e/` no Chromium, cada um com a própria pilha isolada (binários do código atual, banco novo numa pasta temporária, portas a partir de `COFFE_E2E_PORT`, superusuário para ajustes como `gold` em `player_state`, salvamento dos quartos antes de desligar o PocketBase). Instalação do Playwright, variáveis e a tabela dos roteiros estão em AGENTS.md ("Roteiros E2E"). Ao fechar uma sprint, acrescente ou atualize o roteiro dela.
