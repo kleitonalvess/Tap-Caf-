@@ -10,6 +10,7 @@ import (
 	"coffe-mania/shared/gamerules"
 	"coffe-mania/shared/gamewire"
 
+	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
@@ -172,5 +173,67 @@ func TestCancelAnswerReportsTheRefund(t *testing.T) {
 	}
 	if result.Status != 200 || json.Unmarshal(result.Body, &answer) != nil || answer.Refund != coxinha.CostCoins {
 		t.Fatalf("cancel answer: %d %s, want refund %d", result.Status, result.Body, coxinha.CostCoins)
+	}
+}
+
+// Missions and achievements on PocketBase: the JSON fields of player_stats
+// round-trip, each mission pays once (+1 Grana) and tomorrow starts over.
+func TestMissionsAndAchievementsOnPocketBase(t *testing.T) {
+	app, owner := newEconomyApp(t)
+	now := saoPaulo(15, 12)
+	progress, err := cafe.SnapshotProgress(pb(app), owner, now)
+	if err != nil || len(progress.Missions) != len(gamerules.MissionSlots()) || progress.Ready != 0 {
+		t.Fatalf("fresh progress: %+v %v", progress, err)
+	}
+	// Enough of every daily stat to complete any mission today.
+	collection, err := app.FindCollectionByNameOrId(cafe.StatsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats := core.NewRecord(collection)
+	counts := map[string]int64{}
+	for _, stat := range []string{gamerules.StatDishes, gamerules.StatCustomers, gamerules.StatTables, gamerules.StatSeasoned, gamerules.StatHarvests, gamerules.StatParties, gamerules.StatSpentCoins} {
+		counts[stat] = 1000
+	}
+	stats.Load(map[string]any{"user": owner, "counts": counts, "day": "2026-10-15", "day_counts": counts, "recipes": []string{"cake_1"}, "day_claimed": []string{}, "achievements": map[string]int{}})
+	if err := app.Save(stats); err != nil {
+		t.Fatal(err)
+	}
+	cash := playerState(t, app, owner).GetInt64("cash")
+	for _, m := range progress.Missions {
+		claim, err := cafe.ClaimMission(pb(app), owner, m.ID, now)
+		if err != nil || claim.Reward.Cash != 1 {
+			t.Fatalf("mission %s: %+v %v", m.ID, claim.Reward, err)
+		}
+		if _, err := cafe.ClaimMission(pb(app), owner, m.ID, now); !errors.Is(err, cafe.ErrRewardClaimed) {
+			t.Fatalf("mission %s twice: %v", m.ID, err)
+		}
+	}
+	if got := playerState(t, app, owner).GetInt64("cash"); got != cash+int64(len(progress.Missions)) {
+		t.Fatalf("cash %d, want %d", got, cash+int64(len(progress.Missions)))
+	}
+	claim, err := cafe.ClaimAchievement(pb(app), owner, "customers", now)
+	if err != nil || claim.Progress.Achievements == nil {
+		t.Fatalf("achievement: %v", err)
+	}
+	stored, err := app.FindFirstRecordByData(cafe.StatsCollection, "user", owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tiers map[string]int
+	var claimed []string
+	if stored.UnmarshalJSONField("achievements", &tiers) != nil || tiers["customers"] != 1 ||
+		stored.UnmarshalJSONField("day_claimed", &claimed) != nil || len(claimed) != len(progress.Missions) {
+		t.Fatalf("stored: achievements %v, claimed %v", tiers, claimed)
+	}
+	tomorrow, _ := cafe.SnapshotProgress(pb(app), owner, saoPaulo(16, 12))
+	for _, m := range tomorrow.Missions {
+		if m.Complete || m.Claimed {
+			t.Fatalf("tomorrow's %s starts done", m.ID)
+		}
+	}
+	state, err := cafe.RenameCafe(pb(app), owner, "Café da Esquina")
+	if err != nil || state.CafeName != "Café da Esquina" || playerState(t, app, owner).GetString("cafe_name") != "Café da Esquina" {
+		t.Fatalf("rename: %+v %v", state, err)
 	}
 }

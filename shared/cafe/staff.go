@@ -1,6 +1,8 @@
 package cafe
 
 import (
+	"time"
+
 	"errors"
 
 	"coffe-mania/shared/gamerules"
@@ -94,7 +96,7 @@ func SnapshotStaff(s Store, owner string) (StaffSnapshot, error) {
 // HireStaff takes a free slot for a predefined character. The look is drawn
 // once from the customer wardrobe policy and kept with the employee. A slot
 // never filled before charges its one-time fee (the first one is free).
-func HireStaff(s Store, owner, profileID, role string) error {
+func HireStaff(s Store, owner, profileID, role string, now time.Time) error {
 	profile, ok := gamerules.StaffProfileByID(profileID)
 	if !ok {
 		return ErrStaffProfile
@@ -141,6 +143,9 @@ func HireStaff(s Store, owner, profileID, role string) error {
 			if cost > 0 {
 				state.Set("gold", state.GetInt64("gold")-cost)
 				if err = tx.Save(state); err != nil {
+					return err
+				}
+				if err = count(tx, owner, now, gamerules.StatSpentCoins, cost); err != nil {
 					return err
 				}
 			}

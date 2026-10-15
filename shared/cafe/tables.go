@@ -1,6 +1,8 @@
 package cafe
 
 import (
+	"time"
+
 	"errors"
 
 	"coffe-mania/shared/gamerules"
@@ -67,6 +69,12 @@ func tableIsDirty(tx Store, owner, tableID string) (bool, error) {
 // CleanTable clears every plate on the table; reward grants the owner the
 // cleaning XP when the owner did it in person.
 func CleanTable(s Store, owner, tableID string, reward bool) (int, error) {
+	return CleanTableAt(s, owner, tableID, reward, time.Now())
+}
+
+// CleanTableAt is CleanTable as of now: a table the owner cleared in person
+// also counts for achievements and missions (staff cleaning does not).
+func CleanTableAt(s Store, owner, tableID string, reward bool, now time.Time) (int, error) {
 	cleared := 0
 	err := s.Transaction(func(tx Store) error {
 		if !placedTable(tx, owner, tableID) {
@@ -85,6 +93,11 @@ func CleanTable(s Store, owner, tableID string, reward bool) (int, error) {
 			}
 		}
 		cleared = len(plates)
+		if reward {
+			if err = count(tx, owner, now, gamerules.StatTables, 1); err != nil {
+				return err
+			}
+		}
 		if xp := gamerules.Tables().CleaningXP; reward && xp > 0 {
 			state, err := GetOrCreatePlayer(tx, owner)
 			if err != nil {

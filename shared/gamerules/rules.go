@@ -76,6 +76,90 @@ type Letter struct {
 	Cash  int64  `json:"cash"`
 }
 
+// Stats the café counts in player_stats (shared/cafe/progress.go). Counted
+// stats grow in the transactions that already exist; derived stats are read
+// from the café itself, so accounts older than the counters keep their history.
+const (
+	// Batches moved from the stove to a counter (a cancelled batch never counts).
+	StatDishes = "dishes"
+	// Distinct recipes among those batches (derived from the recipe list).
+	StatUniqueDishes = "unique_dishes"
+	// Servings paid by customers, including the offline expediente.
+	StatCustomers = "customers"
+	// Tables the owner cleared in person.
+	StatTables = "tables"
+	// Batches seasoned: the owner's count when the dish reaches the counter, a
+	// visitor's when seasoning.
+	StatSeasoned = "seasoned"
+	StatHarvests = "harvests"
+	StatParties  = "parties"
+	// Coins spent, net of cancel refunds.
+	StatSpentCoins = "spent_coins"
+	// Expansion steps done and staff slots opened (derived).
+	StatExpansions = "expansions"
+	StatStaff      = "staff"
+	// Social stats wait for neighbours and gifts (Sprint 15).
+	StatNeighbors = "neighbors"
+	StatGifts     = "gifts"
+)
+
+var dailyStats = map[string]bool{StatDishes: true, StatCustomers: true, StatTables: true, StatSeasoned: true, StatHarvests: true, StatParties: true, StatSpentCoins: true}
+var achievementStats = map[string]bool{StatDishes: true, StatUniqueDishes: true, StatCustomers: true, StatTables: true, StatSeasoned: true,
+	StatHarvests: true, StatParties: true, StatSpentCoins: true, StatExpansions: true, StatStaff: true, StatNeighbors: true, StatGifts: true}
+
+// DailyStat reports whether the stat is also counted per São Paulo day (missions).
+func DailyStat(stat string) bool { return dailyStats[stat] }
+
+// Reward is what claiming a goal pays.
+type Reward struct {
+	Coins int64 `json:"coins"`
+	XP    int64 `json:"xp"`
+	Cash  int64 `json:"cash"`
+}
+
+// AchievementRules: lifetime goals in tiers, each claimed once with
+// "Resgatar". Code links the five <achievements> of the config; the others
+// are the project's own. Social achievements stay hidden until the stat exists.
+type AchievementRules struct {
+	List        []Achievement `json:"list"`
+	Provisional bool          `json:"provisional,omitempty"`
+}
+
+type Achievement struct {
+	ID          string            `json:"id"`
+	Code        int               `json:"code,omitempty"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Stat        string            `json:"stat"`
+	Social      bool              `json:"social,omitempty"`
+	Goals       []AchievementGoal `json:"goals"`
+}
+
+type AchievementGoal struct {
+	Target int64 `json:"target"`
+	Reward
+}
+
+// MissionRules: three missions a day, one drawn from each slot's pool for the
+// player and the São Paulo date, renewed at midnight.
+type MissionRules struct {
+	Slots       [][]Mission `json:"slots"`
+	Provisional bool        `json:"provisional,omitempty"`
+}
+
+// Mission is complete when any of its goals is reached that day.
+type Mission struct {
+	ID    string        `json:"id"`
+	Title string        `json:"title"`
+	Goals []MissionGoal `json:"goals"`
+	Reward
+}
+
+type MissionGoal struct {
+	Stat   string `json:"stat"`
+	Target int64  `json:"target"`
+}
+
 // TableRules: every meal leaves its dishes on the table, which stays dirty
 // (no customer sits there) until someone clears it.
 type TableRules struct {
@@ -209,22 +293,24 @@ type PopularityRules struct {
 }
 
 type Rules struct {
-	Popularity        PopularityRules `json:"popularity"`
-	Customers         CustomerRules   `json:"customers"`
-	Stove             StoveRules      `json:"stove"`
-	Tables            TableRules      `json:"tables"`
-	Service           ServiceRules    `json:"service"`
-	Street            StreetRules     `json:"street"`
-	Offline           OfflineRules    `json:"offline"`
-	Expansions        ExpansionRules  `json:"expansions"`
-	Staff             StaffRules      `json:"staff"`
-	Daily             DailyRules      `json:"daily"`
-	Mail              MailRules       `json:"mail"`
-	Levels            []Level         `json:"levels"`
-	CustomerFrequency []Frequency     `json:"customerFrequency"`
-	Tips              []Tip           `json:"tips"`
-	EmployeeLocks     []EmployeeLock  `json:"employeeLocks"`
-	Recipes           []Recipe        `json:"recipes"`
+	Popularity        PopularityRules  `json:"popularity"`
+	Customers         CustomerRules    `json:"customers"`
+	Stove             StoveRules       `json:"stove"`
+	Tables            TableRules       `json:"tables"`
+	Service           ServiceRules     `json:"service"`
+	Street            StreetRules      `json:"street"`
+	Offline           OfflineRules     `json:"offline"`
+	Expansions        ExpansionRules   `json:"expansions"`
+	Staff             StaffRules       `json:"staff"`
+	Daily             DailyRules       `json:"daily"`
+	Mail              MailRules        `json:"mail"`
+	Achievements      AchievementRules `json:"achievements"`
+	Missions          MissionRules     `json:"missions"`
+	Levels            []Level          `json:"levels"`
+	CustomerFrequency []Frequency      `json:"customerFrequency"`
+	Tips              []Tip            `json:"tips"`
+	EmployeeLocks     []EmployeeLock   `json:"employeeLocks"`
+	Recipes           []Recipe         `json:"recipes"`
 }
 
 // Recipe ids are stored in stove_cooking.recipe_id and room_food.recipe_id (max 40).
@@ -298,6 +384,9 @@ func validate(r Rules) string {
 	if w := r.Mail.Welcome; w.Title == "" || len(w.Title) > 80 || w.Body == "" || len(w.Body) > 600 || w.Coins < 0 || w.Cash < 0 {
 		return "invalid welcome letter"
 	}
+	if message := validateProgress(r); message != "" {
+		return message
+	}
 	if t := r.Tables; t.CleaningSeconds < 1 || t.CleaningSeconds > 30 || t.CleaningXP < 0 {
 		return "invalid table rules"
 	}
@@ -361,6 +450,47 @@ func validate(r Rules) string {
 	}
 	if len(seen) == 0 {
 		return "missing recipes"
+	}
+	return ""
+}
+
+func validReward(r Reward) bool {
+	return r.Coins >= 0 && r.XP >= 0 && r.Cash >= 0 && r.Coins+r.XP+r.Cash > 0
+}
+
+func validateProgress(r Rules) string {
+	ids := map[string]bool{}
+	for _, a := range r.Achievements.List {
+		if !recipeIDPattern.MatchString(a.ID) || ids[a.ID] || a.Name == "" || len(a.Name) > 60 || len(a.Description) > 200 ||
+			!achievementStats[a.Stat] || len(a.Goals) == 0 || len(a.Goals) > 10 {
+			return "invalid achievement " + a.ID
+		}
+		ids[a.ID] = true
+		for i, goal := range a.Goals {
+			if goal.Target < 1 || i > 0 && goal.Target <= a.Goals[i-1].Target || !validReward(goal.Reward) {
+				return "achievement goals must grow and pay something: " + a.ID
+			}
+		}
+	}
+	if len(r.Missions.Slots) == 0 || len(r.Missions.Slots) > 5 {
+		return "invalid missions"
+	}
+	ids = map[string]bool{}
+	for _, pool := range r.Missions.Slots {
+		if len(pool) == 0 {
+			return "every mission slot needs a pool"
+		}
+		for _, m := range pool {
+			if !recipeIDPattern.MatchString(m.ID) || ids[m.ID] || m.Title == "" || len(m.Title) > 80 || len(m.Goals) == 0 || len(m.Goals) > 3 || !validReward(m.Reward) {
+				return "invalid mission " + m.ID
+			}
+			ids[m.ID] = true
+			for _, goal := range m.Goals {
+				if !dailyStats[goal.Stat] || goal.Target < 1 {
+					return "invalid mission goal " + m.ID
+				}
+			}
+		}
 	}
 	return ""
 }
@@ -436,6 +566,36 @@ func DailyRewardFor(day int) DailyReward {
 }
 
 func Mail() MailRules { return rules.Mail }
+
+// Achievements returns the visible achievements: social ones wait for their stat.
+func Achievements() []Achievement {
+	list := []Achievement{}
+	for _, a := range rules.Achievements.List {
+		if !a.Social {
+			a.Goals = append([]AchievementGoal{}, a.Goals...)
+			list = append(list, a)
+		}
+	}
+	return list
+}
+
+func AchievementByID(id string) (Achievement, bool) {
+	for _, a := range Achievements() {
+		if a.ID == id {
+			return a, true
+		}
+	}
+	return Achievement{}, false
+}
+
+// MissionSlots returns each slot's pool.
+func MissionSlots() [][]Mission {
+	slots := make([][]Mission, len(rules.Missions.Slots))
+	for i, pool := range rules.Missions.Slots {
+		slots[i] = append([]Mission{}, pool...)
+	}
+	return slots
+}
 
 func PrepareDuration() time.Duration { return time.Duration(rules.Stove.PrepareSeconds) * time.Second }
 
@@ -562,6 +722,8 @@ func Public() Rules {
 	snapshot.Staff.HireCoins = append([]int64{}, rules.Staff.HireCoins...)
 	snapshot.Expansions = Expansions()
 	snapshot.Daily = Daily()
+	snapshot.Achievements.List = append([]Achievement{}, rules.Achievements.List...)
+	snapshot.Missions.Slots = MissionSlots()
 	return snapshot
 }
 

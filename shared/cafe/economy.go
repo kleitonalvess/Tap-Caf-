@@ -76,6 +76,9 @@ func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.T
 		if err = leavePlate(tx, owner, tableID); err != nil {
 			return err
 		}
+		if err = count(tx, owner, at, gamerules.StatCustomers, 1); err != nil {
+			return err
+		}
 		payment = gamewire.Payment{
 			RecipeID: food.GetString("recipe_id"), Coins: progress.Coins, Tip: tip, XP: progress.XP,
 			FreshCoins: freshCoins, FreshXP: freshXP, FreshLeft: freshLeft,

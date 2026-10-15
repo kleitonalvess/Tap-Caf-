@@ -1,6 +1,10 @@
 package cafe
 
 import (
+	"coffe-mania/shared/gamerules"
+
+	"time"
+
 	"encoding/json"
 	"errors"
 	"regexp"
@@ -38,7 +42,9 @@ type RoomSnapshot struct {
 	Inventory   []RoomUnit         `json:"inventory"`
 	Catalog     []roomcatalog.Item `json:"catalog"`
 	PlayerState PlayerSnapshot     `json:"playerState"`
-	Street      gamewire.Street    `json:"street"`
+	// The owner's café as its visitors see it (PlayerState is the viewer's own HUD).
+	Cafe   CafeInfo        `json:"cafe"`
+	Street gamewire.Street `json:"street"`
 	// The owner's unacknowledged absence summary (never sent to visitors).
 	AwaySummary *gamewire.AwaySummary `json:"awaySummary,omitempty"`
 }
@@ -167,6 +173,7 @@ func SnapshotRoom(s Store, userID string) (RoomSnapshot, error) {
 		return result, err
 	}
 	result.PlayerState = PlayerView(state)
+	result.Cafe = CafeInfo{Name: result.PlayerState.CafeName, Popularity: result.PlayerState.Satisfaction.Current}
 	return result, nil
 }
 
@@ -195,7 +202,7 @@ func validRoomPosition(item roomcatalog.Item, x, y, rotation, tilesX, tilesY int
 
 // MutateRoom buys, moves or stores one unit. A repeated request id returns the
 // current room without acting twice; a reused id with another payload fails.
-func MutateRoom(s Store, userID, action string, command RoomCommand) (RoomSnapshot, error) {
+func MutateRoom(s Store, userID, action string, command RoomCommand, now time.Time) (RoomSnapshot, error) {
 	var result RoomSnapshot
 	payloadBytes, _ := json.Marshal(struct {
 		Action  string
@@ -242,6 +249,9 @@ func MutateRoom(s Store, userID, action string, command RoomCommand) (RoomSnapsh
 			setAll(unit, map[string]any{"user": userID, "item_id": item.ID, "layer": roomcatalog.Layer(item)})
 			state.Set("gold", state.GetInt64("gold")-item.PriceGold)
 			if err := tx.Save(state); err != nil {
+				return err
+			}
+			if err := count(tx, userID, now, gamerules.StatSpentCoins, item.PriceGold); err != nil {
 				return err
 			}
 		} else {

@@ -23,14 +23,13 @@
     ]
   },
   "daily": {
-    "provisional": true,
     "days": [
       { "day": 1, "coins": 100, "cash": 0 },
       { "day": 2, "coins": 250, "cash": 0 },
-      { "day": 3, "coins": 400, "cash": 0 },
+      { "day": 3, "coins": 400, "cash": 2 },
       { "day": 4, "coins": 600, "cash": 0 },
       { "day": 5, "coins": 800, "cash": 0 },
-      { "day": 6, "coins": 500, "cash": 5 }
+      { "day": 6, "coins": 500, "cash": 10 }
     ]
   },
   "mail": {
@@ -40,6 +39,85 @@
       "coins": 50,
       "cash": 0
     }
+  },
+  "achievements": {
+    "provisional": true,
+    "list": [
+      { "id": "served_dishes", "code": 1, "name": "Mestre-Cuca", "description": "Leve pratos prontos do fogão ao balcão.", "stat": "dishes", "goals": [
+        { "target": 10, "coins": 100, "xp": 10, "cash": 0 },
+        { "target": 100, "coins": 500, "xp": 50, "cash": 0 },
+        { "target": 300, "coins": 2000, "xp": 75, "cash": 0 },
+        { "target": 1000, "coins": 5000, "xp": 225, "cash": 0 },
+        { "target": 3000, "coins": 10000, "xp": 350, "cash": 0 } ] },
+      { "id": "unique_dishes", "code": 2, "name": "Cardápio Variado", "description": "Leve receitas diferentes ao balcão.", "stat": "unique_dishes", "goals": [
+        { "target": 5, "coins": 100, "xp": 10, "cash": 0 },
+        { "target": 10, "coins": 200, "xp": 25, "cash": 0 },
+        { "target": 25, "coins": 2000, "xp": 50, "cash": 0 },
+        { "target": 50, "coins": 5000, "xp": 250, "cash": 0 },
+        { "target": 100, "coins": 7500, "xp": 350, "cash": 0 } ] },
+      { "id": "amount_neighbors", "code": 3, "name": "Boa Vizinhança", "description": "Tenha vizinhos no jogo.", "stat": "neighbors", "social": true, "goals": [
+        { "target": 1, "coins": 1000, "xp": 0, "cash": 0 },
+        { "target": 5, "coins": 5000, "xp": 0, "cash": 0 },
+        { "target": 10, "coins": 10000, "xp": 0, "cash": 0 },
+        { "target": 25, "coins": 20000, "xp": 0, "cash": 0 },
+        { "target": 50, "coins": 50000, "xp": 0, "cash": 0 } ] },
+      { "id": "sent_gifts", "code": 4, "name": "Generosidade", "description": "Envie presentes aos vizinhos.", "stat": "gifts", "social": true, "goals": [
+        { "target": 1, "coins": 100, "xp": 0, "cash": 0 },
+        { "target": 5, "coins": 200, "xp": 0, "cash": 0 },
+        { "target": 15, "coins": 500, "xp": 0, "cash": 0 },
+        { "target": 50, "coins": 2000, "xp": 0, "cash": 0 },
+        { "target": 100, "coins": 5000, "xp": 0, "cash": 0 } ] },
+      { "id": "spent_coins", "code": 5, "name": "Investidor", "description": "Gaste moedas em receitas, equipe, expansões e na loja.", "stat": "spent_coins", "goals": [
+        { "target": 5000, "coins": 0, "xp": 15, "cash": 0 },
+        { "target": 35000, "coins": 0, "xp": 30, "cash": 0 },
+        { "target": 125000, "coins": 0, "xp": 55, "cash": 0 },
+        { "target": 400000, "coins": 0, "xp": 200, "cash": 0 },
+        { "target": 1000000, "coins": 0, "xp": 350, "cash": 0 } ] },
+      { "id": "customers", "name": "Clientela Fiel", "description": "Atenda clientes: cada porção paga conta.", "stat": "customers", "goals": [
+        { "target": 25, "coins": 150, "xp": 10, "cash": 0 },
+        { "target": 250, "coins": 1000, "xp": 40, "cash": 2 },
+        { "target": 1000, "coins": 4000, "xp": 120, "cash": 5 } ] },
+      { "id": "tables", "name": "Mesa Brilhando", "description": "Limpe mesas sujas com o seu personagem.", "stat": "tables", "goals": [
+        { "target": 10, "coins": 100, "xp": 5, "cash": 0 },
+        { "target": 75, "coins": 600, "xp": 25, "cash": 2 },
+        { "target": 300, "coins": 2500, "xp": 80, "cash": 5 } ] },
+      { "id": "expansions", "name": "Café em Obras", "description": "Amplie o seu café.", "stat": "expansions", "goals": [
+        { "target": 1, "coins": 300, "xp": 15, "cash": 0 },
+        { "target": 3, "coins": 1500, "xp": 60, "cash": 2 },
+        { "target": 6, "coins": 5000, "xp": 200, "cash": 5 } ] },
+      { "id": "staff", "name": "Patrão", "description": "Abra vagas e contrate funcionários.", "stat": "staff", "goals": [
+        { "target": 1, "coins": 100, "xp": 5, "cash": 0 },
+        { "target": 3, "coins": 800, "xp": 30, "cash": 2 },
+        { "target": 7, "coins": 4000, "xp": 150, "cash": 5 } ] },
+      { "id": "harvests", "name": "Horta Fresquinha", "description": "Colha ingredientes na Fazenda.", "stat": "harvests", "goals": [
+        { "target": 5, "coins": 200, "xp": 10, "cash": 0 },
+        { "target": 25, "coins": 1000, "xp": 40, "cash": 2 },
+        { "target": 100, "coins": 4000, "xp": 120, "cash": 5 } ] },
+      { "id": "parties", "name": "Rei da Pista", "description": "Dê festas na Discoteca.", "stat": "parties", "goals": [
+        { "target": 3, "coins": 200, "xp": 10, "cash": 0 },
+        { "target": 15, "coins": 1000, "xp": 40, "cash": 2 },
+        { "target": 50, "coins": 4000, "xp": 120, "cash": 5 } ] }
+    ]
+  },
+  "missions": {
+    "provisional": true,
+    "slots": [
+      [
+        { "id": "cook_2", "title": "Cozinhe 2 receitas", "goals": [{ "stat": "dishes", "target": 2 }], "coins": 60, "xp": 5, "cash": 1 },
+        { "id": "cook_3", "title": "Cozinhe 3 receitas", "goals": [{ "stat": "dishes", "target": 3 }], "coins": 90, "xp": 8, "cash": 1 },
+        { "id": "spend_100", "title": "Gaste 100 moedas", "goals": [{ "stat": "spent_coins", "target": 100 }], "coins": 60, "xp": 5, "cash": 1 }
+      ],
+      [
+        { "id": "serve_6", "title": "Sirva 6 porções", "goals": [{ "stat": "customers", "target": 6 }], "coins": 50, "xp": 5, "cash": 1 },
+        { "id": "serve_12", "title": "Sirva 12 porções", "goals": [{ "stat": "customers", "target": 12 }], "coins": 100, "xp": 10, "cash": 1 },
+        { "id": "serve_20", "title": "Sirva 20 porções", "goals": [{ "stat": "customers", "target": 20 }], "coins": 160, "xp": 15, "cash": 1 }
+      ],
+      [
+        { "id": "clean_or_season", "title": "Limpe 3 mesas ou tempere 1 prato", "goals": [{ "stat": "tables", "target": 3 }, { "stat": "seasoned", "target": 1 }], "coins": 50, "xp": 5, "cash": 1 },
+        { "id": "season_2", "title": "Tempere 2 pratos", "goals": [{ "stat": "seasoned", "target": 2 }], "coins": 60, "xp": 6, "cash": 1 },
+        { "id": "farm_or_party", "title": "Colha na Fazenda ou dê uma festa", "goals": [{ "stat": "harvests", "target": 1 }, { "stat": "parties", "target": 1 }], "coins": 60, "xp": 5, "cash": 1 }
+      ]
+    ]
   },
   "staff": {
     "hireCoins": [0, 300, 800, 2000, 5000, 10000, 20000],

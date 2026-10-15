@@ -1,6 +1,8 @@
 package cafe
 
 import (
+	"time"
+
 	"errors"
 
 	"coffe-mania/shared/gamerules"
@@ -37,7 +39,7 @@ type ExpansionResult struct {
 
 // ExpandRoom buys the next step: coins once its level is reached, or cash at
 // any level. tiles must name that step, so a repeated request never pays twice.
-func ExpandRoom(s Store, owner string, tiles int, pay string) (ExpansionResult, error) {
+func ExpandRoom(s Store, owner string, tiles int, pay string, now time.Time) (ExpansionResult, error) {
 	result := ExpansionResult{Tiles: tiles, Pay: pay}
 	if pay != "coins" && pay != "cash" {
 		return result, ErrExpansionPay
@@ -71,6 +73,9 @@ func ExpandRoom(s Store, owner string, tiles int, pay string) (ExpansionResult, 
 			}
 			state.Set("gold", state.GetInt64("gold")-step.Coins)
 			result.Coins = step.Coins
+			if err := count(tx, owner, now, gamerules.StatSpentCoins, step.Coins); err != nil {
+				return err
+			}
 		} else {
 			if state.GetInt64("cash") < step.Cash {
 				return ErrExpansionCash

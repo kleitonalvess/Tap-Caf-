@@ -82,7 +82,7 @@ func snapshotRoom(app core.App, userID string) (roomSnapshot, error) {
 }
 
 func mutateRoom(app core.App, userID, action string, command roomCommand) (roomSnapshot, error) {
-	return cafe.MutateRoom(pb(app), userID, action, command)
+	return cafe.MutateRoom(pb(app), userID, action, command, time.Now())
 }
 
 func snapshotCooking(app core.App, userID string, now types.DateTime) (cafe.CookingSnapshot, error) {
@@ -146,7 +146,7 @@ func snapshotStaff(app core.App, owner string) (cafe.StaffSnapshot, error) {
 }
 
 func hireStaff(app core.App, owner, profileID, role string) error {
-	return cafe.HireStaff(pb(app), owner, profileID, role)
+	return cafe.HireStaff(pb(app), owner, profileID, role, time.Now())
 }
 
 func setStaffRole(app core.App, owner, staffID, role string) error {
@@ -158,7 +158,7 @@ func dismissStaff(app core.App, owner, staffID string) error {
 }
 
 func expandRoom(app core.App, owner string, tiles int, pay string) (cafe.ExpansionResult, error) {
-	return cafe.ExpandRoom(pb(app), owner, tiles, pay)
+	return cafe.ExpandRoom(pb(app), owner, tiles, pay, time.Now())
 }
 
 // diningSeat is a placed chair facing its table, as the offline catch-up counts them.

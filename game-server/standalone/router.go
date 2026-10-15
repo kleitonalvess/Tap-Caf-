@@ -101,6 +101,48 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 			return failure(500, "Não foi possível abrir a carta.")
 		}
 		return reply(200, claim)
+	case "/api/coffe/progress/claim":
+		var request struct {
+			Kind string `json:"kind"`
+			ID   string `json:"id"`
+		}
+		if json.Unmarshal(body, &request) != nil || request.ID == "" {
+			return failure(400, "Prêmio inválido.")
+		}
+		var claim cafe.ProgressClaim
+		var err error
+		switch request.Kind {
+		case "achievement":
+			claim, err = cafe.ClaimAchievement(e.store, e.profile.ID, request.ID, time.Now())
+		case "mission":
+			claim, err = cafe.ClaimMission(e.store, e.profile.ID, request.ID, time.Now())
+		default:
+			err = cafe.ErrRewardMissing
+		}
+		switch {
+		case errors.Is(err, cafe.ErrRewardMissing):
+			return failure(404, err.Error())
+		case errors.Is(err, cafe.ErrRewardClaimed), errors.Is(err, cafe.ErrRewardLocked):
+			return failure(409, err.Error())
+		case err != nil:
+			return failure(500, "Não foi possível resgatar o prêmio.")
+		}
+		return reply(200, claim)
+	case "/api/coffe/cafe/name":
+		var request struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(body, &request) != nil {
+			return failure(400, "Nome inválido.")
+		}
+		state, err := cafe.RenameCafe(e.store, e.profile.ID, request.Name)
+		if errors.Is(err, cafe.ErrCafeName) {
+			return failure(400, err.Error())
+		}
+		if err != nil {
+			return failure(500, "Não foi possível renomear o café.")
+		}
+		return reply(200, state)
 	case "/api/coffe/room/away/ack":
 		if err := cafe.AcknowledgeAway(e.store, e.profile.ID); err != nil && !errors.Is(err, cafe.ErrNotFound) {
 			return failure(500, "Não foi possível salvar.")
@@ -167,6 +209,12 @@ func (e *Engine) get(path string, query url.Values) (int, []byte) {
 			return failure(500, "Não foi possível carregar o correio.")
 		}
 		return reply(200, mail)
+	case "/api/coffe/progress":
+		progress, err := cafe.SnapshotProgress(e.store, owner, time.Now())
+		if err != nil {
+			return failure(500, "Não foi possível carregar as conquistas.")
+		}
+		return reply(200, progress)
 	case "/api/coffe/staff":
 		snapshot, err := cafe.SnapshotStaff(e.store, owner)
 		if err != nil {

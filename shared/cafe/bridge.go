@@ -64,7 +64,7 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 		if json.Unmarshal(op.Body, &command) != nil || command.Revision == nil || !RequestKeyPattern.MatchString(command.RequestID) || (op.Action != "store" && (command.TX == nil || command.TY == nil || command.Rotation == nil)) {
 			return fail(400, "Pedido inválido.")
 		}
-		body, err = MutateRoom(s, op.Owner, op.Action, command)
+		body, err = MutateRoom(s, op.Owner, op.Action, command, now)
 	case "cook_start", "cook_serve", "cook_cancel", "cook_clean", "cook_season":
 		var command struct {
 			StoveID  string `json:"stoveId"`
@@ -73,12 +73,12 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 		if json.Unmarshal(op.Body, &command) != nil || command.StoveID == "" {
 			return fail(400, "Pedido inválido.")
 		}
-		var refund int64
+		var refund, seasonXP int64
 		switch op.Action {
 		case "cook_start":
 			err = StartCooking(s, op.Owner, command.StoveID, command.RecipeID, now)
 		case "cook_serve":
-			err = ServeCooking(s, op.Owner, command.StoveID, now)
+			seasonXP, err = ServeCookingXP(s, op.Owner, command.StoveID, now)
 		case "cook_cancel":
 			refund, err = CancelCooking(s, op.Owner, command.StoveID, now)
 		case "cook_clean":
@@ -90,6 +90,7 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 			var snapshot CookingSnapshot
 			snapshot, err = SnapshotCooking(s, op.Owner, now)
 			snapshot.Refund = refund
+			snapshot.SeasonXP = seasonXP
 			body = snapshot
 		}
 	case "table_clean":
@@ -100,7 +101,7 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 			return fail(400, "Pedido inválido.")
 		}
 		var plates int
-		plates, err = CleanTable(s, op.Owner, command.TableID, true)
+		plates, err = CleanTableAt(s, op.Owner, command.TableID, true, now)
 		body = map[string]any{"tableId": command.TableID, "plates": plates, "xp": gamerules.Tables().CleaningXP}
 	case "staff_hire", "staff_role", "staff_dismiss":
 		var command struct {
@@ -113,7 +114,7 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 		}
 		switch op.Action {
 		case "staff_hire":
-			err = HireStaff(s, op.Owner, command.ProfileID, command.Role)
+			err = HireStaff(s, op.Owner, command.ProfileID, command.Role, now)
 		case "staff_role":
 			err = SetStaffRole(s, op.Owner, command.StaffID, command.Role)
 		case "staff_dismiss":
@@ -134,7 +135,7 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 		if json.Unmarshal(op.Body, &command) != nil || command.Tiles < 1 {
 			return fail(400, "Pedido inválido.")
 		}
-		body, err = ExpandRoom(s, op.Owner, command.Tiles, command.Pay)
+		body, err = ExpandRoom(s, op.Owner, command.Tiles, command.Pay, now)
 	default:
 		return fail(400, "Operação desconhecida.")
 	}

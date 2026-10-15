@@ -35,6 +35,12 @@ type DailyClaim struct {
 
 func bonusDate(t time.Time) string { return t.In(bonusZone).Format(time.DateOnly) }
 
+// nextMidnight is the next São Paulo midnight after t, when a new day opens.
+func nextMidnight(t time.Time) time.Time {
+	local := t.In(bonusZone)
+	return time.Date(local.Year(), local.Month(), local.Day()+1, 0, 0, 0, 0, bonusZone)
+}
+
 // dailyState reads player_state.daily_claimed_on (the São Paulo date of the
 // last claim) and daily_streak (the day it paid). A claim on the next date
 // continues the streak, after the last day it starts over, and a gap resets
@@ -44,8 +50,7 @@ func dailyState(state Record, now time.Time) DailyState {
 	local := now.In(bonusZone)
 	today := local.Format(time.DateOnly)
 	yesterday := time.Date(local.Year(), local.Month(), local.Day()-1, 12, 0, 0, 0, bonusZone).Format(time.DateOnly)
-	midnight := time.Date(local.Year(), local.Month(), local.Day()+1, 0, 0, 0, 0, bonusZone)
-	result := DailyState{Days: days, NextAt: midnight.UnixMilli()}
+	result := DailyState{Days: days, NextAt: nextMidnight(now).UnixMilli()}
 	last, streak := state.GetString("daily_claimed_on"), state.GetInt("daily_streak")
 	switch {
 	case last != "" && last >= today:

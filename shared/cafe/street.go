@@ -60,6 +60,9 @@ func HarvestFarm(s Store, owner string, now time.Time) (gamewire.Street, error) 
 		if err := tx.Save(room); err != nil {
 			return err
 		}
+		if err := count(tx, owner, now, gamerules.StatHarvests, 1); err != nil {
+			return err
+		}
 		state = StreetState(room)
 		return nil
 	})
@@ -88,6 +91,9 @@ func StartParty(s Store, owner string, now time.Time) (gamewire.Street, error) {
 		}
 		room.Set("party_started_at", now)
 		if err := tx.Save(room); err != nil {
+			return err
+		}
+		if err := count(tx, owner, now, gamerules.StatParties, 1); err != nil {
 			return err
 		}
 		state = StreetState(room)

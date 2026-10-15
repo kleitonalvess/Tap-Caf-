@@ -133,7 +133,8 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 	cooking("cooking", t0.Add(3*time.Second))
 	ready := t0.Add(gamerules.PrepareDuration() + pao.CookDuration())
 	log("serve early", outcome(cafe.ServeCooking(s, owner, stove.ID(), ready.Add(-time.Second))))
-	log("serve", outcome(cafe.ServeCooking(s, owner, stove.ID(), ready)))
+	seasonXP, err := cafe.ServeCookingXP(s, owner, stove.ID(), ready)
+	log("serve", map[string]any{"err": outcome(err), "seasonXp": seasonXP})
 	w := world("counter")
 	if len(w.Foods) != 1 {
 		t.Fatalf("foods = %+v", w.Foods)
@@ -143,15 +144,15 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 		log(fmt.Sprintf("payment %d", i), map[string]any{"err": outcome(err), "payment": payment})
 	}
 	world("after meals")
-	plates, err := cafe.CleanTable(s, owner, firstTable, true)
+	plates, err := cafe.CleanTableAt(s, owner, firstTable, true, ready)
 	log("clean", map[string]any{"err": outcome(err), "plates": plates})
-	_, err = cafe.CleanTable(s, owner, firstTable, true)
+	_, err = cafe.CleanTableAt(s, owner, firstTable, true, ready)
 	log("clean again", outcome(err))
 	popularity, err := cafe.RecordVerdict(s, owner, false)
 	log("verdict", map[string]any{"err": outcome(err), "popularity": popularity})
 
-	log("hire", outcome(cafe.HireStaff(s, owner, "vostu", "")))
-	log("hire again", outcome(cafe.HireStaff(s, owner, "vostu", "")))
+	log("hire", outcome(cafe.HireStaff(s, owner, "vostu", "", t0)))
+	log("hire again", outcome(cafe.HireStaff(s, owner, "vostu", "", t0)))
 	staff, err := cafe.SnapshotStaff(s, owner)
 	if err != nil {
 		t.Fatal(err)
@@ -169,16 +170,16 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 
 	revision := start.Revision
 	x, y, rotation := 3, 4, 0
-	bought, err := cafe.MutateRoom(s, owner, "purchase", cafe.RoomCommand{ItemID: 9000001, TX: &x, TY: &y, Rotation: &rotation, Revision: &revision, RequestID: "parity-purchase-floor-1"})
+	bought, err := cafe.MutateRoom(s, owner, "purchase", cafe.RoomCommand{ItemID: 9000001, TX: &x, TY: &y, Rotation: &rotation, Revision: &revision, RequestID: "parity-purchase-floor-1"}, t0)
 	log("purchase", map[string]any{"err": outcome(err), "revision": bought.Revision, "gold": bought.PlayerState.Gold})
-	_, err = cafe.MutateRoom(s, owner, "purchase", cafe.RoomCommand{ItemID: 9000001, TX: &x, TY: &y, Rotation: &rotation, Revision: &revision, RequestID: "parity-purchase-floor-1"})
+	_, err = cafe.MutateRoom(s, owner, "purchase", cafe.RoomCommand{ItemID: 9000001, TX: &x, TY: &y, Rotation: &rotation, Revision: &revision, RequestID: "parity-purchase-floor-1"}, t0)
 	log("purchase repeated", outcome(err))
-	_, err = cafe.MutateRoom(s, owner, "move", cafe.RoomCommand{UnitID: secondTable, TX: &x, TY: &y, Rotation: &rotation, Revision: &bought.Revision, RequestID: "parity-move-dirty-table"})
+	_, err = cafe.MutateRoom(s, owner, "move", cafe.RoomCommand{UnitID: secondTable, TX: &x, TY: &y, Rotation: &rotation, Revision: &bought.Revision, RequestID: "parity-move-dirty-table"}, t0)
 	log("move dirty table", outcome(err))
 
-	expansion, err := cafe.ExpandRoom(s, owner, 10, "cash")
+	expansion, err := cafe.ExpandRoom(s, owner, 10, "cash", t0)
 	log("expand", map[string]any{"err": outcome(err), "tiles": expansion.Tiles, "cash": expansion.Cash, "reward": expansion.RewardCoins, "xp": expansion.XP, "level": expansion.Level})
-	_, err = cafe.ExpandRoom(s, owner, 10, "cash")
+	_, err = cafe.ExpandRoom(s, owner, 10, "cash", t0)
 	log("expand again", outcome(err))
 	room("expanded")
 
@@ -218,6 +219,44 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 		log("cancel while cooking", map[string]any{"err": outcome(err), "refund": refund})
 		room("refunded")
 	}
+
+	// Sprint 12: counters, achievements, daily missions and the café's name.
+	progressAt := t0.Add(3 * time.Hour)
+	showProgress := func(label string, p cafe.ProgressSnapshot) {
+		achievements := []string{}
+		for _, a := range p.Achievements {
+			achievements = append(achievements, fmt.Sprintf("%s %d/%d claimed=%d claimable=%t", a.ID, a.Progress, len(a.Goals), a.Claimed, a.Claimable))
+		}
+		missions := []string{}
+		for _, m := range p.Missions {
+			missions = append(missions, fmt.Sprintf("%s %+v complete=%t claimed=%t", m.ID, m.Goals, m.Complete, m.Claimed))
+		}
+		log(label, map[string]any{"achievements": achievements, "missions": missions, "ready": p.Ready})
+	}
+	progress, err := cafe.SnapshotProgress(s, owner, progressAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	showProgress("progress", progress)
+	for _, id := range []string{"expansions", "expansions", "customers", "served_dishes"} {
+		claim, err := cafe.ClaimAchievement(s, owner, id, progressAt)
+		log("claim "+id, map[string]any{"err": outcome(err), "reward": claim.Reward, "gold": claim.State.Gold, "cash": claim.State.Cash})
+	}
+	for _, m := range progress.Missions {
+		claim, err := cafe.ClaimMission(s, owner, m.ID, progressAt)
+		log("mission "+m.ID, map[string]any{"err": outcome(err), "reward": claim.Reward, "cash": claim.State.Cash})
+	}
+	progress, err = cafe.SnapshotProgress(s, owner, progressAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	showProgress("progress claimed", progress)
+	renamed, err := cafe.RenameCafe(s, owner, "  Café   Paridade ")
+	log("rename", map[string]any{"err": outcome(err), "name": renamed.CafeName})
+	_, err = cafe.RenameCafe(s, owner, "<script>")
+	log("rename invalid", outcome(err))
+	snapshot, err := cafe.SnapshotRoom(s, owner)
+	log("cafe", map[string]any{"err": outcome(err), "cafe": snapshot.Cafe})
 	world("final")
 	return lines
 }

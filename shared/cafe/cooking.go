@@ -64,6 +64,8 @@ type CookingSnapshot struct {
 	// this figure, not its own estimate: the refund depends on the instant the
 	// cancel arrives.
 	Refund int64 `json:"refund,omitempty"`
+	// XP a serve just credited for the owner's own seasoning; only in a serve's answer.
+	SeasonXP int64 `json:"seasonXp,omitempty"`
 }
 
 func EnsureStarterStove(s Store, userID string) error {
@@ -260,6 +262,9 @@ func StartCooking(s Store, userID, stoveID, recipeID string, now time.Time) erro
 			if err = tx.Save(state); err != nil {
 				return err
 			}
+			if err = count(tx, userID, now, gamerules.StatSpentCoins, cost); err != nil {
+				return err
+			}
 		}
 		started := now.Add(gamerules.PrepareDuration())
 		ready := started.Add(recipe.CookDuration())
@@ -324,7 +329,17 @@ func pickCounter(s Store, owner, recipeID string) (string, Record, error) {
 
 // ServeCooking moves a ready dish from the stove to a counter.
 func ServeCooking(s Store, userID, stoveID string, now time.Time) error {
-	return s.Transaction(func(tx Store) error {
+	_, err := ServeCookingXP(s, userID, stoveID, now)
+	return err
+}
+
+// ServeCookingXP serves and reports the XP of the owner's own seasoning,
+// credited only now: a batch the owner seasons and then cancels or lets
+// spoil earns nothing, so cook-season-cancel is not an XP loop. The dish
+// counts for achievements and missions here too, never at the start.
+func ServeCookingXP(s Store, userID, stoveID string, now time.Time) (int64, error) {
+	var seasonXP int64
+	err := s.Transaction(func(tx Store) error {
 		if _, err := ownedStove(tx, userID, stoveID); err != nil {
 			return err
 		}
@@ -359,8 +374,30 @@ func ServeCooking(s Store, userID, stoveID string, now time.Time) error {
 		if err = tx.Save(food); err != nil {
 			return err
 		}
+		changes := []statChange{{stat: gamerules.StatDishes, delta: 1, recipe: recipeID}}
+		if job.GetString("seasoned_by") == userID {
+			changes = append(changes, statChange{stat: gamerules.StatSeasoned, delta: 1})
+			if xp := gamerules.Stove().SeasonXP; xp > 0 {
+				state, err := GetOrCreatePlayer(tx, userID)
+				if err != nil {
+					return err
+				}
+				Grant(state, 0, xp)
+				if err = tx.Save(state); err != nil {
+					return err
+				}
+				seasonXP = xp
+			}
+		}
+		if err = countStats(tx, userID, now, changes...); err != nil {
+			return err
+		}
 		return tx.Delete(job)
 	})
+	if err != nil {
+		return 0, err
+	}
+	return seasonXP, nil
 }
 
 func CancelCooking(s Store, userID, stoveID string, now time.Time) (int64, error) {
@@ -385,6 +422,9 @@ func CancelCooking(s Store, userID, stoveID string, now time.Time) (int64, error
 			}
 			state.Set("gold", state.GetInt64("gold")+refund)
 			if err := tx.Save(state); err != nil {
+				return err
+			}
+			if err := count(tx, userID, now, gamerules.StatSpentCoins, -refund); err != nil {
 				return err
 			}
 		}
@@ -437,7 +477,8 @@ func CleanStove(s Store, userID, stoveID string, now time.Time) error {
 }
 
 // SeasonCooking adds the bonus servings once per batch. Visitors may season a
-// friend's stove; the seasoner earns the XP.
+// friend's stove and earn the XP at once; the owner's XP waits for the dish to
+// reach the counter (ServeCookingXP).
 func SeasonCooking(s Store, owner, seasoner, stoveID string, now time.Time) error {
 	return s.Transaction(func(tx Store) error {
 		if _, err := ownedStove(tx, owner, stoveID); err != nil {
@@ -462,12 +503,18 @@ func SeasonCooking(s Store, owner, seasoner, stoveID string, now time.Time) erro
 		if err = tx.Save(job); err != nil {
 			return err
 		}
+		if seasoner == owner {
+			return nil
+		}
 		state, err := GetOrCreatePlayer(tx, seasoner)
 		if err != nil {
 			return err
 		}
 		Grant(state, 0, gamerules.Stove().SeasonXP)
-		return tx.Save(state)
+		if err = tx.Save(state); err != nil {
+			return err
+		}
+		return count(tx, seasoner, now, gamerules.StatSeasoned, 1)
 	})
 }
 

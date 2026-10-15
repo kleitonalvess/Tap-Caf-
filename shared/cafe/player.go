@@ -2,6 +2,9 @@ package cafe
 
 import (
 	"errors"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"coffe-mania/shared/gamerules"
 )
@@ -119,6 +122,57 @@ func GetOrCreatePlayer(s Store, userID string) (Record, error) {
 		return tx.Save(record)
 	})
 	return record, err
+}
+
+// CafeInfo names a café and its popularity, for whoever visits it.
+type CafeInfo struct {
+	Name       string  `json:"name"`
+	Popularity float64 `json:"popularity"`
+}
+
+const CafeNameMin, CafeNameMax = 3, 24
+
+var ErrCafeName = errors.New("Use de 3 a 24 letras, números, espaços ou . , ' & ! ? -")
+
+// CleanCafeName trims and collapses spaces and accepts letters (any
+// alphabet), digits, spaces and a few punctuation marks; anything else,
+// including control and invisible characters, is refused.
+func CleanCafeName(value string) (string, error) {
+	name := strings.Join(strings.Fields(value), " ")
+	if n := utf8.RuneCountInString(name); n < CafeNameMin || n > CafeNameMax || !utf8.ValidString(name) {
+		return "", ErrCafeName
+	}
+	for _, r := range name {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != ' ' && !strings.ContainsRune(".,'&!?-", r) {
+			return "", ErrCafeName
+		}
+	}
+	return name, nil
+}
+
+// RenameCafe stores a validated name and returns the new HUD values.
+func RenameCafe(s Store, userID, value string) (PlayerSnapshot, error) {
+	name, err := CleanCafeName(value)
+	if err != nil {
+		return PlayerSnapshot{}, err
+	}
+	if _, err := GetOrCreatePlayer(s, userID); err != nil {
+		return PlayerSnapshot{}, err
+	}
+	var state PlayerSnapshot
+	err = s.Transaction(func(tx Store) error {
+		record, err := tx.First(PlayerCollection, Where{"user": userID})
+		if err != nil {
+			return err
+		}
+		record.Set("cafe_name", name)
+		if err := tx.Save(record); err != nil {
+			return err
+		}
+		state = PlayerView(record)
+		return nil
+	})
+	return state, err
 }
 
 // SetAppearance stores a validated look and returns the new HUD values.
