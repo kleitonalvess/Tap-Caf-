@@ -1,3 +1,4 @@
+import type { HelpResult } from './neighbors';
 import { apiFetch } from './backend';
 /** O servidor define posse, ocupação e relógio; o cliente só apresenta o progresso. */
 export type StoveStatus = 'preparing' | 'cooking' | 'ready' | 'spoiled';
@@ -36,6 +37,8 @@ export interface CookingSnapshot {
   refund?: number;
   /** XP of the owner's own seasoning, credited when the dish reached the counter (only in a serve's answer). */
   seasonXp?: number;
+  /** A visitor's season in a neighbour's café, paid as one of the day's helps. */
+  help?: HelpResult;
 }
 
 const endpoint = '/api/coffe/cooking';

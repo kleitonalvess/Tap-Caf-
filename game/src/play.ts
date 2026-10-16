@@ -36,6 +36,9 @@ import {
 import { loadRoomItemArt, roomModelItems, RoomInventoryClient } from './game/room-inventory';
 import { logout, resolveSession } from './game/session';
 import { isOffline } from './game/backend';
+
+/** Ids of the non-player neighbours (rules.neighbors), the same in every save. */
+const NPC_ROOM = /^npcneighbor\d{4}$/;
 import { offlineSaveActions } from './standalone/save-actions';
 import { loadPlayerState } from './game/player-state';
 import { loadNpcAppearancePolicy } from './game/npc-appearance';
@@ -119,11 +122,13 @@ async function boot(): Promise<void> {
     saveAudioPreferences(safeStorage(), soundPlayerId, soundPreferences);
     applySoundPreferences();
     console.info('[session]', session.displayName);
-    // The browser's café has a single room: the player's.
-    const roomId = isOffline() ? session.playerId : new URLSearchParams(window.location.search).get('room') ?? session.playerId;
+    // Offline, the browser holds the player's café and the non-player neighbours' cafés.
+    const requested = new URLSearchParams(window.location.search).get('room');
+    const npcRoom = requested !== null && NPC_ROOM.test(requested);
+    const roomId = isOffline() ? (npcRoom ? requested : session.playerId) : requested ?? session.playerId;
     // A local profile id never goes into the address: a later server-mode load would look for that room.
     const roomAddress = new URL(window.location.href);
-    if (isOffline()) roomAddress.searchParams.delete('room'); else roomAddress.searchParams.set('room', roomId);
+    if (isOffline() && !npcRoom) roomAddress.searchParams.delete('room'); else roomAddress.searchParams.set('room', roomId);
     window.history.replaceState(null, '', roomAddress);
     const cookingClient = new CookingClient(roomId);
     const roomClient = new RoomInventoryClient(roomId);

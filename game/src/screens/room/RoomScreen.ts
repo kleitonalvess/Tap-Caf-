@@ -21,7 +21,10 @@ import { Actor } from '../../world/Actor';
 import { CLIP } from '../../avatar/clips';
 import { type ActionBarButtonTextures, type ActionBarIconTexture, type NpcEmotionTextures, type StoreToolbarTextures } from '../../game/asset-manifest';
 import { ActionBarMood } from './ActionBarMood';
-import { createActionBarBetaSlots } from './ActionBarBetaSlots';
+import { NeighborBar } from './NeighborBar';
+import { GiftsModal } from './GiftsModal';
+import { MapModal, type MapPlace } from './MapModal';
+import { cheerCustomer, claimGift, helpText, loadGifts, loadNeighbors, sendGift, visitUrl, type HelpResult, type Neighbor } from '../../game/neighbors';
 import { MAIN_ACTION_BAR_SCALE, StoreActionBar, type StoreEntry } from './StoreActionBar';
 import { RoomStoreController } from './RoomStoreController';
 import { roomModelItems, type RoomCatalogItem, type RoomSnapshot, type RoomInventoryClient } from '../../game/room-inventory';
@@ -154,11 +157,6 @@ const SCENE_CAMERA_TOP_INSET = 150;
 
 /** A diagonal até (25,25) usa apenas o terreno verde contínuo abaixo da arte. */
 const SCENE_DIAGONAL_PAN_TILE = 25;
-/** Bottom-bar systems not built yet: the toast names each one. */
-const SOON_SYSTEMS: Record<string, string> = {
-  gift: 'Presentes: troque presentes com os vizinhos todos os dias.',
-  map: 'Mapa do bairro: visite a rua e os cafés vizinhos.',
-};
 const MOBILE_LANDSCAPE_HUD_SCALE = 1.15;
 /** The consumable that builds and upgrades the entertainment machines. */
 const MACHINE_PART = 820001;
@@ -356,6 +354,11 @@ export class RoomScreen implements Screen {
   private collectingTips = false;
   private energyTickMs = 0;
   private cratesModal?: CratesModal;
+  private neighborBar?: NeighborBar;
+  private neighbors: Neighbor[] = [];
+  private giftsModal?: GiftsModal;
+  private mapModal?: MapModal;
+  private cheering = false;
   private readonly crateOpener = new CrateOpener();
   private readonly roomClient?: RoomInventoryClient;
   private progressTimer?: ReturnType<typeof setTimeout>;
@@ -692,10 +695,10 @@ export class RoomScreen implements Screen {
       const left = bar.x - bar.width / 2;
       const top = bar.y - bar.height;
       if (options.topBarsTextures) {
-        const betaSlots = createActionBarBetaSlots(options.topBarsTextures.icons);
-        betaSlots.position.set(left, top);
-        betaSlots.scale.set(scale);
-        this.actionBarLayer.addChild(betaSlots);
+        this.neighborBar = new NeighborBar(options.topBarsTextures.icons, (neighbor) => this.visitCafe(neighbor.id));
+        this.neighborBar.view.position.set(left, top);
+        this.neighborBar.view.scale.set(scale);
+        this.actionBarLayer.addChild(this.neighborBar.view);
       }
       if (options.npcEmotionTextures) {
         this.actionBarMood = new ActionBarMood(
@@ -810,6 +813,11 @@ export class RoomScreen implements Screen {
           button.on('pointertap', (event) => {
             event.stopPropagation();
             if (placement.name === 'settings') this.openSettings();
+            // The arrows page the neighbours: one page, or to the first and last.
+            else if (placement.name === 'left-arrow') this.neighborBar?.turn(-1);
+            else if (placement.name === 'right-arrow') this.neighborBar?.turn(1);
+            else if (placement.name === 'left-edge-arrow') this.neighborBar?.turn(-Infinity);
+            else if (placement.name === 'right-edge-arrow') this.neighborBar?.turn(Infinity);
           });
           this.actionBarLayer.addChild(button);
         }
@@ -1095,6 +1103,26 @@ export class RoomScreen implements Screen {
       ...(options.audio ? { audio: options.audio } : {}),
     });
     this.view.addChild(this.cratesModal.view);
+    this.giftsModal = new GiftsModal({
+      onClaim: (id) => claimGift(id),
+      onSend: (to, item) => sendGift(to, item),
+      onChanged: (claim) => {
+        if (!claim) { void this.refreshNeighbors(); return; }
+        this.setPlayerState(claim.state);
+        const view = this.playerView.view;
+        this.floatingRewards.spawn(view.x, view.y, view.zIndex, claim.gift.item.coins ?? 0, claim.xp);
+      },
+      ...(options.audio ? { audio: options.audio } : {}),
+    });
+    this.view.addChild(this.giftsModal.view);
+    this.mapModal = new MapModal({
+      onPlace: (place) => this.goToPlace(place),
+      onVisit: (neighbor) => this.visitCafe(neighbor.id),
+      ...(options.audio ? { audio: options.audio } : {}),
+    });
+    this.view.addChild(this.mapModal.view);
+    void this.refreshNeighbors();
+    if (options.roomSnapshot?.canEdit === false) this.createHomeButton();
     this.topBars?.setPlusHandler((kind) => this.openCurrency(kind));
     this.actionBarMood?.setTapHandler(() => this.openPopularity());
     // The owner's mood column shows the score customers see (service + decoration).
@@ -1531,7 +1559,6 @@ export class RoomScreen implements Screen {
     const eating = new Set<string>();
     for (const state of this.realtime?.actors.values() ?? []) if (state.food && state.tableId) eating.add(state.tableId);
     const present = new Set<string>();
-    const owner = this.roomSnapshot?.canEdit !== false;
     for (const dirt of this.dirt) {
       const table = this.model.items.find((item) => item.kind === 'table' && item.inventoryUnitId === dirt.tableId);
       if (!table || eating.has(dirt.tableId)) continue;
@@ -1540,7 +1567,8 @@ export class RoomScreen implements Screen {
       if (!view || view.vanishing) {
         view?.destroy();
         view = new TableDirt();
-        if (owner) {
+        {
+          // Owners clean their tables; visitors help a neighbour (the server checks both).
           view.view.eventMode = 'static';
           view.view.cursor = 'pointer';
           this.bindSceneryTap(view.view, () => this.cleanTableAt(table));
@@ -1576,7 +1604,7 @@ export class RoomScreen implements Screen {
 
   /** The owner walks beside a dirty table and clears it (server-checked). */
   private cleanTableAt(table: RoomItem): void {
-    if (this.roomSnapshot?.canEdit === false || this.tableCleaning || this.servingProcess || this.startingCook) return;
+    if (this.tableCleaning || this.servingProcess || this.startingCook) return;
     if (this.realtime && !this.realtime.connected) return;
     const approach = this.findCookingApproach(table);
     if (!approach) {
@@ -1595,9 +1623,11 @@ export class RoomScreen implements Screen {
     if (!process || process.phase !== 'walking' || !process.table.inventoryUnitId) return;
     process.phase = 'requesting';
     const table = process.table;
-    void cleanTable(table.inventoryUnitId!).then((result) => {
+    const visiting = this.roomSnapshot?.canEdit === false ? this.realtime?.roomId : undefined;
+    void cleanTable(table.inventoryUnitId!, visiting).then((result) => {
       if (this.destroyed) return;
       this.audio?.play('broom');
+      if (result.help) this.acceptHelp(result.help);
       if (result.xp > 0) this.floatingRewards.spawn(tileToScreenX(table.tx, table.ty), tileToScreenY(table.tx, table.ty), itemDepth(table.tx, table.ty), 0, result.xp);
     }).catch((error: unknown) => {
       if (!this.destroyed) this.showNotice(error instanceof Error ? error.message : 'Não foi possível limpar a mesa.');
@@ -1614,10 +1644,33 @@ export class RoomScreen implements Screen {
       if (meter) { meter.destroy(); this.patienceMeters.delete(id); }
       return;
     }
-    if (!meter) { meter = new PatienceMeter(); this.patienceMeters.set(id, meter); this.world.addChild(meter.view); }
+    if (!meter) {
+      meter = new PatienceMeter();
+      this.patienceMeters.set(id, meter);
+      this.world.addChild(meter.view);
+      // A visitor cheers a waiting customer up: a neighbour's help.
+      if (this.roomSnapshot?.canEdit === false) {
+        meter.view.eventMode = 'static';
+        meter.view.cursor = 'pointer';
+        this.bindSceneryTap(meter.view, () => this.cheer(id));
+      }
+    }
     if (fetching) meter.updateFetch(fetchProgress(fetching, now), actorView);
     else if (state.patience) meter.update(patienceLeft(state.patience, now), actorView, now, state.browsing === true || this.kitchenIdle(now));
     meter.view.renderable = !this.storeBar?.isOpen;
+  }
+
+  private cheer(actorId: string): void {
+    const room = this.realtime?.roomId;
+    if (this.cheering || !room) return;
+    this.cheering = true;
+    void cheerCustomer(room, actorId).then((result) => {
+      if (this.destroyed) return;
+      this.audio?.play('coin');
+      this.acceptHelp(result.help);
+    }).catch((error: unknown) => {
+      if (!this.destroyed) this.showNotice(error instanceof Error ? error.message : 'Não foi possível animar o cliente.');
+    }).finally(() => { this.cheering = false; });
   }
 
   private movePlayerAlong(path: readonly Tile[]): void {
@@ -2164,6 +2217,7 @@ export class RoomScreen implements Screen {
       // A visitor earns the XP now; the owner's waits for the dish to reach the counter.
       const xp = this.roomSnapshot?.canEdit === false ? this.rules?.stove.seasonXp ?? 0 : 0;
       if (xp > 0) this.floatingRewards.spawn(tileToScreenX(stove.tx, stove.ty), tileToScreenY(stove.tx, stove.ty) + 60, itemDepth(stove.tx, stove.ty), 0, xp);
+      if (snapshot.help) this.acceptHelp(snapshot.help);
     }).catch((error: unknown) => {
       if (!this.destroyed) this.showNotice(error instanceof Error ? error.message : 'Não foi possível temperar.');
     });
@@ -2582,17 +2636,11 @@ export class RoomScreen implements Screen {
       this.levelUpModal?.isOpen || this.expansionModal?.isOpen || this.streetModal?.isOpen || this.welcomeBack?.isOpen ||
       this.confirmDialog?.isOpen || this.dailyModal?.isOpen || this.mailModal?.isOpen || this.achievementsModal?.isOpen ||
       this.popularityModal?.isOpen || this.currencyModal?.isOpen || this.cashDayModal?.isOpen || this.pantryModal?.isOpen || this.cratesModal?.isOpen ||
-      this.machineModal?.isOpen);
+      this.machineModal?.isOpen || this.giftsModal?.isOpen || this.mapModal?.isOpen);
   }
 
   /** Bottom bar: open the system, or say it is not here yet (or not for visitors). */
   private onActionIcon(name: string): void {
-    const soon = SOON_SYSTEMS[name];
-    if (soon) {
-      this.audio?.play('click');
-      this.levelUpToast.showMessage('Em breve!', soon);
-      return;
-    }
     const owner = this.roomSnapshot?.canEdit !== false;
     if (!owner && (name === 'house' || name === 'waiter' || name === 'striped-chicken' || name === 'mail')) {
       this.audio?.play('buzzer');
@@ -2607,6 +2655,80 @@ export class RoomScreen implements Screen {
     else if (name === 'trophy') this.openAchievements();
     else if (name === 'mortar') this.openPantry();
     else if (name === 'yellow-box') this.openCrates();
+    else if (name === 'gift') this.openGifts();
+    else if (name === 'map') this.openMap();
+  }
+
+  /** The neighbours for the bottom bar, the map and the gifts (the server orders them). */
+  private async refreshNeighbors(): Promise<void> {
+    try {
+      const snapshot = await loadNeighbors();
+      if (this.destroyed) return;
+      this.neighbors = snapshot.neighbors;
+      this.neighborBar?.setNeighbors(this.neighbors);
+    } catch (error) {
+      console.warn('[vizinhos] indisponíveis', error);
+    }
+  }
+
+  /** Another café (a neighbour's) or, without an id, the player's own. */
+  private visitCafe(roomId?: string): void {
+    this.audio?.play('click');
+    window.location.assign(visitUrl(window.location.href, roomId));
+  }
+
+  /** Map shortcuts: Farm and Disco are buildings of the player's own street. */
+  private goToPlace(place: MapPlace): void {
+    if (place === 'home' || this.roomSnapshot?.canEdit === false) {
+      if (this.roomSnapshot?.canEdit === false) this.visitCafe();
+      return;
+    }
+    this.onStreetTap(place);
+  }
+
+  private openGifts(): void {
+    if (!this.giftsModal || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.audio?.play('click');
+    this.closeStoveActions();
+    void Promise.all([loadGifts(), loadNeighbors()]).then(([gifts, neighbors]) => {
+      if (this.destroyed || this.isModalOpen || this.storeBar?.isOpen) return;
+      this.neighbors = neighbors.neighbors;
+      this.neighborBar?.setNeighbors(this.neighbors);
+      this.giftsModal?.show(gifts, this.neighbors);
+    }).catch((error: unknown) => this.showNotice(error instanceof Error ? error.message : 'Presentes indisponíveis.'));
+  }
+
+  private openMap(): void {
+    if (!this.mapModal || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.closeStoveActions();
+    this.mapModal.show(this.neighbors, this.roomSnapshot?.canEdit === false);
+  }
+
+  /** A neighbour's help was paid: the reward rises over the avatar and the HUD takes the new values. */
+  private acceptHelp(help: HelpResult): void {
+    this.setPlayerState(help.state);
+    const view = this.playerView.view;
+    this.floatingRewards.spawn(view.x, view.y, view.zIndex, help.coins, help.xp);
+    this.levelUpToast.showMessage('Ajuda ao vizinho!', helpText(help));
+    const room = this.realtime?.roomId;
+    if (room) this.neighbors = this.neighbors.map((entry) => entry.id === room ? { ...entry, helpsLeft: help.helpsLeft } : entry);
+    this.neighborBar?.setNeighbors(this.neighbors);
+  }
+
+  /** Visiting: the way back home, over the bottom bar. */
+  private createHomeButton(): void {
+    const button = new Container();
+    button.label = 'room-home-button';
+    const caption = new Text({ text: '⌂ Voltar ao meu café', style: new TextStyle({ fontFamily: [FONT_FAMILY, 'sans-serif'], fontSize: 26, fontWeight: '700', fill: 0xffffff, padding: 3 }) });
+    caption.anchor.set(0.5);
+    const width = caption.width + 44;
+    button.addChild(new Graphics().roundRect(-width / 2, -28, width, 56, 22).fill(0x3f9a4a).stroke({ color: 0x3d2a14, width: 3 }), caption);
+    button.position.set(STAGE_WIDTH / 2, STAGE_HEIGHT - 230);
+    button.eventMode = 'static';
+    button.cursor = 'pointer';
+    button.on('pointerdown', (event) => event.stopPropagation());
+    button.on('pointertap', (event) => { event.stopPropagation(); this.visitCafe(); });
+    this.view.addChild(button);
   }
 
   private openPantry(): void {
