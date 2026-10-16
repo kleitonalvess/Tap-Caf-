@@ -117,7 +117,8 @@ func jobServings(job Record) int {
 	if recipe, ok := gamerules.RecipeByID(job.GetString("recipe_id")); ok {
 		servings = recipe.Servings
 	}
-	return servings + job.GetInt("bonus_servings")
+	// stove_servings: the extra servings of a multi-stove, fixed when the batch started.
+	return servings + job.GetInt("bonus_servings") + job.GetInt("stove_servings")
 }
 
 // emergencyRecipe reports the free batch: only when the owner cannot afford
@@ -280,6 +281,7 @@ func StartCooking(s Store, userID, stoveID, recipeID string, now time.Time) erro
 			"user": userID, "stove": stoveID, "recipe_id": recipe.ID,
 			"preparing_at": now, "started_at": started, "ready_at": ready,
 			"spoils_at": ready.Add(StoveSpoilDuration(model, recipe)), "cost_coins": cost,
+			"stove_servings": StoveExtraServings(model, recipe),
 		})
 		// Fresh farm ingredients go into the next batch, whatever the recipe.
 		if room, err := tx.First("player_rooms", Where{"user": userID}); err == nil && room.GetInt("fresh_charges") > 0 {
@@ -298,6 +300,15 @@ func StartCooking(s Store, userID, stoveID, recipeID string, now time.Time) erro
 // StoveCookDuration is how long the recipe cooks on this stove model.
 func StoveCookDuration(stove roomcatalog.Item, recipe gamerules.Recipe) time.Duration {
 	return recipe.CookDuration() * time.Duration(100-stove.CookSpeedPercent) / 100
+}
+
+// StoveExtraServings is the multi-stove's bonus: a share of the recipe's
+// servings, rounded up.
+func StoveExtraServings(stove roomcatalog.Item, recipe gamerules.Recipe) int {
+	if stove.ServingsBonusPercent <= 0 {
+		return 0
+	}
+	return (recipe.Servings*stove.ServingsBonusPercent + 99) / 100
 }
 
 // StoveSpoilDuration is how long a ready dish waits on this stove before it spoils.

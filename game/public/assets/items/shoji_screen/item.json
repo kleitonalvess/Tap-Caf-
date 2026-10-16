@@ -1,0 +1,18 @@
+{
+  "id": 3500005,
+  "classname": "shoji_screen",
+  "name": "Biombo Shoji",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 450,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 120,
+  "level": 8,
+  "placeholder": true,
+  "parts": [],
+  "art": "shoji",
+  "charm": 5,
+  "theme": "japan"
+}

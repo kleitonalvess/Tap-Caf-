@@ -22,7 +22,7 @@ import { CLIP } from '../../avatar/clips';
 import { type ActionBarButtonTextures, type ActionBarIconTexture, type NpcEmotionTextures, type StoreToolbarTextures } from '../../game/asset-manifest';
 import { ActionBarMood } from './ActionBarMood';
 import { createActionBarBetaSlots } from './ActionBarBetaSlots';
-import { MAIN_ACTION_BAR_SCALE, StoreActionBar } from './StoreActionBar';
+import { MAIN_ACTION_BAR_SCALE, StoreActionBar, type StoreEntry } from './StoreActionBar';
 import { RoomStoreController } from './RoomStoreController';
 import { roomModelItems, type RoomSnapshot, type RoomInventoryClient } from '../../game/room-inventory';
 import { RoomRealtime, type RoomEvent, type SharedActor, type SharedDirt, type SharedFood, type SharedPayment, type SharedWorld } from '../../game/room-realtime';
@@ -812,6 +812,8 @@ export class RoomScreen implements Screen {
                 && event.global.x <= bounds.x + bounds.width && event.global.y <= bounds.y + bounds.height;
             });
           },
+          confirm: (request) => this.confirmDialog.ask(request),
+          sellPercent: () => this.rules?.equipment?.sellPercent ?? 50,
           canPlace: (item, tile, rotation, id) => {
             if (!this.realtime) return true;
             if (!this.realtime.connected) return false;
@@ -849,6 +851,7 @@ export class RoomScreen implements Screen {
           onDragEnd: (event) => this.onDragEnd(event),
           ...(options.roomSnapshot?.canEdit !== false && this.rules?.expansions ? { onExpand: () => this.openExpansion() } : {}),
           onCashRegister: () => this.openCashDay(),
+          ...(options.roomSnapshot?.canEdit !== false ? { onSell: (entry: StoreEntry) => this.roomStore!.sell(entry) } : {}),
         } : undefined,
         options.storeTopButtonTexture,
         options.actionBarIcons?.find(({ name }) => name === 'house')?.texture,

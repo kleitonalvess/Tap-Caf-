@@ -3,6 +3,7 @@ package roomcatalog
 import (
 	"embed"
 	"encoding/json"
+	"slices"
 )
 
 //go:embed catalog.json
@@ -32,7 +33,14 @@ type Item struct {
 	SpoilBonusPercent int `json:"spoilBonusPercent,omitempty"`
 	// Featured items lead the store's Novidades tab.
 	Featured bool `json:"featured,omitempty"`
+	// Theme groups decoration sets (gamerules.DecorBonus pays a set bonus).
+	Theme string `json:"theme,omitempty"`
+	// Stoves only: every batch yields this share more servings (rounded up).
+	ServingsBonusPercent int `json:"servingsBonusPercent,omitempty"`
 }
+
+// Themes are the decoration sets an item may belong to.
+var Themes = []string{"japan", "italy", "noble"}
 
 // MinLevel is the level the item is sold from.
 func (i Item) MinLevel() int { return max(1, i.Level) }
@@ -63,7 +71,8 @@ func init() {
 			item.Level < 0 || item.Level > 260 || item.PriceCash < 0 || item.PriceCash > 0 && item.PriceGold > 0 ||
 			item.Charm < 0 || item.Charm > 100 || item.CookSpeedPercent < 0 || item.CookSpeedPercent > 50 ||
 			item.SpoilBonusPercent < 0 || item.SpoilBonusPercent > 200 ||
-			item.Kind != "stove" && (item.CookSpeedPercent > 0 || item.SpoilBonusPercent > 0) {
+			item.Kind != "stove" && (item.CookSpeedPercent > 0 || item.SpoilBonusPercent > 0 || item.ServingsBonusPercent > 0) ||
+			item.ServingsBonusPercent < 0 || item.ServingsBonusPercent > 100 || item.Theme != "" && !slices.Contains(Themes, item.Theme) {
 			panic("invalid room catalogue")
 		}
 		seen[item.ID] = true

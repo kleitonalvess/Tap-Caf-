@@ -17,5 +17,6 @@
   "tintMode": "color",
   "priceCash": 3,
   "charm": 5,
-  "featured": true
+  "featured": true,
+  "theme": "noble"
 }

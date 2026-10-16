@@ -59,9 +59,11 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 	var body any
 	var err error
 	switch op.Action {
-	case "purchase", "move", "store":
+	case "purchase", "move", "store", "sell":
 		var command RoomCommand
-		if json.Unmarshal(op.Body, &command) != nil || command.Revision == nil || !RequestKeyPattern.MatchString(command.RequestID) || (op.Action != "store" && (command.TX == nil || command.TY == nil || command.Rotation == nil)) {
+		positioned := op.Action == "purchase" || op.Action == "move"
+		if json.Unmarshal(op.Body, &command) != nil || command.Revision == nil || !RequestKeyPattern.MatchString(command.RequestID) || (positioned && (command.TX == nil || command.TY == nil || command.Rotation == nil)) ||
+			op.Action == "sell" && command.UnitID == "" {
 			return fail(400, "Pedido inválido.")
 		}
 		body, err = MutateRoom(s, op.Owner, op.Action, command, now)
@@ -194,7 +196,7 @@ func errorStatus(err error) (int, string) {
 		return 400, err.Error()
 	case is(ErrSpiceEmpty, ErrSpiceOwner):
 		return 409, err.Error()
-	case is(ErrRoomLevel, ErrRoomCash):
+	case is(ErrRoomLevel, ErrRoomCash, ErrRoomCapacity, ErrSellPlaced, ErrSellValue, ErrSellLast):
 		return 409, err.Error()
 	case is(ErrRoomGold, ErrRoomConflict, ErrRoomOperation, ErrRoomBusy, ErrCounterBusy, ErrRecipeLocked, ErrCookingCoins,
 		ErrStoveDirty, ErrDishSpoiled, ErrNothingToClean, ErrCleaningCoins, ErrNoCounter, ErrSeasonClosed,

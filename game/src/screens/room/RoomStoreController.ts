@@ -6,7 +6,8 @@ import type { RoomModel, RoomItem } from '../../world/RoomModel';
 import { DEPTH_BIAS_WALLPAPER, FLOOR_DRAW_PRIORITY, screenToTile, tileToScreen, wallDepth, type Tile } from '../../world/iso';
 import { wallGeometry } from '../../world/wallGeometry';
 import { StoreActionBar, type StoreEntry } from './StoreActionBar';
-import { itemLevel, itemLocked, itemPerk, newsItems, storeCategory } from '../../game/shop';
+import { itemLevel, itemLocked, itemPerk, newsItems, sellPrompt, storeCategory } from '../../game/shop';
+import type { ConfirmRequest } from './ConfirmDialog';
 import { createArtView, rotateFloorSprite, tileDiamond } from './iso-art';
 import { createProceduralWallView } from './ProceduralWallView';
 import { DoorView } from './DoorView';
@@ -65,6 +66,10 @@ export class RoomStoreController {
     apply(snapshot: RoomSnapshot): void; alpha(unitId: string, alpha: number): void;
     canPlace?(item: RoomCatalogItem, tile: Tile, rotation: number, unitId?: string): boolean;
     isOverUI?(event: FederatedPointerEvent): boolean;
+    /** Asks before selling; absent, the inventory has no "Vender" tag. */
+    confirm?(request: ConfirmRequest): void;
+    /** Share of the coin price a sale returns (rules.equipment.sellPercent). */
+    sellPercent?(): number;
   }) {
     this.snapshot = options.snapshot;
     this.preview.label = 'store-placement-preview'; this.preview.eventMode = 'none';
@@ -115,6 +120,36 @@ export class RoomStoreController {
         .sort((a, b) => Number(itemLocked(a, level)) - Number(itemLocked(b, level)) || itemLevel(a) - itemLevel(b) || a.id - b.id)
         .map(forSale);
     this.store?.setEntries(entries, this.inventory, newsItems(available, level).map(forSale));
+    if (this.snapshot.equipment) this.store?.setCapacity(this.snapshot.equipment.stoves, this.snapshot.equipment.counters);
+  }
+  /** Sells one stored unit of the entry after the player confirms. */
+  sell(entry: StoreEntry): void {
+    if (this.busy || !entry.unit || entry.unit.placed || !this.options.confirm) return;
+    const unit = entry.unit;
+    const percent = this.options.sellPercent?.() ?? 50;
+    const prompt = sellPrompt(entry.item, percent);
+    if (prompt.value <= 0) { this.message(prompt.message); return; }
+    this.options.confirm({
+      title: 'Vender item?', message: prompt.message, confirm: `Vender por ${prompt.value.toLocaleString('pt-BR')}`, cancel: 'Manter', danger: true,
+      onConfirm: () => { void this.commitSale(entry.item.name, unit.unitId, prompt.value); },
+    });
+  }
+  private async commitSale(name: string, unitId: string, value: number): Promise<void> {
+    if (this.busy) return;
+    this.cancel();
+    this.busy = true;
+    this.message('Vendendo…');
+    try {
+      const snapshot = await this.options.client.mutate('sell', this.snapshot.revision, { unitId });
+      if (this.destroyed) return;
+      this.snapshot = snapshot; this.options.apply(snapshot); this.busy = false; this.refreshEntries();
+      this.message(`${name} vendido por ${value.toLocaleString('pt-BR')} moedas.`);
+    } catch (error) {
+      if (this.destroyed) return;
+      const message = error instanceof Error ? error.message : 'Não foi possível vender.';
+      try { const snapshot = await this.options.client.refresh(); if (this.destroyed) return; this.snapshot = snapshot; this.options.apply(snapshot); this.refreshEntries(); } catch { /* The next refresh brings the inventory back. */ }
+      this.busy = false; this.message(message);
+    }
   }
   select(entry: StoreEntry): void {
     if (this.busy) return;

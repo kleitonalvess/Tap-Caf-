@@ -1,0 +1,18 @@
+{
+  "id": 3030016,
+  "classname": "cantina_table",
+  "name": "Mesa de Cantina Xadrez",
+  "type": 3,
+  "kind": "table",
+  "priceGold": 200,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 52,
+  "level": 5,
+  "placeholder": true,
+  "parts": [],
+  "art": "table-checker",
+  "charm": 3,
+  "theme": "italy"
+}

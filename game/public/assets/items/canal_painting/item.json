@@ -1,0 +1,18 @@
+{
+  "id": 3600004,
+  "classname": "canal_painting",
+  "name": "Quadro do Canal",
+  "type": 3,
+  "kind": "panel",
+  "priceGold": 260,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 195.2,
+  "level": 7,
+  "placeholder": true,
+  "parts": [],
+  "art": "painting-canal",
+  "charm": 3,
+  "theme": "italy"
+}

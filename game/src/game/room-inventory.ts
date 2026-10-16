@@ -18,13 +18,21 @@ export interface RoomCatalogItem {
   cookSpeedPercent?: number; spoilBonusPercent?: number;
   /** Leads the Novidades tab. */
   featured?: boolean;
+  /** Decoration set (japan, italy, noble): distinct pieces placed pay a set bonus. */
+  theme?: string;
+  /** Multi-stoves: each batch yields this share more servings. */
+  servingsBonusPercent?: number;
 }
 
 /** The decoration bonus of the placed units (shared/gamerules DecorBonus). */
 export interface DecorSummary {
   bonusTenths: number; rawTenths: number; maxTenths: number;
   lines: Array<{ itemId: number; name: string; copies: number; tenths: number }>;
+  /** Theme sets with a piece placed: distinct pieces, the next tier's count (0 at the last) and the bonus. */
+  sets?: Array<{ theme: string; name: string; pieces: number; next: number; tenths: number }>;
+  setTenths?: number;
 }
+export interface EquipmentCount { placed: number; max: number }
 export interface RoomUnit {
   unitId: string; itemId: number; placed: boolean; tx: number; ty: number; rotation: number; stoveId?: string;
 }
@@ -40,6 +48,8 @@ export interface RoomSnapshot {
    * popularity already includes the decoration bonus. */
   cafe?: { name: string; popularity: number; decorBonus?: number };
   decor?: DecorSummary;
+  /** Placed stoves and counters against the café's limit. */
+  equipment?: { stoves: EquipmentCount; counters: EquipmentCount };
 }
 export interface ItemManifest extends RoomCatalogItem {
   itemHeight: number; parts: (IndoorArtFrame & { rotation?: number })[];
@@ -198,7 +208,7 @@ export class RoomInventoryClient {
     }
     return response.json() as Promise<RoomSnapshot>;
   }
-  async mutate(action: 'purchase' | 'move' | 'store', revision: number, data: { itemId?: number; unitId?: string; tx?: number; ty?: number; rotation?: number }): Promise<RoomSnapshot> {
+  async mutate(action: 'purchase' | 'move' | 'store' | 'sell', revision: number, data: { itemId?: number; unitId?: string; tx?: number; ty?: number; rotation?: number }): Promise<RoomSnapshot> {
     const signature = JSON.stringify({ action, ...data });
     if (this.pending && this.pending.signature !== signature) {
       throw new Error('Verifique a última operação repetindo a mesma colocação ou recarregando o quarto.');

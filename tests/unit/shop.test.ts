@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import type { RoomCatalogItem } from '../../game/src/game/room-inventory';
-import { itemLocked, itemPerk, newsItems, shopUnlocks, storeCategory } from '../../game/src/game/shop';
+import { itemLocked, itemPerk, newsItems, sellPrompt, sellValue, shopUnlocks, storeCategory } from '../../game/src/game/shop';
+import { setsText } from '../../game/src/screens/room/PopularityModal';
 
 const catalog = (JSON.parse(readFileSync(new URL('../../shared/roomcatalog/catalog.json', import.meta.url), 'utf8')) as { items: RoomCatalogItem[] }).items;
 const byClass = (classname: string) => catalog.find((item) => item.classname === classname)!;
@@ -51,5 +52,30 @@ describe('levels and news', () => {
     expect(itemPerk(byClass('master_stove'))).toBe('cozinha 25% mais rápido · o prato dura 50% mais');
     expect(itemPerk(byClass('cash_register'))).toContain('gorjeta');
     expect(itemPerk(byClass('flower_vase'))).toBe('+0,3 de popularidade');
+  });
+});
+
+describe('venda do estoque e conjuntos (Sprint 15a)', () => {
+  const base = { id: 1, classname: 'x', name: 'Vaso', type: 3, kind: 'ornament' as const, purchasable: true, sizeX: 1, sizeY: 1 };
+  it('a venda devolve a parte do preço em moedas; Grana e exclusivos não têm valor', () => {
+    expect(sellValue({ ...base, priceGold: 91 }, 50)).toBe(45);
+    expect(sellValue({ ...base, priceGold: 0, priceCash: 15 }, 50)).toBe(0);
+    expect(sellValue({ ...base, priceGold: 300, purchasable: false }, 50)).toBe(0);
+    expect(sellPrompt({ ...base, priceGold: 300 }, 50).message).toContain('150 moedas (50% do preço)');
+    expect(sellPrompt({ ...base, priceGold: 0, priceCash: 4 }, 50).message).toContain('Grana');
+  });
+
+  it('o multifogão vai para a aba de fogões especiais e mostra as porções extras', () => {
+    const multi = { ...base, kind: 'stove' as const, priceGold: 15000, cookSpeedPercent: 0, servingsBonusPercent: 50 };
+    expect(storeCategory(multi)).toBe('stove-fire');
+    expect(itemPerk(multi)).toContain('+50% de porções por lote');
+    expect(itemPerk({ ...base, priceGold: 300, theme: 'japan', charm: 4 })).toContain('conjunto Japão');
+  });
+
+  it('o texto dos conjuntos mostra peças, bônus e quanto falta', () => {
+    const decor = { bonusTenths: 30, rawTenths: 20, maxTenths: 225, lines: [], setTenths: 10,
+      sets: [{ theme: 'japan', name: 'Japão', pieces: 3, next: 6, tenths: 10 }, { theme: 'noble', name: 'Nobreza Clássica', pieces: 6, next: 0, tenths: 25 }] };
+    expect(setsText(decor)).toBe('Conjuntos: Japão 3 peças +1,0 (faltam 3 para o próximo bônus) · Nobreza Clássica 6 peças +2,5 (completo)');
+    expect(setsText({ ...decor, sets: [] })).toContain('3 peças diferentes do mesmo tema');
   });
 });

@@ -15,5 +15,6 @@
   "variantOf": "default_tile_name",
   "tint": "#d4703c",
   "tintMode": "color",
-  "charm": 1
+  "charm": 1,
+  "theme": "italy"
 }

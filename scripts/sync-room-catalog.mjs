@@ -22,7 +22,9 @@ const items = readdirSync(directory, { withFileTypes: true }).filter((entry) => 
   if (!optionalInt(item.level, 0, 260) || !optionalInt(item.priceCash, 0, 100000) || !optionalInt(item.charm, 0, 100) ||
     !optionalInt(item.cookSpeedPercent, 0, 50) || !optionalInt(item.spoilBonusPercent, 0, 200) ||
     (item.priceCash > 0 && item.priceGold > 0) || (item.kind !== 'stove' && (item.cookSpeedPercent || item.spoilBonusPercent)) ||
-    (item.featured !== undefined && typeof item.featured !== 'boolean')) {
+    (item.featured !== undefined && typeof item.featured !== 'boolean') ||
+    !optionalInt(item.servingsBonusPercent, 0, 100) || (item.kind !== 'stove' && item.servingsBonusPercent) ||
+    (item.theme !== undefined && !['japan', 'italy', 'noble'].includes(item.theme))) {
     throw new Error(`Campos de loja inválidos: ${entry.name}`);
   }
   // Art without PNG parts: a tinted copy of another item's PNGs, or a drawing

@@ -72,7 +72,10 @@ export class PopularityModal extends RoomDialog {
         ? 'O café já chegou ao teto da decoração.'
         : 'Plantas, quadros, janelas e móveis especiais contam. Até 3 itens iguais contam inteiros e os 3 seguintes pela metade: varie a decoração.';
       const text = this.text(top ? `${top}\n${hint}` : `Nenhum item de decoração ainda. ${hint}`, this.width / 2, y, 20, DIALOG_COLORS.ink, { weight: '600', wrap: this.width - 160 });
-      y += text.height;
+      y += text.height + 6;
+      // Theme sets: distinct pieces of Japão, Itália or Nobreza pay on top of the items.
+      const sets = setsText(decor);
+      if (sets) y += this.text(sets, this.width / 2, y, 20, DIALOG_COLORS.gold, { weight: '600', wrap: this.width - 160 }).height;
     }
     if (state.owner) {
       this.text('Nome do café', this.width / 2, this.height - 238, 26, DIALOG_COLORS.ink);
@@ -161,4 +164,16 @@ export class PopularityModal extends RoomDialog {
     this.input = undefined;
     super.destroy();
   }
+}
+
+/** "Conjuntos: Japão 3 peças (+1) · Itália 1 peça (faltam 2 para +bônus)". */
+export function setsText(decor: DecorSummary): string {
+  const sets = decor.sets ?? [];
+  if (!sets.length) return 'Conjuntos temáticos (Japão, Itália, Nobreza Clássica): 3 peças diferentes do mesmo tema dão bônus.';
+  return `Conjuntos: ${sets.map((set) => {
+    const pieces = `${set.pieces} ${set.pieces === 1 ? 'peça' : 'peças'}`;
+    const bonus = set.tenths > 0 ? ` +${decimal(set.tenths / 10)}` : '';
+    const next = set.next > 0 ? ` (faltam ${set.next - set.pieces} para o próximo bônus)` : ' (completo)';
+    return `${set.name} ${pieces}${bonus}${next}`;
+  }).join(' · ')}`;
 }

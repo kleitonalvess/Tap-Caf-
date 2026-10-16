@@ -1,0 +1,18 @@
+{
+  "id": 3500008,
+  "classname": "mediterranean_amphora",
+  "name": "Ânfora Mediterrânea",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 220,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 82,
+  "level": 6,
+  "placeholder": true,
+  "parts": [],
+  "art": "amphora",
+  "charm": 4,
+  "theme": "italy"
+}

@@ -1,7 +1,8 @@
 // Sprint 13 no modo standalone: loja com todas as categorias, cadeado por nível,
 // aba Novidades, itens da loja no modal de nível, compras com moedas e com
 // Grana (arte tingida e desenhada), bônus de decoração na Popularidade e a
-// "Caixa do dia" no botão da caixa registradora.
+// "Caixa do dia" no botão da caixa registradora. Sprint 15a: limite de fogões,
+// conjunto Japão na Popularidade e venda pelo Inventário com confirmação.
 import { scenario, sleep } from './lib/browser.mjs';
 import { startStandalone } from './lib/stack.mjs';
 
@@ -165,6 +166,71 @@ try {
   const cashDay = await game.texts('cash-day-modal');
   run.check(cashDay.includes('Caixa do dia') && cashDay.includes('Sua Caixa Registradora') && cashDay.includes('Moedas gastas'), 'a caixa registradora abre a Caixa do dia', cashDay);
   await game.shot('7-caixa-do-dia');
+  await game.page.keyboard.press('Escape');
+  await sleep(500);
+
+  // 7. Sprint 15a: limite de fogões, conjunto Japão e venda pelo Inventário.
+  await game.click('room-action-bar-icon-house');
+  await game.waitFor(() => window.__coffeMania.screens.active.storeBar?.isOpen, undefined, 15000);
+  await sleep(600);
+  const capacity = await game.texts('store-capacity');
+  await game.shot('7b-capacidade');
+  await game.page.keyboard.press('Escape');
+  await sleep(400);
+  run.check(capacity.includes('Fogões 2/2'), 'o cabeçalho da loja mostra os fogões no limite do café 8×8', capacity);
+  const overLimit = await buy('master_stove', 2, 2);
+  run.check(overLimit.status === 409 && /máximo/.test(overLimit.message ?? ''), 'um terceiro fogão no café 8×8 é recusado', overLimit);
+  const japan = { bonsai_tree: await buy('bonsai_tree', 1, 2), paper_lantern: await buy('paper_lantern', 1, 4), shoji_screen: await buy('shoji_screen', 1, 6) };
+  run.check(Object.values(japan).every((result) => result.status === 200), 'três peças do conjunto Japão compradas', japan);
+  const vase = await buy('flower_vase', 6, 4);
+  const stored = await game.room(async () => {
+    const { apiFetch } = await import('/src/game/backend.ts');
+    const room = await (await apiFetch('/api/coffe/room')).json();
+    const item = room.catalog.find((entry) => entry.classname === 'flower_vase');
+    const unit = room.inventory.find((entry) => entry.itemId === item.id && entry.placed);
+    const response = await apiFetch('/api/coffe/room/store', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unitId: unit.unitId, revision: room.revision, requestId: crypto.randomUUID() }) });
+    return response.status;
+  });
+  run.check(vase.status === 200 && stored === 200, 'um vaso comprado e guardado no Inventário', { vase, stored });
+  await game.page.close({ runBeforeUnload: true });
+  game = await open();
+  await game.click('room-action-bar-mood');
+  await game.waitFor(() => window.__coffeMania.screens.active.popularityModal?.isOpen, undefined, 10000);
+  await sleep(600);
+  const sets = await game.texts('popularity-modal');
+  run.check(sets.includes('Conjuntos: Japão 3 peças +1,0'), 'a Popularidade mostra o bônus do conjunto Japão', sets);
+  await game.shot('8-conjunto-japao');
+  await game.page.keyboard.press('Escape');
+  await sleep(400);
+  await game.room(() => window.__coffeMania.screens.active.resetCamera?.());
+  await sleep(1500);
+  await game.shot('9-cafe-temático');
+  await game.click('room-action-bar-icon-house');
+  await game.waitFor(() => window.__coffeMania.screens.active.storeBar?.isOpen, undefined, 15000);
+  await sleep(600);
+  await game.click('store-tab-inventory');
+  await sleep(500);
+  await game.click('store-category-flower');
+  await sleep(600);
+  await game.shot('10-inventario-vender');
+  const beforeSale = await game.player();
+  await game.click('store-sell-flower_vase');
+  await game.waitFor(() => window.__coffeMania.screens.active.confirmDialog?.isOpen, undefined, 10000);
+  await sleep(400);
+  const prompt = await game.texts('confirm-dialog');
+  await game.shot('11-confirmar-venda');
+  await game.click('confirm-dialog-confirm');
+  await game.waitFor(async (gold) => {
+    const { apiFetch } = await import('/src/game/backend.ts');
+    return (await (await apiFetch('/api/coffe/player-state')).json()).gold > gold;
+  }, beforeSale.gold, 15000);
+  const afterSale = await game.player();
+  const vaseItem = await game.room(() => window.__coffeMania.screens.active.roomSnapshot.catalog.find((entry) => entry.classname === 'flower_vase'));
+  run.check(prompt.includes('Vender item?') && afterSale.gold - beforeSale.gold === Math.floor(vaseItem.priceGold / 2), 'vender pelo Inventário pede confirmação e devolve metade do preço', { prompt, before: beforeSale.gold, after: afterSale.gold });
+  await sleep(800);
+  const leftover = await game.room(() => !window.__coffeMania.app.stage.getChildByLabel('store-sell-flower_vase', true));
+  run.check(leftover, 'o vaso vendido sai do Inventário');
 } catch (error) {
   run.check(false, `o roteiro terminou: ${error.message}`);
 } finally {

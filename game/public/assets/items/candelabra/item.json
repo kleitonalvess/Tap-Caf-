@@ -1,0 +1,18 @@
+{
+  "id": 3500010,
+  "classname": "candelabra",
+  "name": "Candelabro Dourado",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 800,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 112,
+  "level": 16,
+  "placeholder": true,
+  "parts": [],
+  "art": "candelabra",
+  "charm": 6,
+  "theme": "noble"
+}

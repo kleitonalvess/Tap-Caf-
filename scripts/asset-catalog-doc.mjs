@@ -49,8 +49,8 @@ const VISUAL_STATES = {
 function rotatable(item, byClass) {
   const source = item.variantOf ? byClass.get(item.variantOf) : item;
   if (source.parts.length > 0) return new Set(source.parts.map((part) => part.rotation ?? 0)).size > 1;
-  // Canvas pictures hang on either wall; the floor drawings are the same from every side.
-  return ['painting', 'clock', 'coffee-art', 'curtain', 'scroll', 'mirror'].some((style) => (item.art ?? '').startsWith(style));
+  // Canvas pictures hang on either wall (two frames); floor drawings look the same from every side.
+  return item.kind === 'window' || item.kind === 'panel';
 }
 
 function spriteSource(item) {

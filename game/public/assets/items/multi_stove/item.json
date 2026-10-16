@@ -1,0 +1,19 @@
+{
+  "id": 3070005,
+  "classname": "multi_stove",
+  "name": "Multifogão Profissional",
+  "type": 3,
+  "kind": "stove",
+  "priceGold": 15000,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 56,
+  "level": 25,
+  "placeholder": true,
+  "parts": [],
+  "art": "stove-multi",
+  "featured": true,
+  "cookSpeedPercent": 10,
+  "servingsBonusPercent": 50
+}

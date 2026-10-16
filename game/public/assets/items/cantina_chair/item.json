@@ -1,0 +1,20 @@
+{
+  "id": 3040008,
+  "classname": "cantina_chair",
+  "name": "Cadeira de Cantina",
+  "type": 3,
+  "kind": "chair",
+  "priceGold": 90,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 97.4,
+  "level": 5,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "classic_chair",
+  "tint": "#9a6235",
+  "tintMode": "multiply",
+  "charm": 1,
+  "theme": "italy"
+}

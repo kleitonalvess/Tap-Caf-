@@ -272,7 +272,7 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 		}
 		rotation := 0
 		command := cafe.RoomCommand{ItemID: itemID, UnitID: unitID, TX: &x, TY: &y, Rotation: &rotation, Revision: &current.Revision, RequestID: "parity-shop-" + label}
-		if action == "store" {
+		if action == "store" || action == "sell" {
 			command = cafe.RoomCommand{UnitID: unitID, Revision: &current.Revision, RequestID: "parity-shop-" + label}
 		}
 		result, err := cafe.MutateRoom(s, owner, action, command, t0)
@@ -330,6 +330,42 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 		log("cancel spiced", map[string]any{"err": outcome(err), "spices": after.Spices})
 		break
 	}
+
+	// Sprint 15a: the stove limit, selling stored units, replaced floors kept in
+	// the inventory, theme sets and the multi-stove (its extra servings are a
+	// stove_cooking column the PocketBase schema has to declare).
+	player, err := s.First(cafe.PlayerCollection, cafe.Where{"user": owner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	player.Set("gold", 100000)
+	player.Set("level", 25)
+	player.Set("experience_current", gamerules.Public().Levels[24].RequiredXP)
+	player.Set("experience_max", gamerules.Public().Levels[25].RequiredXP)
+	if err := s.Save(player); err != nil {
+		t.Fatal(err)
+	}
+	shop("stove over the limit", "purchase", 3070000, "", 8, 8)
+	limited := room("equipment")
+	log("equipment", limited.Equipment)
+	shop("sell placed stove", "sell", 0, stoveUnit, 0, 0)
+	shop("store a stove to sell", "store", 0, stoveUnit, 0, 0)
+	sold := shop("sell stored stove", "sell", 0, stoveUnit, 0, 0)
+	log("sold", map[string]any{"equipment": sold.Equipment, "units": len(sold.Inventory)})
+	shop("sky floor over the old one", "purchase", 3050001, "", 2, 2)
+	for i, item := range []int{3500006, 3500007, 3500005} {
+		shop(fmt.Sprintf("japan piece %d", i), "purchase", item, "", 8, 2+2*i)
+	}
+	themed := room("themes")
+	log("decor sets", map[string]any{"sets": themed.Decor.Sets, "setTenths": themed.Decor.SetTenths, "bonus": themed.Decor.BonusTenths, "max": themed.Decor.MaxTenths})
+	multi := shop("multi-stove", "purchase", 3070005, "", 6, 7)
+	multiAt := t0.Add(72 * time.Hour)
+	for _, u := range multi.Inventory {
+		if u.ItemID == 3070005 && u.Placed {
+			log("cook on the multi-stove", outcome(cafe.StartCooking(s, owner, u.StoveID, "coxinha", multiAt)))
+		}
+	}
+	cooking("multi-stove batch", multiAt.Add(time.Second))
 	world("final")
 	return lines
 }

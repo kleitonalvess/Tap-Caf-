@@ -1,0 +1,18 @@
+{
+  "id": 3030017,
+  "classname": "imperial_table",
+  "name": "Mesa Imperial Dourada",
+  "type": 3,
+  "kind": "table",
+  "priceGold": 900,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 54,
+  "level": 15,
+  "placeholder": true,
+  "parts": [],
+  "art": "table-imperial",
+  "charm": 5,
+  "theme": "noble"
+}

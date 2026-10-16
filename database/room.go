@@ -76,7 +76,7 @@ func registerRoomRoutes(e *core.ServeEvent) {
 		}
 		return sameOrigin(r)
 	})
-	for _, operation := range []string{"purchase", "move", "store"} {
+	for _, operation := range []string{"purchase", "move", "store", "sell"} {
 		action := operation
 		group.POST("/"+action, func(r *core.RequestEvent) error {
 			user := sessionRecord(r)
@@ -93,7 +93,7 @@ func registerRoomRoutes(e *core.ServeEvent) {
 				return r.BadRequestError("Pedido inválido.", nil)
 			}
 			if err := decoder.Decode(new(any)); err != io.EOF || command.Revision == nil || *command.Revision < 1 || !requestKeyPattern.MatchString(command.RequestID) ||
-				(action != "store" && (command.TX == nil || command.TY == nil || command.Rotation == nil)) ||
+				((action == "purchase" || action == "move") && (command.TX == nil || command.TY == nil || command.Rotation == nil)) ||
 				(action == "purchase" && (command.ItemID <= 0 || command.UnitID != "")) || (action != "purchase" && (command.UnitID == "" || command.ItemID != 0)) {
 				return r.BadRequestError("Pedido inválido.", nil)
 			}
@@ -105,17 +105,12 @@ func registerRoomRoutes(e *core.ServeEvent) {
 			}
 			snapshot, err := mutateRoom(r.App, user.Id, action, command)
 			if err != nil {
-				switch {
-				case errors.Is(err, errRoomOwned):
-					return r.NotFoundError(err.Error(), nil)
-				case errors.Is(err, errRoomPosition):
-					return r.BadRequestError(err.Error(), nil)
-				case errors.Is(err, errRoomGold), errors.Is(err, errRoomConflict), errors.Is(err, errRoomOperation), errors.Is(err, errRoomBusy), errors.Is(err, errCounterBusy), errors.Is(err, errTableDirty),
-					errors.Is(err, cafe.ErrRoomLevel), errors.Is(err, cafe.ErrRoomCash):
-					return apis.NewApiError(http.StatusConflict, err.Error(), nil)
-				default:
+				// The same statuses and messages as the room service (cafe.ErrorStatus).
+				status, message := cafe.ErrorStatus(err)
+				if status >= 500 {
 					return r.InternalServerError("Não foi possível salvar esta operação.", err)
 				}
+				return apis.NewApiError(status, message, nil)
 			}
 			return r.JSON(http.StatusOK, snapshot)
 		}).Bind(apis.BodyLimit(2048)).BindFunc(func(r *core.RequestEvent) error {

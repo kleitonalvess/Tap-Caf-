@@ -1,0 +1,21 @@
+{
+  "id": 3060022,
+  "classname": "damask_wallpaper",
+  "name": "Papel de Parede Damasco",
+  "type": 1,
+  "kind": "wall",
+  "priceGold": 120,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 192.4,
+  "level": 16,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "default_wallpaper_name",
+  "tint": "#8a3344",
+  "tintMode": "color",
+  "charm": 3,
+  "wallpaperRotation": 1,
+  "theme": "noble"
+}

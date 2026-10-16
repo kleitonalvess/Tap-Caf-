@@ -1,0 +1,18 @@
+{
+  "id": 3500009,
+  "classname": "olive_tree",
+  "name": "Oliveira em Vaso",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 380,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 126,
+  "level": 9,
+  "placeholder": true,
+  "parts": [],
+  "art": "olive-tree",
+  "charm": 4,
+  "theme": "italy"
+}

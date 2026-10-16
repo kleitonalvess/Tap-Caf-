@@ -16,5 +16,6 @@
   "tint": "#e8b93c",
   "tintMode": "color",
   "charm": 3,
-  "featured": true
+  "featured": true,
+  "theme": "noble"
 }

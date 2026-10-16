@@ -15,5 +15,6 @@
   "art": "fountain",
   "priceCash": 15,
   "charm": 12,
-  "featured": true
+  "featured": true,
+  "theme": "noble"
 }

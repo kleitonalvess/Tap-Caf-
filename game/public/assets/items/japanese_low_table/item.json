@@ -1,0 +1,18 @@
+{
+  "id": 3030015,
+  "classname": "japanese_low_table",
+  "name": "Mesa Baixa Oriental",
+  "type": 3,
+  "kind": "table",
+  "priceGold": 260,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 40,
+  "level": 6,
+  "placeholder": true,
+  "parts": [],
+  "art": "table-low",
+  "charm": 3,
+  "theme": "japan"
+}

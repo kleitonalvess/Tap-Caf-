@@ -1,0 +1,21 @@
+{
+  "id": 3060021,
+  "classname": "bamboo_wallpaper",
+  "name": "Papel de Parede Bambu",
+  "type": 1,
+  "kind": "wall",
+  "priceGold": 45,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 192.4,
+  "level": 6,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "default_wallpaper_name",
+  "tint": "#9cbf6e",
+  "tintMode": "color",
+  "charm": 1,
+  "wallpaperRotation": 1,
+  "theme": "japan"
+}

@@ -1,0 +1,18 @@
+{
+  "id": 3600005,
+  "classname": "velvet_curtain",
+  "name": "Cortina de Veludo",
+  "type": 3,
+  "kind": "panel",
+  "priceGold": 520,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 195.2,
+  "level": 15,
+  "placeholder": true,
+  "parts": [],
+  "art": "curtain-velvet",
+  "charm": 5,
+  "theme": "noble"
+}

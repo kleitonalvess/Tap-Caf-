@@ -40,7 +40,24 @@
       "cash": 0
     }
   },
-  "decor": { "fullCopies": 3, "halfCopies": 3, "maxBonusTenths": 150 },
+  "decor": {
+    "fullCopies": 3, "halfCopies": 3, "maxBonusTenths": 150,
+    "sets": {
+      "provisional": true,
+      "themes": [
+        { "id": "japan", "name": "Japão" },
+        { "id": "italy", "name": "Itália" },
+        { "id": "noble", "name": "Nobreza Clássica" }
+      ],
+      "tiers": [ { "pieces": 3, "tenths": 10 }, { "pieces": 6, "tenths": 25 } ]
+    }
+  },
+  "equipment": {
+    "provisional": true,
+    "stoves": [2, 3, 4, 5, 6, 7, 8],
+    "counters": [2, 3, 4, 5, 6, 7, 8],
+    "sellPercent": 50
+  },
   "spices": {
     "list": [
       { "code": 800001, "name": "Tempero Caseiro", "effect": "double", "description": "Dobra as porções extras do tempero.", "priceCoins": 150 },

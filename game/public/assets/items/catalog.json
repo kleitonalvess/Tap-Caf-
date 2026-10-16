@@ -36,6 +36,11 @@
       "manifest": "royal_door/item.json"
     },
     {
+      "id": 3010004,
+      "classname": "lacquer_door",
+      "manifest": "lacquer_door/item.json"
+    },
+    {
       "id": 3020003,
       "classname": "delicate_bush",
       "manifest": "delicate_bush/item.json"
@@ -76,6 +81,21 @@
       "manifest": "rustic_wood_table/item.json"
     },
     {
+      "id": 3030015,
+      "classname": "japanese_low_table",
+      "manifest": "japanese_low_table/item.json"
+    },
+    {
+      "id": 3030016,
+      "classname": "cantina_table",
+      "manifest": "cantina_table/item.json"
+    },
+    {
+      "id": 3030017,
+      "classname": "imperial_table",
+      "manifest": "imperial_table/item.json"
+    },
+    {
       "id": 3040001,
       "classname": "classic_chair",
       "manifest": "classic_chair/item.json"
@@ -106,6 +126,21 @@
       "manifest": "chef_throne/item.json"
     },
     {
+      "id": 3040007,
+      "classname": "lacquer_chair",
+      "manifest": "lacquer_chair/item.json"
+    },
+    {
+      "id": 3040008,
+      "classname": "cantina_chair",
+      "manifest": "cantina_chair/item.json"
+    },
+    {
+      "id": 3040009,
+      "classname": "velvet_armchair",
+      "manifest": "velvet_armchair/item.json"
+    },
+    {
       "id": 3050000,
       "classname": "default_tile_name",
       "manifest": "default_tile_name/item.json"
@@ -129,6 +164,16 @@
       "id": 3050004,
       "classname": "royal_tile_floor",
       "manifest": "royal_tile_floor/item.json"
+    },
+    {
+      "id": 3050005,
+      "classname": "tatami_floor",
+      "manifest": "tatami_floor/item.json"
+    },
+    {
+      "id": 3050006,
+      "classname": "marble_floor",
+      "manifest": "marble_floor/item.json"
     },
     {
       "id": 3060016,
@@ -156,6 +201,16 @@
       "manifest": "white_brick_wallpaper/item.json"
     },
     {
+      "id": 3060021,
+      "classname": "bamboo_wallpaper",
+      "manifest": "bamboo_wallpaper/item.json"
+    },
+    {
+      "id": 3060022,
+      "classname": "damask_wallpaper",
+      "manifest": "damask_wallpaper/item.json"
+    },
+    {
       "id": 3070000,
       "classname": "starter_stove",
       "manifest": "starter_stove/item.json"
@@ -169,6 +224,21 @@
       "id": 3070002,
       "classname": "master_stove",
       "manifest": "master_stove/item.json"
+    },
+    {
+      "id": 3070003,
+      "classname": "teppan_stove",
+      "manifest": "teppan_stove/item.json"
+    },
+    {
+      "id": 3070004,
+      "classname": "wood_oven",
+      "manifest": "wood_oven/item.json"
+    },
+    {
+      "id": 3070005,
+      "classname": "multi_stove",
+      "manifest": "multi_stove/item.json"
     },
     {
       "id": 3080000,
@@ -189,6 +259,11 @@
       "id": 3080003,
       "classname": "glass_display_counter",
       "manifest": "glass_display_counter/item.json"
+    },
+    {
+      "id": 3080004,
+      "classname": "sushi_counter",
+      "manifest": "sushi_counter/item.json"
     },
     {
       "id": 3090000,
@@ -246,6 +321,41 @@
       "manifest": "garden_fountain/item.json"
     },
     {
+      "id": 3500005,
+      "classname": "shoji_screen",
+      "manifest": "shoji_screen/item.json"
+    },
+    {
+      "id": 3500006,
+      "classname": "bonsai_tree",
+      "manifest": "bonsai_tree/item.json"
+    },
+    {
+      "id": 3500007,
+      "classname": "paper_lantern",
+      "manifest": "paper_lantern/item.json"
+    },
+    {
+      "id": 3500008,
+      "classname": "mediterranean_amphora",
+      "manifest": "mediterranean_amphora/item.json"
+    },
+    {
+      "id": 3500009,
+      "classname": "olive_tree",
+      "manifest": "olive_tree/item.json"
+    },
+    {
+      "id": 3500010,
+      "classname": "candelabra",
+      "manifest": "candelabra/item.json"
+    },
+    {
+      "id": 3500011,
+      "classname": "grand_piano",
+      "manifest": "grand_piano/item.json"
+    },
+    {
       "id": 3600000,
       "classname": "landscape_painting",
       "manifest": "landscape_painting/item.json"
@@ -259,6 +369,26 @@
       "id": 3600002,
       "classname": "coffee_painting",
       "manifest": "coffee_painting/item.json"
+    },
+    {
+      "id": 3600003,
+      "classname": "japanese_scroll",
+      "manifest": "japanese_scroll/item.json"
+    },
+    {
+      "id": 3600004,
+      "classname": "canal_painting",
+      "manifest": "canal_painting/item.json"
+    },
+    {
+      "id": 3600005,
+      "classname": "velvet_curtain",
+      "manifest": "velvet_curtain/item.json"
+    },
+    {
+      "id": 3600006,
+      "classname": "neon_sign",
+      "manifest": "neon_sign/item.json"
     },
     {
       "id": 9000001,

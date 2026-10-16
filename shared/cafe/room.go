@@ -2,6 +2,7 @@ package cafe
 
 import (
 	"coffe-mania/shared/gamerules"
+	"slices"
 
 	"time"
 
@@ -22,6 +23,13 @@ var ErrRoomBusy = errors.New("Não é possível mover um fogão durante o prepar
 var ErrCounterBusy = errors.New("Não é possível mover um balcão com comida.")
 var ErrRoomLevel = errors.New("Este item ainda está bloqueado para o seu nível.")
 var ErrRoomCash = errors.New("Grana insuficiente.")
+var ErrRoomCapacity = errors.New("O salão já tem o máximo deste equipamento. Expanda o café para colocar mais.")
+var ErrSellPlaced = errors.New("Guarde o item no Inventário antes de vender.")
+var ErrSellValue = errors.New("Este item não tem valor de venda em moedas.")
+var ErrSellLast = errors.New("Você precisa manter pelo menos um item deste tipo no café.")
+
+// essentialKinds keep at least one unit: without them nobody cooks, is served or comes in.
+var essentialKinds = []string{"stove", "counter", "door"}
 
 // RequestKeyPattern is the idempotency key of a room command.
 var RequestKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{16,80}$`)
@@ -51,6 +59,18 @@ type RoomSnapshot struct {
 	Street gamewire.Street        `json:"street"`
 	// The owner's unacknowledged absence summary (never sent to visitors).
 	AwaySummary *gamewire.AwaySummary `json:"awaySummary,omitempty"`
+	// Placed stoves and counters against the café's limit.
+	Equipment Equipment `json:"equipment"`
+}
+
+type EquipmentCount struct {
+	Placed int `json:"placed"`
+	Max    int `json:"max"`
+}
+
+type Equipment struct {
+	Stoves   EquipmentCount `json:"stoves"`
+	Counters EquipmentCount `json:"counters"`
 }
 type RoomCommand struct {
 	ItemID    int    `json:"itemId,omitempty"`
@@ -169,8 +189,18 @@ func SnapshotRoom(s Store, userID string) (RoomSnapshot, error) {
 	if err != nil {
 		return result, err
 	}
+	tiles := min(result.TilesX, result.TilesY)
+	result.Equipment = Equipment{Stoves: EquipmentCount{Max: gamerules.EquipmentLimit("stove", tiles)}, Counters: EquipmentCount{Max: gamerules.EquipmentLimit("counter", tiles)}}
 	for _, unit := range units {
 		result.Inventory = append(result.Inventory, RoomUnit{unit.ID(), unit.GetInt("item_id"), unit.GetBool("placed"), unit.GetInt("tx"), unit.GetInt("ty"), unit.GetInt("rotation"), unit.GetString("stove_id")})
+		if item, ok := roomcatalog.ByID(unit.GetInt("item_id")); ok && unit.GetBool("placed") {
+			switch item.Kind {
+			case "stove":
+				result.Equipment.Stoves.Placed++
+			case "counter":
+				result.Equipment.Counters.Placed++
+			}
+		}
 	}
 	state, err := s.First(PlayerCollection, Where{"user": userID})
 	if err != nil {
@@ -240,7 +270,11 @@ func MutateRoom(s Store, userID, action string, command RoomCommand, now time.Ti
 		}
 		var unit Record
 		var item roomcatalog.Item
-		if action == "purchase" {
+		if action == "sell" {
+			if err := sellUnit(tx, userID, command.UnitID); err != nil {
+				return err
+			}
+		} else if action == "purchase" {
 			var ok bool
 			item, ok = roomcatalog.ByID(command.ItemID)
 			if !ok || !item.Purchasable {
@@ -328,7 +362,9 @@ func MutateRoom(s Store, userID, action string, command RoomCommand, now time.Ti
 				}
 			}
 		}
-		if action == "store" {
+		if action == "sell" {
+			// The unit is gone; only the revision and the operation key remain to save.
+		} else if action == "store" {
 			unit.Set("placed", false)
 		} else {
 			x, y, rotation := *command.TX, *command.TY, *command.Rotation
@@ -341,6 +377,9 @@ func MutateRoom(s Store, userID, action string, command RoomCommand, now time.Ti
 			}
 			if len(units) >= 4000 && action == "purchase" {
 				return ErrRoomPosition
+			}
+			if err := checkEquipmentLimit(item, unit, units, min(room.GetInt("tiles_x"), room.GetInt("tiles_y"))); err != nil {
+				return err
 			}
 			sx, sy := item.SizeX, item.SizeY
 			if rotation%2 == 1 {
@@ -374,10 +413,14 @@ func MutateRoom(s Store, userID, action string, command RoomCommand, now time.Ti
 			unit.Set("ty", y)
 			unit.Set("rotation", rotation)
 		}
-		if err := tx.Save(unit); err != nil {
-			return err
+		if action != "sell" {
+			if err := tx.Save(unit); err != nil {
+				return err
+			}
 		}
-		if stoveID := unit.GetString("stove_id"); stoveID != "" {
+		if action == "sell" {
+			// Nothing left to position: the sold unit is gone.
+		} else if stoveID := unit.GetString("stove_id"); stoveID != "" {
 			stove, err := tx.Get("player_stoves", stoveID)
 			if err != nil {
 				return err
@@ -407,4 +450,87 @@ func MutateRoom(s Store, userID, action string, command RoomCommand, now time.Ti
 		return err
 	})
 	return result, err
+}
+
+// checkEquipmentLimit refuses placing one more stove or counter than the café's
+// size allows. Moving a unit that already stands in the café never counts it
+// twice; cafés above the limit (an older save) keep what they have.
+func checkEquipmentLimit(item roomcatalog.Item, unit Record, units []Record, tiles int) error {
+	limit := gamerules.EquipmentLimit(item.Kind, tiles)
+	if limit == 0 || unit.GetBool("placed") {
+		return nil
+	}
+	placed := 0
+	for _, other := range units {
+		if other.ID() == unit.ID() || !other.GetBool("placed") {
+			continue
+		}
+		if otherItem, ok := roomcatalog.ByID(other.GetInt("item_id")); ok && otherItem.Kind == item.Kind {
+			placed++
+		}
+	}
+	if placed >= limit {
+		return ErrRoomCapacity
+	}
+	return nil
+}
+
+// sellUnit sells a stored unit for gamerules.SellValue coins. A stove's
+// cooking row goes with it; the last stove, counter or door is never sold.
+func sellUnit(tx Store, userID, unitID string) error {
+	unit, err := tx.Get("player_inventory", unitID)
+	if err != nil || unit.GetString("user") != userID {
+		return ErrRoomOwned
+	}
+	item, ok := roomcatalog.ByID(unit.GetInt("item_id"))
+	if !ok || roomcatalog.Layer(item) == "structure" {
+		return ErrRoomPosition
+	}
+	if unit.GetBool("placed") {
+		return ErrSellPlaced
+	}
+	if slices.Contains(essentialKinds, item.Kind) {
+		units, err := tx.Find("player_inventory", Query{Where: Where{"user": userID}, Limit: 10000})
+		if err != nil {
+			return err
+		}
+		others := 0
+		for _, other := range units {
+			if otherItem, ok := roomcatalog.ByID(other.GetInt("item_id")); ok && other.ID() != unit.ID() && otherItem.Kind == item.Kind {
+				others++
+			}
+		}
+		if others == 0 {
+			return ErrSellLast
+		}
+	}
+	value := gamerules.SellValue(item)
+	if value <= 0 {
+		return ErrSellValue
+	}
+	if stoveID := unit.GetString("stove_id"); stoveID != "" {
+		if job, err := tx.First("stove_cooking", Where{"stove": stoveID}); err == nil {
+			if err := tx.Delete(job); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		if stove, err := tx.Get("player_stoves", stoveID); err == nil {
+			if err := tx.Delete(stove); err != nil {
+				return err
+			}
+		} else if !errors.Is(err, ErrNotFound) {
+			return err
+		}
+	}
+	state, err := tx.First(PlayerCollection, Where{"user": userID})
+	if err != nil {
+		return err
+	}
+	state.Set("gold", state.GetInt64("gold")+value)
+	if err := tx.Save(state); err != nil {
+		return err
+	}
+	return tx.Delete(unit)
 }

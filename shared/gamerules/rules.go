@@ -233,6 +233,8 @@ type DecorRules struct {
 	FullCopies     int `json:"fullCopies"`
 	HalfCopies     int `json:"halfCopies"`
 	MaxBonusTenths int `json:"maxBonusTenths"`
+	// Sets pay a bonus for distinct items of one theme, on top of the capped charm.
+	Sets SetRules `json:"sets"`
 }
 
 // DecorLine is one decoration item's share of the bonus.
@@ -250,6 +252,9 @@ type DecorSummary struct {
 	RawTenths int         `json:"rawTenths"`
 	MaxTenths int         `json:"maxTenths"`
 	Lines     []DecorLine `json:"lines"`
+	// Theme sets with at least one piece placed, and the bonus they pay.
+	Sets      []DecorSet `json:"sets"`
+	SetTenths int        `json:"setTenths"`
 }
 
 // TableRules: every meal leaves its dishes on the table, which stays dirty
@@ -401,6 +406,7 @@ type Rules struct {
 	Spices            SpiceRules       `json:"spices"`
 	Crates            CrateRules       `json:"crates"`
 	Missions          MissionRules     `json:"missions"`
+	Equipment         EquipmentRules   `json:"equipment"`
 	Levels            []Level          `json:"levels"`
 	CustomerFrequency []Frequency      `json:"customerFrequency"`
 	Tips              []Tip            `json:"tips"`
@@ -483,6 +489,9 @@ func validate(r Rules) string {
 		return "invalid decor rules"
 	}
 	if message := validatePantry(r); message != "" {
+		return message
+	}
+	if message := validateShop(r); message != "" {
 		return message
 	}
 	if message := validateProgress(r); message != "" {
@@ -781,7 +790,7 @@ func DecorBonus(itemIDs []int) DecorSummary {
 	for _, id := range itemIDs {
 		copies[id]++
 	}
-	summary := DecorSummary{MaxTenths: d.MaxBonusTenths, Lines: []DecorLine{}}
+	summary := DecorSummary{MaxTenths: d.MaxBonusTenths, Lines: []DecorLine{}, Sets: []DecorSet{}}
 	for id, n := range copies {
 		item, ok := roomcatalog.ByID(id)
 		if !ok || item.Charm <= 0 {
@@ -800,7 +809,9 @@ func DecorBonus(itemIDs []int) DecorSummary {
 		}
 		return a.ItemID < b.ItemID
 	})
-	summary.BonusTenths = min(summary.RawTenths, d.MaxBonusTenths)
+	summary.Sets, summary.SetTenths = decorSets(copies)
+	summary.MaxTenths += maxSetTenths()
+	summary.BonusTenths = min(summary.RawTenths, d.MaxBonusTenths) + summary.SetTenths
 	return summary
 }
 
@@ -954,6 +965,9 @@ func Public() Rules {
 	snapshot.Spices.List = Spices()
 	snapshot.Crates = CrateRulesNow()
 	snapshot.Missions.Slots = MissionSlots()
+	snapshot.Equipment = Equipment()
+	snapshot.Decor.Sets.Themes = append([]SetTheme{}, rules.Decor.Sets.Themes...)
+	snapshot.Decor.Sets.Tiers = append([]SetTier{}, rules.Decor.Sets.Tiers...)
 	return snapshot
 }
 

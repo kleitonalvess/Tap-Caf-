@@ -1,0 +1,18 @@
+{
+  "id": 3500007,
+  "classname": "paper_lantern",
+  "name": "Lanterna de Papel",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 350,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 132,
+  "level": 9,
+  "placeholder": true,
+  "parts": [],
+  "art": "paper-lantern",
+  "charm": 4,
+  "theme": "japan"
+}

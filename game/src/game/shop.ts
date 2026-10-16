@@ -7,7 +7,7 @@ export function storeCategory(item: RoomCatalogItem): string {
   if (item.type === 1) return 'wallpaper';
   if (item.type === 2) return 'door';
   switch (item.kind) {
-    case 'stove': return (item.cookSpeedPercent ?? 0) > 0 ? 'stove-fire' : 'stove';
+    case 'stove': return (item.cookSpeedPercent ?? 0) > 0 || (item.servingsBonusPercent ?? 0) > 0 ? 'stove-fire' : 'stove';
     case 'counter': case 'register': return 'counter';
     case 'table': return 'table';
     case 'chair': return 'chair';
@@ -54,7 +54,27 @@ export function itemPerk(item: RoomCatalogItem): string {
   const parts: string[] = [];
   if (item.kind === 'stove' && item.cookSpeedPercent) parts.push(`cozinha ${item.cookSpeedPercent}% mais rápido`);
   if (item.kind === 'stove' && item.spoilBonusPercent) parts.push(`o prato dura ${item.spoilBonusPercent}% mais`);
+  if (item.kind === 'stove' && item.servingsBonusPercent) parts.push(`+${item.servingsBonusPercent}% de porções por lote`);
   if (item.kind === 'register') parts.push('quem se serve sozinho também dá gorjeta');
   if (item.charm) parts.push(charmText(item.charm));
+  if (item.theme) parts.push(`conjunto ${THEME_NAMES[item.theme]}`);
   return parts.join(' · ');
+}
+
+export const THEME_NAMES: Readonly<Record<string, string>> = { japan: 'Japão', italy: 'Itália', noble: 'Nobreza Clássica' };
+
+/** What selling a stored unit returns (shared/gamerules SellValue): a share of
+ * its coin price; Grana items and items outside the store have none. */
+export function sellValue(item: RoomCatalogItem, percent: number): number {
+  if (!item.purchasable || (item.priceCash ?? 0) > 0) return 0;
+  return Math.floor(item.priceGold * percent / 100);
+}
+
+/** The confirmation text before selling, or why it cannot be sold. */
+export function sellPrompt(item: RoomCatalogItem, percent: number): { value: number; message: string } {
+  const value = sellValue(item, percent);
+  if (value <= 0) {
+    return { value, message: (item.priceCash ?? 0) > 0 ? `${item.name} foi comprado com Grana e não tem valor de venda em moedas.` : `${item.name} não tem valor de venda.` };
+  }
+  return { value, message: `${item.name} sai do seu Inventário por ${value.toLocaleString('pt-BR')} ${value === 1 ? 'moeda' : 'moedas'} (${percent}% do preço). A venda não pode ser desfeita.` };
 }

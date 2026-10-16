@@ -1,0 +1,19 @@
+{
+  "id": 3070003,
+  "classname": "teppan_stove",
+  "name": "Chapa Teppanyaki",
+  "type": 3,
+  "kind": "stove",
+  "priceGold": 3500,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 47,
+  "level": 10,
+  "placeholder": true,
+  "parts": [],
+  "art": "stove-teppan",
+  "theme": "japan",
+  "cookSpeedPercent": 15,
+  "spoilBonusPercent": 20
+}

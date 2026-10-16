@@ -289,6 +289,7 @@ var operations = func() map[string]string {
 		"/api/coffe/room/purchase":     "purchase",
 		"/api/coffe/room/move":         "move",
 		"/api/coffe/room/store":        "store",
+		"/api/coffe/room/sell":         "sell",
 		"/api/coffe/room/tables/clean": "table_clean",
 		"/api/coffe/room/expand":       "room_expand",
 	}
@@ -356,7 +357,7 @@ var streetActions = func() map[string]bool {
 // accepts (database/room.go, cooking.go, staff.go, tables.go, expansion.go).
 var operationFields = func() map[string][]string {
 	room := []string{"itemId", "unitId", "tx", "ty", "rotation", "revision", "requestId"}
-	fields := map[string][]string{"purchase": room, "move": room, "store": room,
+	fields := map[string][]string{"purchase": room, "move": room, "store": room, "sell": room,
 		"table_clean": {"tableId"}, "room_expand": {"tiles", "pay"}}
 	for _, route := range cafe.CookingActions {
 		fields[route.Action] = []string{"stoveId", "recipeId", "roomId", "spice"}

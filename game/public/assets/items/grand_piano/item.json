@@ -1,0 +1,19 @@
+{
+  "id": 3500011,
+  "classname": "grand_piano",
+  "name": "Piano Clássico",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 3500,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 96,
+  "level": 20,
+  "placeholder": true,
+  "parts": [],
+  "art": "piano",
+  "charm": 10,
+  "featured": true,
+  "theme": "noble"
+}

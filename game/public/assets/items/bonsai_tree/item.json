@@ -1,0 +1,18 @@
+{
+  "id": 3500006,
+  "classname": "bonsai_tree",
+  "name": "Bonsai",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 300,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 78,
+  "level": 7,
+  "placeholder": true,
+  "parts": [],
+  "art": "bonsai",
+  "charm": 4,
+  "theme": "japan"
+}

@@ -13,5 +13,6 @@
   "placeholder": true,
   "parts": [],
   "art": "statue",
-  "charm": 8
+  "charm": 8,
+  "theme": "italy"
 }

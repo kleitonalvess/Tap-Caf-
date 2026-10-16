@@ -1,0 +1,19 @@
+{
+  "id": 3070004,
+  "classname": "wood_oven",
+  "name": "Forno a Lenha",
+  "type": 3,
+  "kind": "stove",
+  "priceGold": 4200,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 64,
+  "level": 12,
+  "placeholder": true,
+  "parts": [],
+  "art": "stove-oven",
+  "charm": 3,
+  "theme": "italy",
+  "cookSpeedPercent": 20
+}

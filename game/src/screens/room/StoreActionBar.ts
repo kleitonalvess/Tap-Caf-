@@ -22,6 +22,8 @@ export interface StoreActions {
   onExpand?(): void;
   /** The cash register in the header: "Caixa do dia". */
   onCashRegister?(): void;
+  /** Inventory tab: sell one stored unit of this entry (after a confirmation). */
+  onSell?(entry: StoreEntry): void;
 }
 
 /** Visible silhouette of cafe_action_bar.png, excluding its transparent canvas. */
@@ -82,6 +84,8 @@ export class StoreActionBar {
   private inventory = false;
   private activeTopTab: (typeof TOP_TABS)[number] = 'shop';
   private message?: Text;
+  private capacity?: Text;
+  private readonly sellButtons: Container[] = [];
   private topTabTexture?: Texture;
   private readonly syncTopTabs: (() => void)[] = [];
 
@@ -372,7 +376,11 @@ export class StoreActionBar {
         });
       }
       const messageX = TOP_TAB_LEFT + TOP_TABS.length * (topTabWidth + TOP_TAB_GAP) + 12;
-      this.message = new Text({ text: 'Selecione um item. Alt + arraste para mover.', style: { fontFamily: FONT_FAMILY, fontSize: 16, fill: 0xffffff, stroke: { color: 0x38210e, width: 3 }, wordWrap: true, wordWrapWidth: messageRight - messageX } });
+      // Placed stoves and counters against the café's limit, at the right of the status line.
+      this.capacity = new Text({ text: '', style: { fontFamily: FONT_FAMILY, fontSize: 16, fontWeight: 'bold', fill: 0xfff3c4, stroke: { color: 0x38210e, width: 3 } } });
+      this.capacity.anchor.set(1, 1); this.capacity.position.set(messageRight, -10); this.capacity.eventMode = 'none'; this.capacity.label = 'store-capacity';
+      content.addChild(this.capacity);
+      this.message = new Text({ text: 'Selecione um item. Alt + arraste para mover.', style: { fontFamily: FONT_FAMILY, fontSize: 16, fill: 0xffffff, stroke: { color: 0x38210e, width: 3 }, wordWrap: true, wordWrapWidth: messageRight - messageX - 240 } });
       // Anchored at its base: a wrapped second line grows upwards, never over the categories.
       this.message.anchor.set(0, 1); this.message.position.set(messageX, -10); this.message.eventMode = 'none'; this.message.label = 'store-status'; content.addChild(this.message);
       this.syncTopTabs.forEach((sync) => sync());
@@ -435,8 +443,16 @@ export class StoreActionBar {
 
   setMessage(message: string): void { if (this.message) this.message.text = message; }
 
+  /** "Fogões 2/3 · Balcões 1/3": a full kind turns the count red-orange. */
+  setCapacity(stoves: { placed: number; max: number }, counters: { placed: number; max: number }): void {
+    if (!this.capacity) return;
+    this.capacity.text = `Fogões ${stoves.placed}/${stoves.max} · Balcões ${counters.placed}/${counters.max}`;
+    this.capacity.style.fill = stoves.placed >= stoves.max || counters.placed >= counters.max ? 0xffb38a : 0xfff3c4;
+  }
+
   private renderEntries(): void {
     const entries = this.activeTopTab === 'news' ? this.newsEntries : this.entries;
+    this.sellButtons.splice(0).forEach((button) => button.destroy({ children: true }));
     this.slots.forEach((slot, index) => {
       const face = this.slotFaces[index];
       // Keep the card's background; all its contents share the same centered scale.
@@ -466,6 +482,7 @@ export class StoreActionBar {
         const count = new Text({ text, style: { fontFamily: FONT_FAMILY, fontSize: 14, fontWeight: 'bold', fill: 0xffffff } });
         count.label = 'store-item-quantity-value'; count.anchor.set(.5); count.eventMode = 'none'; badge.addChild(count);
         face.addChild(badge);
+        if (this.actions?.onSell) slot.addChild(this.sellButton(entry));
       }
       if (!entry.unit) {
         const price = new Container(); price.label = 'store-item-price'; price.eventMode = 'none';
@@ -530,6 +547,24 @@ export class StoreActionBar {
       const enabled = index < 2 ? this.page > 0 : this.page < last;
       button.alpha = enabled ? 1 : .4; button.eventMode = enabled ? 'static' : 'none'; button.cursor = enabled ? 'pointer' : 'default';
     });
+  }
+
+  /** A small "Vender" tag on an inventory card; its taps never start a drag. */
+  private sellButton(entry: StoreEntry): Container {
+    const button = new Container();
+    button.label = `store-sell-${entry.item.classname}`;
+    button.position.set(6, 6);
+    button.eventMode = 'static'; button.cursor = 'pointer';
+    const width = 62, height = 24;
+    button.hitArea = new Rectangle(-4, -4, width + 8, height + 8);
+    button.addChild(new Graphics().roundRect(0, 0, width, height, 12).fill(0xe0a526).stroke({ color: 0x7a4d0c, width: 2 }));
+    const caption = new Text({ text: 'Vender', style: { fontFamily: FONT_FAMILY, fontSize: 13, fontWeight: 'bold', fill: 0xffffff, stroke: { color: 0x7a4d0c, width: 3 } } });
+    caption.anchor.set(0.5); caption.position.set(width / 2, height / 2); caption.eventMode = 'none';
+    button.addChild(caption);
+    for (const name of ['pointerdown', 'pointerup', 'pointerupoutside'] as const) button.on(name, (event) => event.stopPropagation());
+    button.on('pointertap', (event) => { event.stopPropagation(); this.actions?.onSell?.(entry); });
+    this.sellButtons.push(button);
+    return button;
   }
 
   open(): void {

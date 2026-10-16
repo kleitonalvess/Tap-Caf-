@@ -1,0 +1,18 @@
+{
+  "id": 3080004,
+  "classname": "sushi_counter",
+  "name": "Balcão de Sushi",
+  "type": 3,
+  "kind": "counter",
+  "priceGold": 1600,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 52,
+  "level": 10,
+  "placeholder": true,
+  "parts": [],
+  "art": "counter-sushi",
+  "charm": 4,
+  "theme": "japan"
+}

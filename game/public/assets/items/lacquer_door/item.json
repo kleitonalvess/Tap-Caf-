@@ -1,0 +1,29 @@
+{
+  "id": 3010004,
+  "classname": "lacquer_door",
+  "name": "Porta Laqueada Oriental",
+  "type": 2,
+  "kind": "door",
+  "priceGold": 300,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 176,
+  "level": 8,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "mafia_door",
+  "tint": "#8e2a1f",
+  "tintMode": "color",
+  "charm": 3,
+  "wall_cutter_index": 0.85,
+  "door": {
+    "sourceRotation": 0,
+    "hinge": {
+      "x": 87,
+      "y": 179
+    },
+    "baseSlope": -0.5
+  },
+  "theme": "japan"
+}

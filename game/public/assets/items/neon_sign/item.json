@@ -1,0 +1,17 @@
+{
+  "id": 3600006,
+  "classname": "neon_sign",
+  "name": "Letreiro Neon Café",
+  "type": 3,
+  "kind": "panel",
+  "priceGold": 700,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 195.2,
+  "level": 12,
+  "placeholder": true,
+  "parts": [],
+  "art": "neon-sign",
+  "charm": 5
+}

@@ -41,6 +41,8 @@ export interface GameRules {
   daily?: { days: { day: number; coins: number; cash: number; spices?: number }[] };
   /** The pantry's special spices (codes 800001–800003). */
   spices?: { list: Array<{ code: number; name: string; effect: 'double' | 'rush' | 'preserve'; description: string; priceCoins: number }> };
+  /** Stoves and counters allowed per expansion step, and the share a sale returns. */
+  equipment?: { stoves: number[]; counters: number[]; sellPercent: number };
 }
 
 export async function loadGameRules(signal?: AbortSignal): Promise<GameRules> {

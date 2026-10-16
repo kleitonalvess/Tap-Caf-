@@ -1,0 +1,20 @@
+{
+  "id": 3050006,
+  "classname": "marble_floor",
+  "name": "Piso de Mármore",
+  "type": 0,
+  "kind": "decor",
+  "priceGold": 150,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 0,
+  "level": 15,
+  "placeholder": true,
+  "parts": [],
+  "variantOf": "default_tile_name",
+  "tint": "#e9e3d6",
+  "tintMode": "color",
+  "charm": 3,
+  "theme": "noble"
+}
