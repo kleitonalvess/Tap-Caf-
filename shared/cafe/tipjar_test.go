@@ -7,6 +7,7 @@ import (
 
 	"coffe-mania/shared/gamerules"
 	"coffe-mania/shared/gamewire"
+	"coffe-mania/shared/roomcatalog"
 )
 
 // serveFood puts a dish of the recipe on the counter and serves n portions.
@@ -125,5 +126,42 @@ func TestTheCriticPaysMoreLiftsPopularityAndFillsTheJar(t *testing.T) {
 	plain, err := ServeCustomerAs(s, "owner", food.ID(), "", gamewire.ServeOptions{VIP: "nobody"}, progressT0)
 	if err != nil || plain.VIP != "" || plain.Coins != regular.Coins {
 		t.Fatalf("unknown visitor: %+v %v", plain, err)
+	}
+}
+
+// The offline shift fills the jar too: the wake must not save a stale room over it.
+func TestTheOfflineShiftKeepsWhatItPutInTheTipJar(t *testing.T) {
+	s, _ := newCafe(t, "owner")
+	counter := ""
+	units, err := s.Find("player_inventory", Query{Where: Where{"user": "owner", "placed": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, unit := range units {
+		if item, ok := roomcatalog.ByID(unit.GetInt("item_id")); ok && item.Kind == "counter" {
+			counter = unit.ID()
+		}
+	}
+	food, err := s.New("room_food")
+	if err != nil {
+		t.Fatal(err)
+	}
+	setAll(food, map[string]any{"user": "owner", "recipe_id": "cake_1", "job_id": "j", "servings": 10, "counter": counter})
+	if err := s.Save(food); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveDormant(s, "owner", gamewire.Sleep{}, progressT0); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := WakeRoom(s, "owner", progressT0.Add(time.Hour))
+	if err != nil || summary == nil || summary.Served == 0 {
+		t.Fatalf("summary = %+v, %v", summary, err)
+	}
+	room, err := s.First("player_rooms", Where{"user": "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if room.GetInt64("tip_jar") == 0 || room.GetString("slept_at") != "" || awaySummary(room) == nil {
+		t.Fatalf("jar %d, slept_at %q, summary kept %v after %d portions", room.GetInt64("tip_jar"), room.GetString("slept_at"), awaySummary(room) != nil, summary.Served)
 	}
 }

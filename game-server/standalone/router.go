@@ -55,7 +55,7 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 		}
 		if request.RoomID != "" && request.RoomID != e.profile.ID {
 			// A non-player neighbour's café: ready for the visit, then a ticket into it.
-			if _, npc := gamerules.NeighborByID(request.RoomID); !npc {
+			if _, npc := gamerules.NeighborByID(request.RoomID); !npc || !e.visible(request.RoomID) {
 				return failure(404, "Quarto não encontrado.")
 			}
 			if err := cafe.EnsureNeighborCafe(e.store, request.RoomID, time.Now()); err != nil {
@@ -244,7 +244,7 @@ func (e *Engine) get(path string, query url.Values) (int, []byte) {
 	// The player's café, or a non-player neighbour's for the room and its cooking.
 	owner := e.profile.ID
 	if room := query.Get("room"); room != "" && room != e.profile.ID {
-		if _, npc := gamerules.NeighborByID(room); !npc || path != "/api/coffe/room" && path != "/api/coffe/cooking" {
+		if _, npc := gamerules.NeighborByID(room); !npc || !e.visible(room) || path != "/api/coffe/room" && path != "/api/coffe/cooking" {
 			return failure(404, "Quarto não encontrado.")
 		}
 		return e.visit(path, room)
@@ -338,6 +338,12 @@ func (e *Engine) get(path string, query url.Values) (int, []byte) {
 		return reply(200, snapshot)
 	}
 	return failure(404, "Recurso indisponível no modo offline.")
+}
+
+// visible: the player's level shows this non-player neighbour (minLevel).
+func (e *Engine) visible(room string) bool {
+	visible, err := cafe.NeighborVisible(e.store, e.profile.ID, room)
+	return err == nil && visible
 }
 
 // visit answers the room and cooking of a neighbour's café as a visitor sees

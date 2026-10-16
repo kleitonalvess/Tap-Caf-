@@ -249,8 +249,16 @@ func WakeRoom(s Store, owner string, now time.Time) (*gamewire.AwaySummary, erro
 		if now.Sub(slept) < time.Duration(gamerules.Offline().MinAwaySeconds)*time.Second {
 			return tx.Save(room)
 		}
+		// The catch-up saves the room itself (the tip jar fills with each
+		// meal): clear slept_at first, then write the summary on a fresh read.
+		if err := tx.Save(room); err != nil {
+			return err
+		}
 		summary, err := catchUp(tx, owner, slept, now)
 		if err != nil {
+			return err
+		}
+		if room, err = tx.First("player_rooms", Where{"user": owner}); err != nil {
 			return err
 		}
 		merged := mergeAway(result, summary)

@@ -72,13 +72,28 @@ func otherPlayers(s Store, user string, limit int) ([]Record, error) {
 	return out, nil
 }
 
-// isNeighbor: a non-player neighbour, or another account with a café.
+// NeighborVisible: a non-player neighbour shows up (in the bar, for visits,
+// helps and gifts) once the player reaches its minLevel; anyone else is not
+// limited by level.
+func NeighborVisible(s Store, user, id string) (bool, error) {
+	neighbor, npc := gamerules.NeighborByID(id)
+	if !npc || neighbor.MinLevel <= 1 {
+		return true, nil
+	}
+	state, err := GetOrCreatePlayer(s, user)
+	if err != nil {
+		return false, err
+	}
+	return state.GetInt("level") >= neighbor.MinLevel, nil
+}
+
+// isNeighbor: a non-player neighbour the player's level shows, or another account with a café.
 func isNeighbor(s Store, user, id string) (bool, error) {
 	if id == "" || id == user {
 		return false, nil
 	}
 	if _, npc := gamerules.NeighborByID(id); npc {
-		return true, nil
+		return NeighborVisible(s, user, id)
 	}
 	if _, err := s.First(PlayerCollection, Where{"user": id}); errors.Is(err, ErrNotFound) {
 		return false, nil
@@ -217,9 +232,11 @@ func count1(tx Store, user string, now time.Time, stat string) error {
 }
 
 // EnsureNeighborCafe gives a non-player neighbour its café the first time it is
-// visited (the starter room in its theme, at its level) and, on every visit,
-// something to help with: a dish on the fire to season and plates on two
-// tables to clear. Nothing is charged: the neighbour is not a player.
+// visited (the starter room in its theme, at its level) and, on each visit
+// while its room sleeps, something to help with: a dish on the fire to season
+// and plates on two tables to clear. An awake room keeps its dirt and cooking
+// in the room server's memory, which would never see rows written here.
+// Nothing is charged: the neighbour is not a player.
 func EnsureNeighborCafe(s Store, id string, now time.Time) error {
 	neighbor, ok := gamerules.NeighborByID(id)
 	if !ok {
@@ -233,7 +250,8 @@ func EnsureNeighborCafe(s Store, id string, now time.Time) error {
 		if err != nil {
 			return err
 		}
-		if state.GetString("cafe_name") != neighbor.CafeName {
+		first := state.GetString("cafe_name") != neighbor.CafeName
+		if first {
 			// First visit: name, level and the theme's floor and ornaments.
 			state.Set("cafe_name", neighbor.CafeName)
 			state.Set("level", neighbor.Level)
@@ -246,6 +264,13 @@ func EnsureNeighborCafe(s Store, id string, now time.Time) error {
 			if err := decorateNeighborCafe(tx, id, neighbor.Theme); err != nil {
 				return err
 			}
+		}
+		room, err := tx.First("player_rooms", Where{"user": id})
+		if err != nil {
+			return err
+		}
+		if !first && room.GetTime("slept_at").IsZero() {
+			return nil
 		}
 		return refreshNeighborChores(tx, id, neighbor, now)
 	})

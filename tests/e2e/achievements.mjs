@@ -51,8 +51,9 @@ try {
   await game.waitFor(() => window.__coffeMania.screens.active.achievementsModal?.isOpen, undefined, 15000);
   await sleep(600);
   const first = await progress(game);
-  run.check(first.achievements.length === 9 && first.missions.length === 3, 'o troféu lista 9 conquistas e 3 missões', { achievements: first.achievements.length, missions: first.missions.length });
-  run.check(!first.achievements.some((a) => a.id === 'amount_neighbors' || a.id === 'sent_gifts'), 'as conquistas sociais ficam escondidas até existirem vizinhos');
+  run.check(first.achievements.length === 11 && first.missions.length === 3, 'o troféu lista 11 conquistas e 3 missões', { achievements: first.achievements.length, missions: first.missions.length });
+  // Since Sprint 16 the neighbours exist (NPCs too), so the social achievements show.
+  run.check(['amount_neighbors', 'sent_gifts'].every((id) => first.achievements.some((a) => a.id === id)), 'as conquistas sociais aparecem desde a vizinhança da Sprint 16');
   run.check((await badge(game)) === null && first.ready === 0, 'sem prêmios o troféu não tem selo', first.ready);
   await game.shot('1-conquistas');
   await game.click('achievements-tab-missions');

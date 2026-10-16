@@ -71,14 +71,23 @@ func New(store *cafe.MemoryStore, profile Profile, lastSeen time.Time, options g
 	}
 	e := &Engine{store: store, profile: profile, options: options, hooks: hooks, conns: map[*Connection]bool{}, stop: make(chan struct{})}
 	store.OnCommit = e.committed
-	// Saves from before the granted flag get the same marking as the server's
-	// migration 202610270001 (idempotent: a marked café changes nothing).
-	if _, err := store.First("player_rooms", cafe.Where{"user": profile.ID}); err == nil {
+	// Saves from before Sprint 16 get the marking of the server's migration
+	// 202610270001 once, like the migration: tip_jar, which that migration
+	// added and every room since starts with, tells a marked save apart. Run
+	// again, it would mark units bought after starter units were sold.
+	if room, err := store.First("player_rooms", cafe.Where{"user": profile.ID}); err == nil && room.GetString("tip_jar") == "" {
 		if _, err := cafe.MarkLegacyGranted(store, profile.ID); err != nil {
+			return nil, err
+		}
+		room.Set("tip_jar", 0)
+		if err := store.Save(room); err != nil {
 			return nil, err
 		}
 	}
 	if err := e.restore(lastSeen); err != nil {
+		return nil, err
+	}
+	if err := e.sleepNeighborRooms(); err != nil {
 		return nil, err
 	}
 	e.manager = gameruntime.New(e.storage(), options)
@@ -153,6 +162,43 @@ func (e *Engine) committed(collections []string) {
 // slept_at and replays the absence when it wakes. A page closed while the
 // room was awake never saved that sleep: the absence starts at the last
 // moment the page was seen, and the customers inside left with it.
+// sleepNeighborRooms: no room is awake when the engine opens, but a tab closed
+// during a visit leaves the neighbour's café without slept_at, and only a
+// sleeping café gets new chores (cafe.EnsureNeighborCafe). Its saved customers
+// went home with the page.
+func (e *Engine) sleepNeighborRooms() error {
+	return e.store.Transaction(func(tx cafe.Store) error {
+		for _, neighbor := range gamerules.Neighbors().List {
+			room, err := tx.First("player_rooms", cafe.Where{"user": neighbor.ID})
+			if errors.Is(err, cafe.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if !room.GetTime("slept_at").IsZero() {
+				continue
+			}
+			npcs, err := tx.Find("room_npcs", cafe.Query{Where: cafe.Where{"user": neighbor.ID}})
+			if err != nil {
+				return err
+			}
+			for _, npc := range npcs {
+				if err := tx.Delete(npc); err != nil {
+					return err
+				}
+			}
+			room.Set("active", false)
+			room.Set("human_count", 0)
+			room.Set("slept_at", time.Now())
+			if err := tx.Save(room); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (e *Engine) restore(lastSeen time.Time) error {
 	if lastSeen.IsZero() {
 		return nil
@@ -272,7 +318,7 @@ func (e *Engine) Close(ctx context.Context) error {
 // only the player's café and the non-player neighbours' cafés exist here.
 func (e *Engine) ticketRoom(ticket string) string {
 	if room, ok := strings.CutPrefix(ticket, "local:"); ok {
-		if _, npc := gamerules.NeighborByID(room); npc {
+		if _, npc := gamerules.NeighborByID(room); npc && e.visible(room) {
 			return room
 		}
 	}

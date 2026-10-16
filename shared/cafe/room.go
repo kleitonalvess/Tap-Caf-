@@ -168,7 +168,7 @@ func EnsureRoom(s Store, userID string) error {
 		if err != nil {
 			return err
 		}
-		setAll(room, map[string]any{"user": userID, "revision": 1, "tiles_x": 8, "tiles_y": 8})
+		setAll(room, map[string]any{"user": userID, "revision": 1, "tiles_x": 8, "tiles_y": 8, "tip_jar": 0})
 		return tx.Save(room)
 	})
 }

@@ -69,9 +69,40 @@ func TestANeighborCafeHasChoresOnEveryVisit(t *testing.T) {
 	if again, _ := RoomDirt(s, papa); len(again) != 2 || again[0].Plates != 1 {
 		t.Fatalf("second visit: %+v", again)
 	}
+	// Cleared while the room is awake: no plates appear behind the room server's back.
+	for _, row := range mustFind(t, s, "room_dirt", papa) {
+		if err := s.Delete(row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := EnsureNeighborCafe(s, papa, progressT0.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if awake, _ := RoomDirt(s, papa); len(awake) != 0 {
+		t.Fatalf("plates added to an awake room: %+v", awake)
+	}
+	// Asleep, the next visit has chores again.
+	if err := SaveDormant(s, papa, gamewire.Sleep{}, progressT0.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureNeighborCafe(s, papa, progressT0.Add(4*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if asleep, _ := RoomDirt(s, papa); len(asleep) != 2 {
+		t.Fatalf("plates after the room slept: %+v", asleep)
+	}
 	if err := EnsureNeighborCafe(s, "someone", progressT0); !errors.Is(err, ErrNotNeighbor) {
 		t.Fatalf("a player is not a generated café: %v", err)
 	}
+}
+
+func mustFind(t *testing.T, s Store, collection, user string) []Record {
+	t.Helper()
+	rows, err := s.Find(collection, Query{Where: Where{"user": user}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rows
 }
 
 func TestHelpingANeighborPaysThreeTimesADay(t *testing.T) {
@@ -209,5 +240,24 @@ func TestGiftsBetweenNeighbors(t *testing.T) {
 	stats, _ := s.First(StatsCollection, Where{"user": "owner"})
 	if readStats(stats).counts[gamerules.StatGifts] != int64(rules.DailyGifts) {
 		t.Fatalf("gifts sent = %d", readStats(stats).counts[gamerules.StatGifts])
+	}
+}
+
+// Tia Cotinha (minLevel 69) takes no help, visit or gift before the player reaches her level.
+func TestAHiddenNeighborTakesNoHelpBeforeItsLevel(t *testing.T) {
+	s, _ := newCafe(t, "owner")
+	const cotinha = "npcneighbor0002"
+	if visible, err := NeighborVisible(s, "owner", cotinha); err != nil || visible {
+		t.Fatalf("visible at level 1: %v %v", visible, err)
+	}
+	if _, err := HelpNeighbor(s, "owner", cotinha, "cheer", progressT0); !errors.Is(err, ErrNotNeighbor) {
+		t.Fatalf("help at level 1: %v", err)
+	}
+	if _, err := SendGift(s, "owner", cotinha, "coins", progressT0); !errors.Is(err, ErrNotNeighbor) {
+		t.Fatalf("gift at level 1: %v", err)
+	}
+	setPlayer(t, s, "owner", map[string]any{"level": 69})
+	if _, err := HelpNeighbor(s, "owner", cotinha, "cheer", progressT0); err != nil {
+		t.Fatalf("help at level 69: %v", err)
 	}
 }

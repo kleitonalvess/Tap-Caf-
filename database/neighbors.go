@@ -46,10 +46,14 @@ func ensureNeighborUser(app core.App, id string) error {
 	return app.Save(record)
 }
 
-// prepareRoomOwner makes a non-player neighbour's café ready before a visit;
+// prepareRoomOwner makes a non-player neighbour's café ready before a visit
+// (once the viewer's level shows that neighbour);
 // any other owner must already be a user.
-func prepareRoomOwner(app core.App, owner string) error {
+func prepareRoomOwner(app core.App, viewer, owner string) error {
 	if _, npc := gamerules.NeighborByID(owner); npc {
+		if visible, err := cafe.NeighborVisible(pb(app), viewer, owner); err != nil || !visible {
+			return cafe.ErrNotNeighbor
+		}
 		if err := ensureNeighborUser(app, owner); err != nil {
 			return err
 		}
@@ -57,6 +61,17 @@ func prepareRoomOwner(app core.App, owner string) error {
 	}
 	_, err := app.FindRecordById("users", owner)
 	return err
+}
+
+// sendGift: player_gifts.to_user is a relation, so a non-player neighbour
+// nobody has visited yet gets its account before the gift row.
+func sendGift(app core.App, from, to, item string, now time.Time) (cafe.GiftsSnapshot, error) {
+	if _, npc := gamerules.NeighborByID(to); npc {
+		if err := ensureNeighborUser(app, to); err != nil {
+			return cafe.GiftsSnapshot{}, err
+		}
+	}
+	return cafe.SendGift(pb(app), from, to, item, now)
 }
 
 func neighborFailure(r *core.RequestEvent, err error) error {
@@ -113,7 +128,7 @@ func registerNeighborRoutes(e *core.ServeEvent) {
 		if err := decoder.Decode(&body); err != nil || decoder.Decode(new(any)) != io.EOF || body.To == "" || len(body.To) > 15 || len(body.Item) > 40 {
 			return r.BadRequestError("Presente inválido.", nil)
 		}
-		gifts, err := cafe.SendGift(pb(r.App), user.Id, body.To, body.Item, time.Now())
+		gifts, err := sendGift(r.App, user.Id, body.To, body.Item, time.Now())
 		if err != nil {
 			return neighborFailure(r, err)
 		}
