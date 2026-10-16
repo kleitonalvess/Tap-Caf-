@@ -170,6 +170,19 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 			return failure(cafe.PantryErrorStatus(err))
 		}
 		return reply(200, result)
+	case "/api/coffe/tips/collect":
+		var request struct{}
+		if strictJSON(body, &request) != nil {
+			return failure(400, "Pedido inválido.")
+		}
+		result, err := cafe.CollectTips(e.store, e.profile.ID, time.Now())
+		if errors.Is(err, cafe.ErrTipJarEmpty) {
+			return failure(409, err.Error())
+		}
+		if err != nil {
+			return failure(500, "Não foi possível coletar as gorjetas.")
+		}
+		return reply(200, result)
 	case "/api/coffe/crates/open":
 		var request struct {
 			Crate     string `json:"crate"`

@@ -3,9 +3,9 @@ import { CrateOpener, crateContents, crateCost, ownedSpices, type Crate, type Sp
 import { RequestError, rewardText } from '../../game/src/game/rewards';
 
 const spices: Spice[] = [
-  { code: 800001, name: 'Tempero Caseiro', effect: 'double', description: '', priceCoins: 150, count: 0 },
-  { code: 800002, name: 'Tempero do Chef', effect: 'rush', description: '', priceCoins: 400, count: 0 },
-  { code: 800003, name: 'Tempero Real', effect: 'preserve', description: '', priceCoins: 800, count: 0 },
+  { code: 800001, name: 'Sal Turbinado', effect: 'servings', percent: 5, minExtra: 1, description: '', priceCoins: 150, count: 0 },
+  { code: 800002, name: 'Tomilho Acelerador', effect: 'rush', percent: 50, description: '', priceCoins: 400, count: 0 },
+  { code: 800003, name: 'Sálvia Salvadora', effect: 'rescue', description: '', priceCoins: 800, count: 0 },
 ];
 
 describe('despensa e caixas', () => {

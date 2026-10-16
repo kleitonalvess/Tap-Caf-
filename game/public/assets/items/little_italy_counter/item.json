@@ -1,0 +1,19 @@
+{
+  "id": 3080005,
+  "classname": "little_italy_counter",
+  "name": "Balcão Pequena Itália",
+  "type": 3,
+  "kind": "counter",
+  "priceGold": 1500,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 56,
+  "level": 9,
+  "placeholder": true,
+  "parts": [],
+  "art": "counter-italy",
+  "charm": 4,
+  "theme": "italy",
+  "nameSource": "blog-2010"
+}

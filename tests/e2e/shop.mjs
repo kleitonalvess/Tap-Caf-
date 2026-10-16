@@ -1,8 +1,9 @@
 // Sprint 13 no modo standalone: loja com todas as categorias, cadeado por nível,
 // aba Novidades, itens da loja no modal de nível, compras com moedas e com
 // Grana (arte tingida e desenhada), bônus de decoração na Popularidade e a
-// "Caixa do dia" no botão da caixa registradora. Sprint 15a: limite de fogões,
-// conjunto Japão na Popularidade e venda pelo Inventário com confirmação.
+// "Caixa do dia" (com o pote de gorjetas) na caixa registradora do salão. Sprint 15a:
+// limite de fogões, conjunto Banzai na Popularidade e, desde a Sprint 16, venda pelo
+// modo venda da caixa registradora da loja, com confirmação.
 import { scenario, sleep } from './lib/browser.mjs';
 import { startStandalone } from './lib/stack.mjs';
 
@@ -156,15 +157,15 @@ try {
   await game.page.keyboard.press('Escape');
   await sleep(400);
 
-  // 6. Caixa do dia, pelo botão da caixa registradora da loja.
-  await game.click('room-action-bar-icon-house');
-  await game.waitFor(() => window.__coffeMania.screens.active.storeBar?.isOpen, undefined, 15000);
-  await sleep(600);
-  await game.click('store-cash-register-icon');
+  // 6. Caixa do dia (com o pote de gorjetas), tocando a caixa registradora do salão.
+  const registerPoint = await game.itemPoint('register');
+  run.check(Boolean(registerPoint), 'a caixa registradora está no salão', registerPoint);
+  await game.page.mouse.click(registerPoint.x, registerPoint.y);
   await game.waitFor(() => window.__coffeMania.screens.active.cashDayModal?.isOpen, undefined, 10000);
   await sleep(600);
   const cashDay = await game.texts('cash-day-modal');
-  run.check(cashDay.includes('Caixa do dia') && cashDay.includes('Sua Caixa Registradora') && cashDay.includes('Moedas gastas'), 'a caixa registradora abre a Caixa do dia', cashDay);
+  run.check(cashDay.includes('Caixa do dia') && cashDay.includes('Sua Caixa Registradora') && cashDay.includes('Moedas gastas') && cashDay.includes('Pote de gorjetas'),
+    'a caixa registradora do salão abre a Caixa do dia com o pote de gorjetas', cashDay);
   await game.shot('7-caixa-do-dia');
   await game.page.keyboard.press('Escape');
   await sleep(500);
@@ -199,7 +200,7 @@ try {
   await game.waitFor(() => window.__coffeMania.screens.active.popularityModal?.isOpen, undefined, 10000);
   await sleep(600);
   const sets = await game.texts('popularity-modal');
-  run.check(sets.includes('Conjuntos: Japão 3 peças +1,0'), 'a Popularidade mostra o bônus do conjunto Japão', sets);
+  run.check(sets.includes('Conjuntos: Banzai (Japão) 3 peças +1,0'), 'a Popularidade mostra o bônus do conjunto Banzai', sets);
   await game.shot('8-conjunto-japao');
   await game.page.keyboard.press('Escape');
   await sleep(400);
@@ -209,13 +210,16 @@ try {
   await game.click('room-action-bar-icon-house');
   await game.waitFor(() => window.__coffeMania.screens.active.storeBar?.isOpen, undefined, 15000);
   await sleep(600);
-  await game.click('store-tab-inventory');
+  // The header's cash register opens the inventory in sell mode (as in the original store).
+  await game.click('store-cash-register-icon');
   await sleep(500);
   await game.click('store-category-flower');
   await sleep(600);
+  const sellMode = await game.texts('store-status');
+  run.check(/Modo venda/.test(sellMode), 'a caixa registradora da loja abre o modo venda do Inventário', sellMode);
   await game.shot('10-inventario-vender');
   const beforeSale = await game.player();
-  await game.click('store-sell-flower_vase');
+  await game.click('store-item-flower_vase');
   await game.waitFor(() => window.__coffeMania.screens.active.confirmDialog?.isOpen, undefined, 10000);
   await sleep(400);
   const prompt = await game.texts('confirm-dialog');

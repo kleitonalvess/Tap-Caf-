@@ -70,7 +70,7 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 			return fail(400, "Pedido inválido.")
 		}
 		body, err = MutateRoom(s, op.Owner, op.Action, command, now)
-	case "cook_start", "cook_serve", "cook_cancel", "cook_clean", "cook_season":
+	case "cook_start", "cook_serve", "cook_cancel", "cook_clean", "cook_season", "cook_rescue", "cook_boost":
 		var command struct {
 			StoveID  string `json:"stoveId"`
 			RecipeID string `json:"recipeId"`
@@ -91,6 +91,10 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 			err = CleanStove(s, op.Owner, command.StoveID, now)
 		case "cook_season":
 			err = SeasonCooking(s, op.Owner, op.User, command.StoveID, command.Spice, now)
+		case "cook_rescue":
+			err = RescueCooking(s, op.Owner, command.StoveID, command.Spice, now)
+		case "cook_boost":
+			err = BoostCooking(s, op.Owner, command.StoveID, now)
 		}
 		if err == nil {
 			var snapshot CookingSnapshot
@@ -216,7 +220,7 @@ func errorStatus(err error) (int, string) {
 		return 409, err.Error()
 	case is(ErrRoomGold, ErrRoomConflict, ErrRoomOperation, ErrRoomBusy, ErrCounterBusy, ErrRecipeLocked, ErrCookingCoins,
 		ErrStoveDirty, ErrDishSpoiled, ErrNothingToClean, ErrCleaningCoins, ErrNoCounter, ErrSeasonClosed,
-		ErrAlreadySeasoned, ErrTableClean, ErrTableDirty):
+		ErrAlreadySeasoned, ErrTableClean, ErrTableDirty, ErrSpiceRescue, ErrNotRescuable, ErrBoostClosed):
 		return 409, err.Error()
 	default:
 		return 500, "Não foi possível salvar a operação."

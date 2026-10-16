@@ -57,7 +57,10 @@ func TestBuySpiceFillsThePantry(t *testing.T) {
 func TestSpicesChangeTheBatch(t *testing.T) {
 	recipe, _ := gamerules.RecipeByID("coxinha")
 	for _, spice := range gamerules.Spices() {
-		t.Run(spice.Effect, func(t *testing.T) {
+		if spice.Effect == gamerules.SpiceRescue {
+			continue
+		}
+		t.Run(spice.Name, func(t *testing.T) {
 			s, stove := newCafe(t, "owner")
 			setPlayer(t, s, "owner", map[string]any{"gold": 1000, "level": recipe.Level, "experience_current": gamerules.Public().Levels[recipe.Level-1].RequiredXP})
 			if err := SeasonCooking(s, "owner", "owner", stove, spice.Code, progressT0); !errors.Is(err, ErrSeasonClosed) {
@@ -82,19 +85,21 @@ func TestSpicesChangeTheBatch(t *testing.T) {
 			}
 			job, _ := s.First("stove_cooking", Where{"stove": stove})
 			regular := gamerules.SeasonBonus(recipe.Servings)
+			left := ready.Sub(at)
 			switch spice.Effect {
-			case gamerules.SpiceDouble:
-				if job.GetInt("bonus_servings") != 2*regular {
-					t.Fatalf("double: %d extra servings, want %d", job.GetInt("bonus_servings"), 2*regular)
+			case gamerules.SpiceServings:
+				want := regular + max(spice.MinExtra, (recipe.Servings*spice.Percent+99)/100)
+				if job.GetInt("bonus_servings") != want {
+					t.Fatalf("servings: %d extra servings, want %d", job.GetInt("bonus_servings"), want)
 				}
 			case gamerules.SpiceRush:
-				left := ready.Sub(at)
-				if got := job.GetTime("ready_at"); !got.Equal(ready.Add(-left/2)) || !job.GetTime("spoils_at").Equal(spoils.Add(-left/2)) {
+				shift := left * time.Duration(spice.Percent) / 100
+				if got := job.GetTime("ready_at"); !got.Equal(ready.Add(-shift)) || !job.GetTime("spoils_at").Equal(spoils.Add(-shift)) {
 					t.Fatalf("rush: ready %v → %v", ready, got)
 				}
-			case gamerules.SpicePreserve:
-				if got := job.GetTime("spoils_at").Sub(job.GetTime("ready_at")); got != 3*spoils.Sub(ready) {
-					t.Fatalf("preserve: window %v", got)
+			case gamerules.SpiceInstant:
+				if status, _ := JobState(job, at); status != "ready" || !job.GetTime("spoils_at").Equal(spoils.Add(-left)) {
+					t.Fatalf("instant: %s, spoils %v", status, job.GetTime("spoils_at"))
 				}
 			}
 			if pantryOf(t, s, "owner")[spice.Code] != 0 {
@@ -105,6 +110,99 @@ func TestSpicesChangeTheBatch(t *testing.T) {
 				t.Fatalf("snapshot spice = %d", cooking.Stoves[0].Cooking.Spice)
 			}
 		})
+	}
+}
+
+func TestSalviaRescuesASpoiledDish(t *testing.T) {
+	s, stove := newCafe(t, "owner")
+	salvia, _ := gamerules.SpiceByCode(800003)
+	if salvia.Effect != gamerules.SpiceRescue {
+		t.Fatalf("800003 is %q", salvia.Effect)
+	}
+	if err := StartCooking(s, "owner", stove, "pao_de_queijo", progressT0); err != nil {
+		t.Fatal(err)
+	}
+	state, _ := GetOrCreatePlayer(s, "owner")
+	addSpices(state, salvia.Code, 1)
+	_ = s.Save(state)
+	// Not while it cooks, neither as a seasoning nor as a rescue.
+	if err := SeasonCooking(s, "owner", "owner", stove, salvia.Code, progressT0.Add(time.Second)); !errors.Is(err, ErrSpiceRescue) {
+		t.Fatalf("salvia as a seasoning: %v", err)
+	}
+	if err := RescueCooking(s, "owner", stove, salvia.Code, progressT0.Add(time.Second)); !errors.Is(err, ErrNotRescuable) {
+		t.Fatalf("rescuing a dish on the fire: %v", err)
+	}
+	job, _ := s.First("stove_cooking", Where{"stove": stove})
+	_, spoils := JobState(job, progressT0)
+	late := spoils.Add(time.Minute)
+	if err := RescueCooking(s, "owner", stove, 800002, late); !errors.Is(err, ErrNotRescuable) {
+		t.Fatalf("rescuing with another spice: %v", err)
+	}
+	if err := RescueCooking(s, "owner", stove, salvia.Code, late); err != nil {
+		t.Fatal(err)
+	}
+	job, _ = s.First("stove_cooking", Where{"stove": stove})
+	recipe, _ := gamerules.RecipeByID("pao_de_queijo")
+	if status, until := JobState(job, late); status != "ready" || !until.Equal(late.Add(recipe.SpoilDuration())) {
+		t.Fatalf("after the rescue: %s until %v", status, until)
+	}
+	if pantryOf(t, s, "owner")[salvia.Code] != 0 {
+		t.Fatal("the salvia was not used up")
+	}
+	if err := RescueCooking(s, "owner", stove, salvia.Code, late); !errors.Is(err, ErrNotRescuable) {
+		t.Fatalf("a ready dish needs no rescue: %v", err)
+	}
+	if err := ServeCooking(s, "owner", stove, late.Add(time.Second)); err != nil {
+		t.Fatalf("serving the rescued dish: %v", err)
+	}
+}
+
+func TestEnergyAcceleratesTheBatch(t *testing.T) {
+	s, stove := newCafe(t, "owner")
+	recipe, _ := gamerules.RecipeByID("coxinha")
+	setPlayer(t, s, "owner", map[string]any{"gold": 1000, "level": recipe.Level, "experience_current": gamerules.Public().Levels[recipe.Level-1].RequiredXP})
+	if err := BoostCooking(s, "owner", stove, progressT0); !errors.Is(err, ErrBoostClosed) {
+		t.Fatalf("no batch: %v", err)
+	}
+	if err := StartCooking(s, "owner", stove, recipe.ID, progressT0); err != nil {
+		t.Fatal(err)
+	}
+	rules := gamerules.Stove()
+	at := progressT0.Add(gamerules.PrepareDuration())
+	job, _ := s.First("stove_cooking", Where{"stove": stove})
+	ready := job.GetTime("ready_at")
+	left := ready.Sub(at)
+	saved := left * time.Duration(rules.BoostPercent) / 100
+	per := time.Duration(rules.BoostSecondsPerEnergy) * time.Second
+	want := max(1, int((saved+per-1)/per))
+	if cost, got := BoostCost(job, at); cost != want || got != saved {
+		t.Fatalf("boost cost %d saving %v, want %d and %v", cost, got, want, saved)
+	}
+	before, _ := GetOrCreatePlayer(s, "owner")
+	energy, _ := energyNow(before, at)
+	if err := BoostCooking(s, "owner", stove, at); err != nil {
+		t.Fatal(err)
+	}
+	job, _ = s.First("stove_cooking", Where{"stove": stove})
+	if !job.GetTime("ready_at").Equal(ready.Add(-saved)) {
+		t.Fatalf("ready %v, want %v", job.GetTime("ready_at"), ready.Add(-saved))
+	}
+	after, _ := GetOrCreatePlayer(s, "owner")
+	if got, _ := energyNow(after, at); got != energy-want {
+		t.Fatalf("energy %d → %d, want −%d", energy, got, want)
+	}
+	// Without energy nothing changes.
+	setPlayer(t, s, "owner", map[string]any{"energy_current": 0, "energy_at": at})
+	if err := BoostCooking(s, "owner", stove, at); !errors.Is(err, ErrEnergy) {
+		t.Fatalf("boost without energy: %v", err)
+	}
+	unchanged, _ := s.First("stove_cooking", Where{"stove": stove})
+	if !unchanged.GetTime("ready_at").Equal(job.GetTime("ready_at")) {
+		t.Fatal("a refused boost moved the batch")
+	}
+	// A ready dish cannot be accelerated.
+	if err := BoostCooking(s, "owner", stove, job.GetTime("ready_at")); !errors.Is(err, ErrBoostClosed) {
+		t.Fatalf("boosting a ready dish: %v", err)
 	}
 }
 
@@ -246,17 +344,17 @@ func TestCancellingInPreparationGivesTheSpiceBack(t *testing.T) {
 				t.Fatal(err)
 			}
 			state, _ := GetOrCreatePlayer(s, "owner")
-			addSpices(state, 800003, 1)
+			addSpices(state, 800002, 1)
 			if err := s.Save(state); err != nil {
 				t.Fatal(err)
 			}
-			if err := SeasonCooking(s, "owner", "owner", stove, 800003, progressT0.Add(time.Second/4)); err != nil {
+			if err := SeasonCooking(s, "owner", "owner", stove, 800002, progressT0.Add(time.Second/4)); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := CancelCooking(s, "owner", stove, progressT0.Add(tc.cancel)); err != nil {
 				t.Fatal(err)
 			}
-			if got := pantryOf(t, s, "owner")[800003]; got != tc.back {
+			if got := pantryOf(t, s, "owner")[800002]; got != tc.back {
 				t.Fatalf("spice back = %d, want %d", got, tc.back)
 			}
 		})

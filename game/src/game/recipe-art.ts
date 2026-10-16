@@ -13,7 +13,7 @@ export interface RecipeArt {
   placeholder: boolean;
 }
 
-type Shape = 'balls' | 'drops' | 'slab' | 'layers' | 'bowl' | 'flan';
+type Shape = 'balls' | 'drops' | 'slab' | 'layers' | 'bowl' | 'flan' | 'steak' | 'rolls' | 'noodles' | 'corn' | 'fish' | 'halfmoon' | 'pot' | 'cup';
 
 interface Look {
   shape: Shape;
@@ -34,6 +34,24 @@ const LOOKS: Readonly<Record<string, Look>> = {
   feijoada: { shape: 'bowl', base: '#3b2418', light: '#6a4430', dark: '#1d110b', accent: '#f4efe4' },
   pudim: { shape: 'flan', base: '#f0c060', light: '#f8dc95', dark: '#c8923a', accent: '#a55d1c' },
   moqueca: { shape: 'bowl', base: '#d8662b', light: '#f0975a', dark: '#9b3f17', accent: '#3f8f3a' },
+  // The historical batch (names and levels from the 2010 blog posts).
+  mousse_maracuja: { shape: 'cup', base: '#f6d24a', light: '#fbe88f', dark: '#c99a1e', accent: '#3a2a12' },
+  pamonha: { shape: 'halfmoon', base: '#e9d27a', light: '#f6e7a8', dark: '#9a8a3a', accent: '#7fae4a' },
+  vatapa: { shape: 'bowl', base: '#e8a93a', light: '#f5cd75', dark: '#a8701e', accent: '#d8452c' },
+  bolo_cenoura: { shape: 'slab', base: '#f0973a', light: '#f7c07a', dark: '#b8661e', accent: '#4a2a14' },
+  bobo_camarao: { shape: 'bowl', base: '#f2b45a', light: '#f8d690', dark: '#b8762a', accent: '#f26b4a' },
+  empadao_frango: { shape: 'flan', base: '#e7b45f', light: '#f6d68f', dark: '#b07a33', accent: '#c48a3a' },
+  churrasco: { shape: 'steak', base: '#9a4a2a', light: '#c8704a', dark: '#5a2614', accent: '#3f8f3a' },
+  fondue: { shape: 'pot', base: '#f3cf6a', light: '#fbe7a6', dark: '#b8922a', accent: '#d8a24a' },
+  picanha: { shape: 'steak', base: '#b4553a', light: '#e08a6a', dark: '#6a2a1a', accent: '#f4efe4' },
+  pastel: { shape: 'halfmoon', base: '#efc06a', light: '#f8de9e', dark: '#b8862e', accent: '#c8923a' },
+  pudim_banana: { shape: 'flan', base: '#f2d27a', light: '#f9e6a8', dark: '#c8a23a', accent: '#8a5a1e' },
+  carne_assada: { shape: 'steak', base: '#7a3a22', light: '#a8603a', dark: '#4a2010', accent: '#e8a24a' },
+  milho_cozido: { shape: 'corn', base: '#f6cf3a', light: '#fbe38a', dark: '#c99a14', accent: '#7fae4a' },
+  salgados_festa: { shape: 'drops', base: '#e4993a', light: '#f5c77a', dark: '#a8601e' },
+  sushi: { shape: 'rolls', base: '#f26b4a', light: '#fbfaf5', dark: '#1f2a22', accent: '#7fae4a' },
+  peixe_frito: { shape: 'fish', base: '#d99a3a', light: '#f2c870', dark: '#9a6020', accent: '#f6e27a' },
+  yakisoba: { shape: 'noodles', base: '#e2b25a', light: '#f3d48a', dark: '#9a6a28', accent: '#3f8f3a' },
 };
 
 const SIZE = 240;
@@ -72,6 +90,15 @@ function ball(g: CanvasRenderingContext2D, x: number, y: number, r: number, look
   g.beginPath();
   g.arc(x, y, r, 0, Math.PI * 2);
   g.fillStyle = gradient;
+  g.fill();
+}
+
+function poly4(g: CanvasRenderingContext2D, points: ReadonlyArray<readonly [number, number]>, fill: string): void {
+  g.beginPath();
+  g.moveTo(points[0]![0], points[0]![1]);
+  for (const [x, y] of points.slice(1)) g.lineTo(x, y);
+  g.closePath();
+  g.fillStyle = fill;
   g.fill();
 }
 
@@ -162,6 +189,109 @@ function drawDish(g: CanvasRenderingContext2D, look: Look): void {
       }
       break;
     }
+    case 'steak': {
+      plate(g);
+      // A grilled cut with char lines, a slice off and a herb sprig.
+      g.beginPath(); g.ellipse(112, 146, 56, 26, -0.15, 0, Math.PI * 2);
+      const meat = g.createLinearGradient(60, 120, 170, 172);
+      meat.addColorStop(0, look.light); meat.addColorStop(0.5, look.base); meat.addColorStop(1, look.dark);
+      g.fillStyle = meat; g.fill(); g.lineWidth = 3; g.strokeStyle = look.dark; g.stroke();
+      g.strokeStyle = 'rgba(30,12,6,0.65)'; g.lineWidth = 5;
+      for (const x of [86, 108, 130]) { g.beginPath(); g.moveTo(x, 130); g.lineTo(x + 20, 160); g.stroke(); }
+      ellipse(g, 166, 150, 14, 9, look.light, look.dark);
+      if (look.accent) { g.fillStyle = look.accent; for (const [x, y] of [[150, 126], [160, 122], [156, 132]]) { g.beginPath(); g.ellipse(x, y, 6, 3, 0.6, 0, Math.PI * 2); g.fill(); } }
+      break;
+    }
+    case 'rolls':
+      plate(g);
+      // Sushi: rolls with seaweed and rice, two nigiri with fish on top.
+      for (const [x, y] of [[84, 150], [110, 160], [136, 150]]) {
+        ellipse(g, x, y, 16, 10, look.dark); ellipse(g, x, y - 4, 13, 8, look.light); ellipse(g, x, y - 4, 6, 4, look.base);
+      }
+      for (const [x, y] of [[100, 124], [138, 126]]) {
+        ellipse(g, x, y + 4, 18, 8, look.light, '#d9d2c3'); ellipse(g, x, y, 18, 7, look.base);
+        g.fillStyle = look.dark; g.fillRect(x - 3, y - 6, 6, 14);
+      }
+      if (look.accent) ellipse(g, 166, 140, 9, 6, look.accent);
+      break;
+    case 'noodles': {
+      ellipse(g, 120, 186, 84, 24, 'rgba(0,0,0,0.18)');
+      g.beginPath(); g.moveTo(40, 128); g.bezierCurveTo(46, 196, 194, 196, 200, 128); g.closePath();
+      g.fillStyle = '#c23b2c'; g.fill();
+      ellipse(g, 120, 128, 80, 28, '#8f2a20');
+      ellipse(g, 120, 130, 70, 22, look.base);
+      g.strokeStyle = look.light; g.lineWidth = 4;
+      for (let i = 0; i < 9; i++) { g.beginPath(); g.moveTo(60 + i * 12, 122 + (i % 3) * 4); g.bezierCurveTo(70 + i * 12, 110, 80 + i * 12, 146, 92 + i * 12, 130); g.stroke(); }
+      if (look.accent) for (const [x, y] of [[96, 124], [140, 132], [118, 140]]) ellipse(g, x, y, 8, 4, look.accent);
+      for (const [x, y] of [[132, 120], [104, 136]]) ellipse(g, x, y, 7, 5, '#f26b4a');
+      g.strokeStyle = '#8a5a32'; g.lineWidth = 5;
+      g.beginPath(); g.moveTo(150, 90); g.lineTo(196, 140); g.moveTo(160, 86); g.lineTo(204, 132); g.stroke();
+      break;
+    }
+    case 'corn':
+      plate(g);
+      // Two cobs with kernels and their husks.
+      for (const [x, y, angle] of [[104, 146, -0.35], [138, 140, -0.2]] as const) {
+        g.save(); g.translate(x, y); g.rotate(angle);
+        g.fillStyle = look.accent ?? '#7fae4a';
+        g.beginPath(); g.moveTo(-48, 0); g.quadraticCurveTo(-30, -26, 0, -6); g.quadraticCurveTo(-30, 18, -48, 0); g.fill();
+        g.beginPath(); g.ellipse(4, 0, 44, 16, 0, 0, Math.PI * 2); g.fillStyle = look.base; g.fill(); g.lineWidth = 2; g.strokeStyle = look.dark; g.stroke();
+        g.fillStyle = look.light;
+        for (let i = -36; i <= 40; i += 8) for (const k of [-8, 0, 8]) { g.beginPath(); g.arc(4 + i, k * Math.sqrt(Math.max(0, 1 - (i / 44) ** 2)), 2.6, 0, Math.PI * 2); g.fill(); }
+        g.restore();
+      }
+      break;
+    case 'fish':
+      plate(g);
+      // A golden fried fish with its tail, a lemon wedge.
+      g.beginPath(); g.moveTo(66, 150); g.bezierCurveTo(90, 112, 150, 112, 166, 146); g.bezierCurveTo(150, 176, 90, 180, 66, 150); g.closePath();
+      g.fillStyle = look.base; g.fill(); g.lineWidth = 3; g.strokeStyle = look.dark; g.stroke();
+      poly4(g, [[166, 146], [192, 126], [186, 150], [192, 172]], look.dark);
+      g.strokeStyle = look.light; g.lineWidth = 3;
+      for (const x of [96, 116, 136]) { g.beginPath(); g.moveTo(x, 132); g.quadraticCurveTo(x + 8, 148, x, 164); g.stroke(); }
+      ellipse(g, 82, 144, 4, 4, '#1f1410');
+      if (look.accent) { g.beginPath(); g.moveTo(170, 182); g.arc(170, 182, 18, Math.PI, Math.PI * 1.5); g.closePath(); g.fillStyle = look.accent; g.fill(); }
+      break;
+    case 'halfmoon':
+      plate(g);
+      // Half-moon pastries with crimped edges (pastel, pamonha wrapped in husk).
+      for (const [x, y] of [[96, 152], [146, 146]]) {
+        g.beginPath(); g.moveTo(x - 38, y + 6); g.quadraticCurveTo(x, y - 54, x + 38, y + 6); g.closePath();
+        const crust = g.createLinearGradient(x, y - 40, x, y + 6);
+        crust.addColorStop(0, look.light); crust.addColorStop(1, look.base);
+        g.fillStyle = crust; g.fill(); g.lineWidth = 3; g.strokeStyle = look.dark; g.stroke();
+        g.fillStyle = look.accent ?? look.dark;
+        for (let k = 0; k < 7; k++) { g.beginPath(); g.arc(x - 33 + k * 11, y + 4, 3, 0, Math.PI * 2); g.fill(); }
+      }
+      break;
+    case 'pot': {
+      // Fondue: a pot of melted cheese over a little burner, bread on forks.
+      ellipse(g, 120, 186, 70, 20, 'rgba(0,0,0,0.18)');
+      g.fillStyle = '#3a3d42'; g.fillRect(84, 160, 72, 14);
+      ellipse(g, 120, 174, 14, 5, '#f28a2a');
+      g.beginPath(); g.moveTo(66, 112); g.bezierCurveTo(70, 168, 170, 168, 174, 112); g.closePath();
+      g.fillStyle = '#b8322a'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#6e1a14'; g.stroke();
+      ellipse(g, 120, 112, 54, 16, '#6e1a14');
+      ellipse(g, 120, 113, 48, 13, look.base);
+      ellipse(g, 110, 110, 18, 5, look.light);
+      g.strokeStyle = '#9aa5ad'; g.lineWidth = 3;
+      for (const [x0, y0, x1, y1] of [[100, 108, 70, 56], [136, 110, 172, 60]] as const) {
+        g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+        poly4(g, [[x1 - 9, y1 - 6], [x1 + 9, y1 - 8], [x1 + 10, y1 + 8], [x1 - 8, y1 + 9]], look.accent ?? '#d8a24a');
+      }
+      break;
+    }
+    case 'cup':
+      // Mousse in a glass cup with seeds on top.
+      ellipse(g, 120, 178, 54, 16, 'rgba(0,0,0,0.18)');
+      g.beginPath(); g.moveTo(74, 80); g.lineTo(166, 80); g.lineTo(154, 172); g.lineTo(86, 172); g.closePath();
+      g.fillStyle = 'rgba(220,240,250,0.45)'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#9fb7c4'; g.stroke();
+      g.beginPath(); g.moveTo(78, 96); g.lineTo(162, 96); g.lineTo(152, 168); g.lineTo(88, 168); g.closePath();
+      g.fillStyle = look.base; g.fill();
+      ellipse(g, 120, 96, 42, 10, look.light);
+      g.fillStyle = look.accent ?? look.dark;
+      for (const [x, y] of [[104, 94], [116, 98], [130, 93], [138, 99], [122, 92]]) { g.beginPath(); g.ellipse(x, y, 2.6, 1.8, 0, 0, Math.PI * 2); g.fill(); }
+      break;
     case 'flan':
       plate(g);
       g.beginPath();

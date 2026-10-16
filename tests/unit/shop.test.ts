@@ -71,7 +71,7 @@ describe('venda do estoque e conjuntos (Sprint 15a)', () => {
     const multi = { ...base, kind: 'stove' as const, priceGold: 15000, cookSpeedPercent: 0, servingsBonusPercent: 50 };
     expect(storeCategory(multi)).toBe('stove-fire');
     expect(itemPerk(multi)).toContain('+50% de porções por lote');
-    expect(itemPerk({ ...base, priceGold: 300, theme: 'japan', charm: 4 })).toContain('conjunto Japão');
+    expect(itemPerk({ ...base, priceGold: 300, theme: 'japan', charm: 4 })).toContain('conjunto Banzai (Japão)');
   });
 
   it('o texto dos conjuntos mostra peças, bônus e quanto falta', () => {

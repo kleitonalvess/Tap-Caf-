@@ -99,6 +99,8 @@ type Payment struct {
 	LevelReward      int64 `json:"levelReward,omitempty"`
 	ServingsLeft     int   `json:"servingsLeft"`
 	PopularityTenths int   `json:"popularityTenths"`
+	// Coins in the owner's tip jar after this serving's deposit.
+	TipJar int64 `json:"tipJar,omitempty"`
 }
 type World struct {
 	RoomID   string        `json:"roomId"`

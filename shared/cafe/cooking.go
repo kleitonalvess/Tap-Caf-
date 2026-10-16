@@ -31,6 +31,9 @@ var ErrAlreadySeasoned = errors.New("Este prato já foi temperado.")
 var ErrWrongAppliance = errors.New("Esta receita não é feita aqui: pratos vão ao fogão e bebidas às máquinas certas.")
 var ErrDrinkSeason = errors.New("Bebidas não levam tempero.")
 var ErrMachineFull = errors.New("A máquina ainda tem outra bebida pronta. Espere os clientes levarem.")
+var ErrSpiceRescue = errors.New("A Sálvia Salvadora só recupera pratos estragados.")
+var ErrNotRescuable = errors.New("Só um prato estragado pode ser recuperado.")
+var ErrBoostClosed = errors.New("Só dá para acelerar enquanto o prato está no fogo.")
 
 type CookingView struct {
 	ID          string `json:"id"`
@@ -594,6 +597,9 @@ func SeasonCooking(s Store, owner, seasoner, stoveID string, spiceCode int, now 
 			if !ok {
 				return ErrSpiceUnknown
 			}
+			if spice.Effect == gamerules.SpiceRescue {
+				return ErrSpiceRescue
+			}
 			if seasoner != owner {
 				return ErrSpiceOwner
 			}
@@ -630,6 +636,108 @@ func SeasonCooking(s Store, owner, seasoner, stoveID string, spiceCode int, now 
 	})
 }
 
+// RescueCooking uses a rescue spice (Sálvia Salvadora) from the owner's pantry
+// on a spoiled batch: it is ready again, with the stove's full wait before it
+// spoils counted from now. The spice is used up in the same transaction.
+func RescueCooking(s Store, owner, stoveID string, spiceCode int, now time.Time) error {
+	spice, ok := gamerules.SpiceByCode(spiceCode)
+	if !ok {
+		return ErrSpiceUnknown
+	}
+	if spice.Effect != gamerules.SpiceRescue {
+		return ErrNotRescuable
+	}
+	return s.Transaction(func(tx Store) error {
+		stove, err := ownedStove(tx, owner, stoveID)
+		if err != nil {
+			return err
+		}
+		job, err := stoveJob(tx, stoveID, ErrNotRescuable)
+		if err != nil {
+			return err
+		}
+		if status, _ := JobState(job, now); status != "spoiled" {
+			return ErrNotRescuable
+		}
+		state, err := tx.First(PlayerCollection, Where{"user": owner})
+		if err != nil {
+			return err
+		}
+		pantry := readPantry(state)
+		if pantry[spiceCode] < 1 {
+			return ErrSpiceEmpty
+		}
+		pantry[spiceCode]--
+		writePantry(state, pantry)
+		if err = tx.Save(state); err != nil {
+			return err
+		}
+		window := defaultSpoilWindow
+		if recipe, ok := gamerules.RecipeByID(job.GetString("recipe_id")); ok {
+			model, _ := roomcatalog.ByID(stove.GetInt("item_id"))
+			window = StoveSpoilDuration(model, recipe)
+		}
+		if ready := job.GetTime("ready_at"); ready.After(now) {
+			job.Set("ready_at", now)
+		}
+		job.Set("spoils_at", now.Add(window))
+		return tx.Save(job)
+	})
+}
+
+// BoostCost is the energy that accelerating a batch costs now, and the time it
+// saves: BoostPercent of the time left, one energy per BoostSecondsPerEnergy
+// saved (at least one). A batch that is not on the fire costs nothing and
+// saves nothing.
+func BoostCost(job Record, now time.Time) (int, time.Duration) {
+	status, _ := JobState(job, now)
+	if status != "preparing" && status != "cooking" {
+		return 0, 0
+	}
+	from := job.GetTime("started_at")
+	if now.After(from) {
+		from = now
+	}
+	left := job.GetTime("ready_at").Sub(from)
+	if left <= 0 {
+		return 0, 0
+	}
+	rules := gamerules.Stove()
+	saved := left * time.Duration(rules.BoostPercent) / 100
+	per := time.Duration(rules.BoostSecondsPerEnergy) * time.Second
+	return max(1, int((saved+per-1)/per)), saved
+}
+
+// BoostCooking spends the owner's energy to take BoostPercent off the time a
+// batch has left on the fire. It may be repeated; each time costs what is left.
+func BoostCooking(s Store, owner, stoveID string, now time.Time) error {
+	return s.Transaction(func(tx Store) error {
+		if _, err := ownedStove(tx, owner, stoveID); err != nil {
+			return err
+		}
+		job, err := stoveJob(tx, stoveID, ErrBoostClosed)
+		if err != nil {
+			return err
+		}
+		cost, saved := BoostCost(job, now)
+		if saved <= 0 {
+			return ErrBoostClosed
+		}
+		state, err := tx.First(PlayerCollection, Where{"user": owner})
+		if err != nil {
+			return err
+		}
+		if err := SpendEnergy(state, cost, now); err != nil {
+			return err
+		}
+		if err := tx.Save(state); err != nil {
+			return err
+		}
+		shortenCooking(job, gamerules.Stove().BoostPercent, now)
+		return tx.Save(job)
+	})
+}
+
 // CookingActions maps each REST path to its room operation. Only seasoning
 // accepts a friend's room; everything else acts on the player's own café.
 var CookingActions = []struct {
@@ -641,4 +749,6 @@ var CookingActions = []struct {
 	{"cancel", "cook_cancel", false},
 	{"clean", "cook_clean", false},
 	{"season", "cook_season", true},
+	{"rescue", "cook_rescue", false},
+	{"boost", "cook_boost", false},
 }

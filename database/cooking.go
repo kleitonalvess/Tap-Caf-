@@ -78,7 +78,9 @@ func registerCookingRoutes(e *core.ServeEvent) {
 			if route.Action == "cook_start" && !knownRecipe || route.Action != "cook_start" && body.RecipeID != "" {
 				return r.BadRequestError("Fogão ou receita inválidos.", nil)
 			}
-			if body.Spice != 0 && (route.Action != "cook_season" || body.Spice < 0) {
+			// A pantry spice goes with seasoning, and a rescue needs one.
+			spiced := route.Action == "cook_season" || route.Action == "cook_rescue"
+			if body.Spice != 0 && (!spiced || body.Spice < 0) || route.Action == "cook_rescue" && body.Spice <= 0 {
 				return r.BadRequestError("Tempero inválido.", nil)
 			}
 			owner := user.Id

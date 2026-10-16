@@ -132,7 +132,7 @@
     {
       "id": 3010002,
       "classname": "green_door",
-      "name": "Porta Verde",
+      "name": "Porta Cantina",
       "type": 2,
       "kind": "door",
       "priceGold": 250,
@@ -156,7 +156,8 @@
         },
         "baseSlope": -0.5
       },
-      "theme": "italy"
+      "theme": "italy",
+      "nameSource": "blog-2010"
     },
     {
       "id": 3010003,
@@ -395,7 +396,7 @@
     {
       "id": 3030016,
       "classname": "cantina_table",
-      "name": "Mesa de Cantina Xadrez",
+      "name": "Mesa Xadrez Vermelho",
       "type": 3,
       "kind": "table",
       "priceGold": 200,
@@ -408,7 +409,8 @@
       "parts": [],
       "art": "table-checker",
       "charm": 3,
-      "theme": "italy"
+      "theme": "italy",
+      "nameSource": "blog-2010"
     },
     {
       "id": 3030017,
@@ -596,7 +598,7 @@
     {
       "id": 3040008,
       "classname": "cantina_chair",
-      "name": "Cadeira de Cantina",
+      "name": "Cadeira Estofada",
       "type": 3,
       "kind": "chair",
       "priceGold": 90,
@@ -611,7 +613,8 @@
       "tint": "#9a6235",
       "tintMode": "multiply",
       "charm": 1,
-      "theme": "italy"
+      "theme": "italy",
+      "nameSource": "blog-2010"
     },
     {
       "id": 3040009,
@@ -692,7 +695,8 @@
       "tint": "#d4703c",
       "tintMode": "color",
       "charm": 1,
-      "theme": "italy"
+      "theme": "italy",
+      "nameSource": "blog-2010"
     },
     {
       "id": 3050003,
@@ -860,7 +864,7 @@
     {
       "id": 3060020,
       "classname": "white_brick_wallpaper",
-      "name": "Tijolinho Branco",
+      "name": "Tijolo à Vista",
       "type": 1,
       "kind": "wall",
       "priceGold": 60,
@@ -876,7 +880,8 @@
       "tintMode": "color",
       "charm": 2,
       "wallpaperRotation": 1,
-      "theme": "italy"
+      "theme": "italy",
+      "nameSource": "blog-2010"
     },
     {
       "id": 3060021,
@@ -1120,6 +1125,25 @@
       "art": "counter-sushi",
       "charm": 4,
       "theme": "japan"
+    },
+    {
+      "id": 3080005,
+      "classname": "little_italy_counter",
+      "name": "Balcão Pequena Itália",
+      "type": 3,
+      "kind": "counter",
+      "priceGold": 1500,
+      "purchasable": true,
+      "sizeX": 1,
+      "sizeY": 1,
+      "itemHeight": 56,
+      "level": 9,
+      "placeholder": true,
+      "parts": [],
+      "art": "counter-italy",
+      "charm": 4,
+      "theme": "italy",
+      "nameSource": "blog-2010"
     },
     {
       "id": 3090000,
@@ -1532,6 +1556,64 @@
       "parts": [],
       "art": "spice-shelf",
       "charm": 2
+    },
+    {
+      "id": 3500013,
+      "classname": "italian_vespa",
+      "name": "Vespa",
+      "type": 3,
+      "kind": "ornament",
+      "priceGold": 900,
+      "purchasable": true,
+      "sizeX": 1,
+      "sizeY": 1,
+      "itemHeight": 96,
+      "level": 11,
+      "placeholder": true,
+      "parts": [],
+      "art": "vespa",
+      "charm": 6,
+      "theme": "italy",
+      "nameSource": "blog-2010",
+      "featured": true
+    },
+    {
+      "id": 3500014,
+      "classname": "wine_rack",
+      "name": "Vinoteca",
+      "type": 3,
+      "kind": "ornament",
+      "priceGold": 600,
+      "purchasable": true,
+      "sizeX": 1,
+      "sizeY": 1,
+      "itemHeight": 140,
+      "level": 8,
+      "placeholder": true,
+      "parts": [],
+      "art": "wine-rack",
+      "charm": 5,
+      "theme": "italy",
+      "nameSource": "blog-2010"
+    },
+    {
+      "id": 3500015,
+      "classname": "spiral_lamp_post",
+      "name": "Poste Espiral",
+      "type": 3,
+      "kind": "ornament",
+      "priceGold": 420,
+      "purchasable": true,
+      "sizeX": 1,
+      "sizeY": 1,
+      "itemHeight": 170,
+      "level": 7,
+      "placeholder": true,
+      "parts": [],
+      "art": "spiral-post",
+      "charm": 4,
+      "theme": "italy",
+      "nameSource": "blog-2010"
     },
     {
       "id": 3600000,

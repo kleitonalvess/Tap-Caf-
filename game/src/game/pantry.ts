@@ -2,7 +2,10 @@ import type { PlayerState } from './player-state';
 import { RequestError, request } from './rewards';
 
 /** Pantry spices and mystery crates (shared/cafe/pantry.go); the server pays and draws. */
-export interface Spice { code: number; name: string; effect: 'double' | 'rush' | 'preserve'; description: string; priceCoins: number; count: number }
+/** servings/rush/instant go with seasoning a dish on the fire; rescue (Sálvia
+ * Salvadora) brings a spoiled dish back. */
+export type SpiceEffect = 'servings' | 'rush' | 'instant' | 'rescue';
+export interface Spice { code: number; name: string; effect: SpiceEffect; percent?: number; minExtra?: number; description: string; priceCoins: number; random?: boolean; count: number }
 export interface CratePrize { weight: number; coins?: number; cash?: number; spice?: number; stock?: number; count?: number; item?: number }
 export interface Crate { id: string; code?: number; name: string; free?: boolean; coins?: number; cash?: number; prizes: CratePrize[] }
 /** Energy drinks and machine parts, with how many the player holds. */

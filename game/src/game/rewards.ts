@@ -2,7 +2,7 @@ import { apiFetch } from './backend';
 import type { PlayerState } from './player-state';
 
 /** Daily bonus (6 days, São Paulo dates) and the café's mail; the server credits both. */
-export interface DailyReward { day: number; coins: number; cash: number; spices?: number }
+export interface DailyReward { day: number; coins: number; cash: number; spices?: number; crates?: number }
 export interface DailyState {
   /** The day the next claim pays; once claimed, today's day. */
   day: number;
@@ -11,7 +11,7 @@ export interface DailyState {
   nextAt: number;
   days: DailyReward[];
 }
-export interface DailyClaim { daily: DailyState; reward: DailyReward; levelReward?: number; spices?: number[]; state: PlayerState }
+export interface DailyClaim { daily: DailyState; reward: DailyReward; levelReward?: number; spices?: number[]; crates?: number; state: PlayerState }
 
 export interface Letter {
   id: string; key: string; title: string; body: string;
@@ -35,11 +35,12 @@ export function dailyCards(state: DailyState): Array<{ reward: DailyReward; stat
 }
 
 /** "+250 moedas", "+500 moedas e +5 Grana", "+800 moedas e +1 tempero". */
-export function rewardText(reward: { coins: number; cash: number; spices?: number }): string {
+export function rewardText(reward: { coins: number; cash: number; spices?: number; crates?: number }): string {
   const parts: string[] = [];
   if (reward.coins > 0) parts.push(`+${reward.coins.toLocaleString('pt-BR')} moedas`);
   if (reward.cash > 0) parts.push(`+${reward.cash.toLocaleString('pt-BR')} Grana`);
   if ((reward.spices ?? 0) > 0) parts.push(`+${reward.spices} ${reward.spices === 1 ? 'tempero' : 'temperos'}`);
+  if ((reward.crates ?? 0) > 0) parts.push(`+${reward.crates} ${reward.crates === 1 ? 'caixa' : 'caixas'}`);
   return parts.join(' e ') || 'Sem prêmio';
 }
 

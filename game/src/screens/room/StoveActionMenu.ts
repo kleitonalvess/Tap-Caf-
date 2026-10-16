@@ -8,7 +8,7 @@ const BUTTON_GAP = 4;
 const INK = 0x603a1e;
 
 type ButtonState = 'rest' | 'hover' | 'pressed';
-export type StoveActionKind = 'clock' | 'season' | 'cancel' | 'clean';
+export type StoveActionKind = 'clock' | 'season' | 'cancel' | 'clean' | 'boost' | 'rescue';
 
 export interface StoveAction {
   kind: StoveActionKind;
@@ -34,6 +34,15 @@ function drawIcon(icon: Graphics, kind: StoveActionKind): void {
       icon.roundRect(28, cy - 6, 18, 22, 5).fill(INK);
       icon.roundRect(30, cy - 13, 14, 8, 3).fill(0xb7863b);
       for (const [x, y] of [[50, cy - 14], [55, cy - 6], [50, cy + 2], [58, cy + 9]]) icon.circle(x, y, 2.4).fill(INK);
+      break;
+    case 'boost':
+      // Lightning bolt: energy.
+      icon.poly([42, cy - 22, 28, cy + 3, 38, cy + 3, 32, cy + 22, 50, cy - 4, 40, cy - 4, 46, cy - 22]).fill(0xf2b01e).stroke({ color: INK, width: 2.5, join: 'round' });
+      break;
+    case 'rescue':
+      // Sage leaf with its vein.
+      icon.moveTo(24, cy + 16).bezierCurveTo(22, cy - 10, 44, cy - 22, 54, cy - 18).bezierCurveTo(54, cy + 2, 40, cy + 18, 24, cy + 16).fill(0x6f9a52).stroke({ color: INK, width: 2.5 });
+      icon.moveTo(26, cy + 14).lineTo(48, cy - 12).stroke({ color: INK, width: 2 });
       break;
     case 'clean':
       // Broom: handle and bristles.

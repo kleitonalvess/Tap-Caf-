@@ -6,7 +6,10 @@ import { DIALOG_COLORS, RoomDialog } from './RoomDialog';
 
 const ROW_HEIGHT = 140;
 const ROW_TOP = 236;
-const JAR_COLORS: Record<Spice['effect'], number> = { double: 0x3f9a4a, rush: 0xd2541b, preserve: 0x7b4fc9 };
+const JAR_COLORS: Record<Spice['effect'], number> = { servings: 0x3f9a4a, rush: 0xd2541b, instant: 0xc23b6a, rescue: 0x6f9a52 };
+/** The six spices sit in two columns of compact cards. */
+const SPICE_HEIGHT = 150;
+const SPICE_GAP = 14;
 type Tab = 'spices' | 'items';
 
 /**
@@ -50,10 +53,10 @@ export class PantryModal extends RoomDialog {
     }, this.width / 2 - 270 + index * 280, 104, 56));
     const limit = pantry.spiceLimit ?? 0;
     const hint = this.tab === 'spices'
-      ? `Escolha um ao temperar um prato no fogo (menu do fogão). Guarda até ${limit} de cada${pantry.shelf ? ' (com a Prateleira de Temperos)' : '; uma Prateleira de Temperos no café guarda mais'}.`
+      ? `Use pelo menu do fogão: no fogo, ao temperar; a Sálvia, num prato estragado. Guarda até ${limit} de cada${pantry.shelf ? ' (com a Prateleira de Temperos)' : '; uma Prateleira de Temperos guarda mais'}.`
       : 'Energéticos devolvem energia na hora. Peças de Máquina montam e melhoram a jukebox e o fliperama.';
     this.text(hint, this.width / 2, 176, 20, DIALOG_COLORS.ink, { weight: '600', wrap: this.width - 160 });
-    if (this.tab === 'spices') pantry.spices.forEach((spice, index) => this.spiceRow(spice, limit, ROW_TOP + index * (ROW_HEIGHT + 12)));
+    if (this.tab === 'spices') pantry.spices.forEach((spice, index) => this.spiceRow(spice, limit, index));
     else (pantry.items ?? []).forEach((item, index) => this.itemRow(item, ROW_TOP + index * (ROW_HEIGHT + 12)));
     if (this.message) this.text(this.message, this.width / 2, this.height - 52, 22, this.messageError ? DIALOG_COLORS.red : DIALOG_COLORS.green, { weight: '600' });
     this.closeButton('pantry-close');
@@ -72,21 +75,30 @@ export class PantryModal extends RoomDialog {
     return card.x + 140;
   }
 
-  private spiceRow(spice: Spice, limit: number, y: number): void {
-    const left = this.card(`pantry-spice-${spice.code}`, y, (jar) => {
-      jar.roundRect(-26, -22, 52, 50, 10).fill(JAR_COLORS[spice.effect]).stroke({ color: DIALOG_COLORS.ink, width: 3 });
-      jar.roundRect(-20, -36, 40, 16, 5).fill(0xb7863b).stroke({ color: DIALOG_COLORS.ink, width: 3 });
-      jar.roundRect(-16, -6, 32, 18, 4).fill(0xfff8ea);
-    });
-    this.text(spice.name, left, y + 16, 30, DIALOG_COLORS.ink, { anchorX: 0, align: 'left' });
-    this.text(spice.description, left, y + 56, 21, DIALOG_COLORS.ink, { anchorX: 0, align: 'left', weight: '600', wrap: 560 });
+  private spiceRow(spice: Spice, limit: number, index: number): void {
+    const width = (this.width - 140 - SPICE_GAP) / 2;
+    const x = 70 + (index % 2) * (width + SPICE_GAP), y = ROW_TOP + Math.floor(index / 2) * (SPICE_HEIGHT + SPICE_GAP);
+    const card = new Container();
+    card.label = `pantry-spice-${spice.code}`;
+    card.position.set(x, y);
+    card.addChild(new Graphics().roundRect(0, 0, width, SPICE_HEIGHT, 18).fill(0xffffff).stroke({ color: DIALOG_COLORS.frame, width: 3 }));
+    const jar = new Graphics();
+    jar.position.set(54, 62);
+    jar.roundRect(-24, -20, 48, 46, 10).fill(JAR_COLORS[spice.effect]).stroke({ color: DIALOG_COLORS.ink, width: 3 });
+    jar.roundRect(-18, -33, 36, 14, 5).fill(0xb7863b).stroke({ color: DIALOG_COLORS.ink, width: 3 });
+    jar.roundRect(-14, -4, 28, 16, 4).fill(0xfff8ea);
+    card.addChild(jar);
+    this.content.addChild(card);
+    const left = x + 104;
+    this.text(spice.name, left, y + 12, 25, DIALOG_COLORS.ink, { anchorX: 0, align: 'left' });
+    this.text(spice.description, left, y + 44, 17, DIALOG_COLORS.ink, { anchorX: 0, align: 'left', weight: '600', wrap: width - 124 });
     const full = limit > 0 && spice.count >= limit;
-    this.text(`Na despensa: ${spice.count}${limit > 0 ? `/${limit}` : ''}`, left, y + ROW_HEIGHT - 40, 21, spice.count > 0 ? DIALOG_COLORS.cash : DIALOG_COLORS.grey, { anchorX: 0, align: 'left' });
+    this.text(`Na despensa: ${spice.count}${limit > 0 ? `/${limit}` : ''}`, left, y + SPICE_HEIGHT - 38, 18, spice.count > 0 ? DIALOG_COLORS.cash : DIALOG_COLORS.grey, { anchorX: 0, align: 'left' });
     this.button({
-      label: `pantry-buy-${spice.code}`, caption: this.busy === spice.code ? 'Comprando…' : full ? 'Despensa cheia' : `Comprar · ${spice.priceCoins.toLocaleString('pt-BR')} moedas`,
-      color: DIALOG_COLORS.green, width: 240, enabled: !this.busy && !full && this.options.wallet().gold >= spice.priceCoins,
+      label: `pantry-buy-${spice.code}`, caption: this.busy === spice.code ? 'Comprando…' : full ? 'Cheia' : `${spice.priceCoins.toLocaleString('pt-BR')} moedas`,
+      color: DIALOG_COLORS.green, width: 170, enabled: !this.busy && !full && this.options.wallet().gold >= spice.priceCoins,
       onTap: () => this.act(spice.code, 'buy', `${spice.name} guardado na despensa.`),
-    }, 70 + this.width - 140 - 260, y + (ROW_HEIGHT - 64) / 2, 64);
+    }, x + width - 186, y + SPICE_HEIGHT - 62, 50);
   }
 
   private itemRow(item: PantryItem, y: number): void {

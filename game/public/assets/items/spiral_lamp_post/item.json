@@ -1,0 +1,19 @@
+{
+  "id": 3500015,
+  "classname": "spiral_lamp_post",
+  "name": "Poste Espiral",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 420,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 170,
+  "level": 7,
+  "placeholder": true,
+  "parts": [],
+  "art": "spiral-post",
+  "charm": 4,
+  "theme": "italy",
+  "nameSource": "blog-2010"
+}

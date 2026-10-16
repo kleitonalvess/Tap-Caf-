@@ -1,7 +1,7 @@
 {
   "id": 3030016,
   "classname": "cantina_table",
-  "name": "Mesa de Cantina Xadrez",
+  "name": "Mesa Xadrez Vermelho",
   "type": 3,
   "kind": "table",
   "priceGold": 200,
@@ -14,5 +14,6 @@
   "parts": [],
   "art": "table-checker",
   "charm": 3,
-  "theme": "italy"
+  "theme": "italy",
+  "nameSource": "blog-2010"
 }

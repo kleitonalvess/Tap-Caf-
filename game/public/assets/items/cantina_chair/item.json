@@ -1,7 +1,7 @@
 {
   "id": 3040008,
   "classname": "cantina_chair",
-  "name": "Cadeira de Cantina",
+  "name": "Cadeira Estofada",
   "type": 3,
   "kind": "chair",
   "priceGold": 90,
@@ -16,5 +16,6 @@
   "tint": "#9a6235",
   "tintMode": "multiply",
   "charm": 1,
-  "theme": "italy"
+  "theme": "italy",
+  "nameSource": "blog-2010"
 }

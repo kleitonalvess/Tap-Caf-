@@ -1,7 +1,7 @@
 {
   "id": 3060020,
   "classname": "white_brick_wallpaper",
-  "name": "Tijolinho Branco",
+  "name": "Tijolo à Vista",
   "type": 1,
   "kind": "wall",
   "priceGold": 60,
@@ -17,5 +17,6 @@
   "tintMode": "color",
   "charm": 2,
   "wallpaperRotation": 1,
-  "theme": "italy"
+  "theme": "italy",
+  "nameSource": "blog-2010"
 }

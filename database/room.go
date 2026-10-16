@@ -45,6 +45,7 @@ func registerRoomRoutes(e *core.ServeEvent) {
 		if owner != user.Id {
 			snapshot.CanEdit = false
 			snapshot.AwaySummary = nil
+			snapshot.TipJar = nil
 			placed := []roomUnit{}
 			for _, u := range snapshot.Inventory {
 				if u.Placed {

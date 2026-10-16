@@ -89,12 +89,28 @@ export class RoomStoreController {
     this.message('Alt + arraste: mover. Shift + clique: girar. Ctrl + clique: guardar.');
   }
   onClose(): void {
+    this.setSellMode(false);
     this.clearPreview();
     if (this.selection?.unit) this.options.alpha(this.selection.unit.unitId, 1);
     this.cancel();
   }
   onCategory(): void { this.cancel(); this.refreshEntries(); }
-  toggleInventory(): void { this.cancel(); this.inventory = !this.inventory; this.refreshEntries(); }
+  toggleInventory(): void { this.cancel(); this.inventory = !this.inventory; this.setSellMode(false); this.refreshEntries(); }
+  /** The header's cash register: the inventory in sell mode, or back to normal. */
+  toggleSellMode(): void {
+    this.cancel();
+    if (this.sellMode) {
+      this.setSellMode(false);
+      this.message('Modo venda encerrado.');
+      return;
+    }
+    this.inventory = true;
+    this.refreshEntries();
+    this.setSellMode(true);
+    this.message(`Modo venda: toque num item guardado para vendê-lo por ${this.options.sellPercent?.() ?? 50}% do preço em moedas. Toque na caixa de novo para sair.`);
+  }
+  private sellMode = false;
+  private setSellMode(on: boolean): void { this.sellMode = on; this.store?.setSellMode(on); }
   private message(text: string): void { this.store?.setMessage(text); }
   private refreshEntries(): void {
     const category = this.store?.selectedCategory;

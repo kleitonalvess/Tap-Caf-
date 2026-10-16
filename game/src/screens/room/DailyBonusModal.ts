@@ -66,9 +66,12 @@ export class DailyBonusModal extends RoomDialog {
       }
       coin.eventMode = 'none';
       this.content.addChild(coin);
-      this.text(rewardText(reward).replace(' e ', '\n'), x, card.y + 136, 22, reward.cash > 0 ? DIALOG_COLORS.cash : DIALOG_COLORS.gold, { wrap: CARD_WIDTH - 16 });
+      // Coins and Grana on their own lines; spices and crates share the last one (day 6 has all four).
+      const parts = rewardText(reward).split(' e ');
+      const lines = parts.length > 2 ? [...parts.slice(0, 2), parts.slice(2).join(', ')] : parts;
+      this.text(lines.join('\n'), x, card.y + 128, lines.length > 2 ? 16 : 22, reward.cash > 0 ? DIALOG_COLORS.cash : DIALOG_COLORS.gold, { wrap: CARD_WIDTH - 12 });
       const caption = { claimed: '✓ Coletado', today: 'Hoje!', tomorrow: 'Amanhã', later: '' }[status];
-      if (caption) this.text(caption, x, card.y + CARD_HEIGHT - 38, 22, status === 'claimed' ? DIALOG_COLORS.cash : DIALOG_COLORS.title);
+      if (caption) this.text(caption, x, card.y + CARD_HEIGHT - 32, 22, status === 'claimed' ? DIALOG_COLORS.cash : DIALOG_COLORS.title);
     });
     if (this.message) this.text(this.message, this.width / 2, 460, 26, DIALOG_COLORS.red, { weight: '600' });
     const waiting = !state.claimable;

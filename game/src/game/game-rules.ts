@@ -11,6 +11,8 @@ export interface RecipeRule {
   xpPerServing: number;
   spoilSeconds: number;
   provisional?: boolean;
+  /** Name and level from the 2010 blog posts, as transcribed by the project owner. */
+  historical?: boolean;
   /** Drinks: the machine that makes them (coffee, juice) and the energy a batch costs. */
   machine?: string;
   energy?: number;
@@ -26,7 +28,11 @@ export interface ExpansionRules { startTiles: number; rewardCoins: number; steps
 export interface GameRules {
   recipes: RecipeRule[];
   /** cancelRefundPercent: share of the cost returned when a batch is cancelled while it cooks (all of it while preparing). */
-  stove: { prepareSeconds: number; cleaningCoins: number; cleaningXp: number; seasonBonusPercent: number; seasonXp: number; cancelRefundPercent?: number };
+  stove: {
+    prepareSeconds: number; cleaningCoins: number; cleaningXp: number; seasonBonusPercent: number; seasonXp: number; cancelRefundPercent?: number;
+    /** Accelerating with energy: percent of the time left, one energy per boostSecondsPerEnergy saved. */
+    boostPercent?: number; boostSecondsPerEnergy?: number;
+  };
   customers: { patienceSeconds: number; cookingArrivalFactor: number };
   levels?: { level: number; requiredXp: number; rewardCoins: number }[];
   /** How many employees a café keeps from each level (game-config amountLocks). */
@@ -44,9 +50,14 @@ export interface GameRules {
   /** Whole popularity points; the café keeps tenths. */
   popularity?: { min: number; max: number; satisfiedDelta: number; unsatisfiedDelta: number };
   customerFrequency?: { popularity: number; perMinute: number }[];
-  daily?: { days: { day: number; coins: number; cash: number; spices?: number }[] };
-  /** The pantry's special spices (codes 800001–800003). */
-  spices?: { list: Array<{ code: number; name: string; effect: 'double' | 'rush' | 'preserve'; description: string; priceCoins: number }> };
+  daily?: { days: { day: number; coins: number; cash: number; spices?: number; crates?: number }[] };
+  /** The spice shelf's six spices (codes 800001–800006). */
+  spices?: { list: Array<{ code: number; name: string; effect: 'servings' | 'rush' | 'instant' | 'rescue'; percent?: number; minExtra?: number; description: string; priceCoins: number; random?: boolean }> };
+  /** The config's <tips> bands: the tip jar holds up to `coins` from `level`. */
+  tips?: { level: number; coins: number }[];
+  tipJar?: { depositPercent: number; depositMin: number };
+  /** Theme sets (Banzai, Mamma Mia, Nobreza) and their tiers. */
+  decor?: { sets?: { themes: { id: string; name: string }[]; tiers: { pieces: number; tenths: number }[] } };
   /** Stoves and counters allowed per expansion step, and the share a sale returns. */
   equipment?: { stoves: number[]; counters: number[]; sellPercent: number };
   /** Energy: one point back every regenSeconds up to max; drinks go up to cap. */

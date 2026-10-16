@@ -169,7 +169,7 @@ export class PopularityModal extends RoomDialog {
 /** "Conjuntos: Japão 3 peças (+1) · Itália 1 peça (faltam 2 para +bônus)". */
 export function setsText(decor: DecorSummary): string {
   const sets = decor.sets ?? [];
-  if (!sets.length) return 'Conjuntos temáticos (Japão, Itália, Nobreza Clássica): 3 peças diferentes do mesmo tema dão bônus.';
+  if (!sets.length) return 'Conjuntos temáticos (Banzai, Mamma Mia, Nobreza Clássica): 3 peças diferentes do mesmo tema dão bônus.';
   return `Conjuntos: ${sets.map((set) => {
     const pieces = `${set.pieces} ${set.pieces === 1 ? 'peça' : 'peças'}`;
     const bonus = set.tenths > 0 ? ` +${decimal(set.tenths / 10)}` : '';

@@ -1,0 +1,20 @@
+{
+  "id": 3500013,
+  "classname": "italian_vespa",
+  "name": "Vespa",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 900,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 96,
+  "level": 11,
+  "placeholder": true,
+  "parts": [],
+  "art": "vespa",
+  "charm": 6,
+  "theme": "italy",
+  "nameSource": "blog-2010",
+  "featured": true
+}

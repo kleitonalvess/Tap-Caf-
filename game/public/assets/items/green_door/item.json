@@ -1,7 +1,7 @@
 {
   "id": 3010002,
   "classname": "green_door",
-  "name": "Porta Verde",
+  "name": "Porta Cantina",
   "type": 2,
   "kind": "door",
   "priceGold": 250,
@@ -25,5 +25,6 @@
     },
     "baseSlope": -0.5
   },
-  "theme": "italy"
+  "theme": "italy",
+  "nameSource": "blog-2010"
 }

@@ -37,6 +37,10 @@ type Recipe struct {
 	SpoilSeconds int `json:"spoilSeconds"`
 	// Provisional marks design placeholders, not values recovered from the original game.
 	Provisional bool `json:"provisional,omitempty"`
+	// Historical: the name and level come from the 2010 level table and update
+	// posts of the jogandocafemania blog, as transcribed by the project owner
+	// (cost, time, servings, price and XP are still design values).
+	Historical bool `json:"historical,omitempty"`
 	// Drinks only: the machine that makes it (coffee, juice) and the energy a batch costs.
 	Machine string `json:"machine,omitempty"`
 	Energy  int    `json:"energy,omitempty"`
@@ -53,6 +57,11 @@ type StoveRules struct {
 	// Cancelling a batch while it cooks returns this share of what it cost
 	// (rounded down); during preparation the whole cost comes back.
 	CancelRefundPercent int `json:"cancelRefundPercent"`
+	// Accelerating a batch with energy takes BoostPercent off the time left on
+	// the fire and costs one energy per BoostSecondsPerEnergy of the time saved
+	// (at least one); it may be repeated, each time on what is left.
+	BoostPercent          int `json:"boostPercent"`
+	BoostSecondsPerEnergy int `json:"boostSecondsPerEnergy"`
 }
 
 // DailyRules: the bonus for playing on consecutive days (dates in
@@ -69,6 +78,9 @@ type DailyReward struct {
 	Cash  int64 `json:"cash"`
 	// Random spices from the pantry list (the config's rewardSpice on days 5 and 6).
 	Spices int `json:"spices,omitempty"`
+	// Free mystery crates (the HUD's "Caixas", up to the crate limit): the last
+	// day closes the weekly cycle with one.
+	Crates int `json:"crates,omitempty"`
 }
 
 // MailRules: letters the café receives. Welcome arrives once per account.
@@ -176,17 +188,22 @@ type MissionGoal struct {
 	Target int64  `json:"target"`
 }
 
-// Spice effects on a seasoned batch (the regular seasoning still applies):
-// double doubles its extra servings, rush halves the cooking time left and
-// preserve triples how long the ready dish waits before it spoils.
+// Spice effects. servings, rush and instant go with the regular seasoning of
+// a batch on the fire: servings adds Percent of the recipe's servings (at
+// least MinExtra), rush takes Percent off the time left and instant makes the
+// dish ready now. rescue is used on a spoiled dish, which becomes ready again
+// with a fresh wait before it spoils.
 const (
-	SpiceDouble   = "double"
+	SpiceServings = "servings"
 	SpiceRush     = "rush"
-	SpicePreserve = "preserve"
+	SpiceInstant  = "instant"
+	SpiceRescue   = "rescue"
 )
 
-// SpiceRules: the pantry's special spices, codes 800001–800003 of the config
-// (which names no effects; these are the project's).
+// SpiceRules: the spice shelf's six spices. The names are the ones the project
+// owner transcribed from the 28/07/2010 post of the jogandocafemania blog; the
+// config only has the codes 800001–800003 (its random spice rewards), and
+// 800004–800006 are the project's. Effects' numbers and prices are design.
 type SpiceRules struct {
 	List        []Spice `json:"list"`
 	Provisional bool    `json:"provisional,omitempty"`
@@ -196,8 +213,21 @@ type Spice struct {
 	Code        int    `json:"code"`
 	Name        string `json:"name"`
 	Effect      string `json:"effect"`
+	Percent     int    `json:"percent,omitempty"`
+	MinExtra    int    `json:"minExtra,omitempty"`
 	Description string `json:"description"`
 	PriceCoins  int64  `json:"priceCoins"`
+	// Random: drawn by the random spice rewards (daily bonus days 5 and 6,
+	// the free crate), as the config's rewardSpice randomValues.
+	Random bool `json:"random,omitempty"`
+}
+
+// ExtraServings is what a servings spice adds to a batch of base servings.
+func (s Spice) ExtraServings(base int) int {
+	if s.Effect != SpiceServings {
+		return 0
+	}
+	return max(s.MinExtra, (base*s.Percent+99)/100)
 }
 
 // CrateRules: mystery crates. The free crate opens one of the HUD's "Caixas"
@@ -289,6 +319,33 @@ type Tip struct {
 	Level int   `json:"level"`
 	Coins int64 `json:"coins"`
 }
+
+// TipJarRules: every paid serving drops DepositPercent of its price (at least
+// DepositMin) into the café's tip jar, which holds up to the config's <tips>
+// coins for the owner's level band (100 to 500) until the owner collects it.
+type TipJarRules struct {
+	DepositPercent int   `json:"depositPercent"`
+	DepositMin     int64 `json:"depositMin"`
+	Provisional    bool  `json:"provisional,omitempty"`
+}
+
+// TipJarCap is how many coins the jar holds at this level (the <tips> band).
+func TipJarCap(level int) int64 {
+	var cap int64
+	for _, tip := range rules.Tips {
+		if level >= tip.Level {
+			cap = tip.Coins
+		}
+	}
+	return cap
+}
+
+// TipJarDeposit is what one paid serving at this price drops into the jar.
+func TipJarDeposit(price int64) int64 {
+	return max(rules.TipJar.DepositMin, price*int64(rules.TipJar.DepositPercent)/100)
+}
+
+func TipJar() TipJarRules { return rules.TipJar }
 
 // ServiceRules: how a dish reaches the table. A waiter must always beat
 // self-service, so customers fetching their own dish take a while and only
@@ -422,6 +479,7 @@ type Rules struct {
 	Levels            []Level            `json:"levels"`
 	CustomerFrequency []Frequency        `json:"customerFrequency"`
 	Tips              []Tip              `json:"tips"`
+	TipJar            TipJarRules        `json:"tipJar"`
 	EmployeeLocks     []EmployeeLock     `json:"employeeLocks"`
 	Recipes           []Recipe           `json:"recipes"`
 }
@@ -472,6 +530,9 @@ func validate(r Rules) string {
 			return "tips must increase by level"
 		}
 	}
+	if len(r.Tips) == 0 || r.Tips[0].Level != 1 || r.TipJar.DepositPercent < 0 || r.TipJar.DepositPercent > 100 || r.TipJar.DepositMin < 0 {
+		return "invalid tip jar"
+	}
 	for i, lock := range r.EmployeeLocks {
 		if lock.Employees != i+1 || lock.Level < 1 || i > 0 && lock.Level < r.EmployeeLocks[i-1].Level {
 			return "employee locks must be contiguous"
@@ -483,7 +544,8 @@ func validate(r Rules) string {
 	}
 	s := r.Stove
 	if s.PrepareSeconds < 0 || s.PrepareSeconds > 60 || s.CleaningCoins < 0 || s.CleaningXP < 0 ||
-		s.SeasonBonusPercent < 0 || s.SeasonBonusPercent > 100 || s.SeasonXP < 0 || s.CancelRefundPercent < 0 || s.CancelRefundPercent > 100 {
+		s.SeasonBonusPercent < 0 || s.SeasonBonusPercent > 100 || s.SeasonXP < 0 || s.CancelRefundPercent < 0 || s.CancelRefundPercent > 100 ||
+		s.BoostPercent < 1 || s.BoostPercent > 100 || s.BoostSecondsPerEnergy < 1 {
 		return "invalid stove rules"
 	}
 	if len(r.Daily.Days) == 0 || len(r.Daily.Days) > 31 {
@@ -582,9 +644,21 @@ func validate(r Rules) string {
 func validatePantry(r Rules) string {
 	codes := map[int]bool{}
 	for _, spice := range r.Spices.List {
-		if spice.Code < 800001 || spice.Code > 899999 || codes[spice.Code] || spice.Name == "" || spice.PriceCoins < 0 ||
-			spice.Effect != SpiceDouble && spice.Effect != SpiceRush && spice.Effect != SpicePreserve {
+		if spice.Code < 800001 || spice.Code > 899999 || codes[spice.Code] || spice.Name == "" || spice.PriceCoins < 0 {
 			return "invalid spice"
+		}
+		switch spice.Effect {
+		case SpiceServings:
+			if spice.Percent < 1 || spice.Percent > 100 || spice.MinExtra < 0 {
+				return "invalid servings spice"
+			}
+		case SpiceRush:
+			if spice.Percent < 1 || spice.Percent > 99 {
+				return "invalid rush spice"
+			}
+		case SpiceInstant, SpiceRescue:
+		default:
+			return "invalid spice effect"
 		}
 		codes[spice.Code] = true
 	}

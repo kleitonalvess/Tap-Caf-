@@ -82,6 +82,8 @@ export class StoreActionBar {
   private newsEntries: StoreEntry[] = [];
   private page = 0;
   private inventory = false;
+  /** Sell mode (the header's cash register): a tap on a stored item sells it. */
+  private sellMode = false;
   private activeTopTab: (typeof TOP_TABS)[number] = 'shop';
   private message?: Text;
   private capacity?: Text;
@@ -443,6 +445,12 @@ export class StoreActionBar {
 
   setMessage(message: string): void { if (this.message) this.message.text = message; }
 
+  setSellMode(on: boolean): void {
+    if (this.sellMode === on) return;
+    this.sellMode = on;
+    this.renderEntries();
+  }
+
   /** "Fogões 2/3 · Balcões 1/3": a full kind turns the count red-orange. */
   setCapacity(stoves: { placed: number; max: number }, counters: { placed: number; max: number }): void {
     if (!this.capacity) return;
@@ -530,6 +538,13 @@ export class StoreActionBar {
           imageSize / preview.texture.height,
         ));
         preview.position.set(SLOT_SIZE / 2, SLOT_SIZE / 2);
+      }
+      if (this.inventory && this.sellMode && this.actions?.onSell) {
+        // Sell mode: the whole card sells (after the confirmation); no drag.
+        face.tint = 0xffe7a8;
+        slot.on('pointerdown', (event) => event.stopPropagation());
+        slot.on('pointertap', (event) => { event.stopPropagation(); this.actions?.onSell?.(entry); });
+        return;
       }
       slot.on('pointerdown', (event) => {
         event.stopPropagation(); this.actions?.onDragStart?.(entry, event);

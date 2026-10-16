@@ -96,6 +96,8 @@ import { CratesModal } from './CratesModal';
 import { PantryModal } from './PantryModal';
 import { MachineModal } from './MachineModal';
 import { MachineEffects } from './MachineEffects';
+import { TipJarBadge } from './TipJarBadge';
+import { collectTips } from '../../game/tipjar';
 import { loadMachines, machineStateAt, operateMachine, type WorldMachine } from '../../game/machines';
 import { buySpice, CrateOpener, loadPantry, ownedSpices, useConsumable, type CrateResult } from '../../game/pantry';
 import { claimProgress, currencySources, loadProgress, popularityLines, renameCafe, type ProgressClaim, type ProgressSnapshot } from '../../game/progress';
@@ -108,7 +110,7 @@ import { createProceduralWallView, type WallWallpaper } from './ProceduralWallVi
 import { TOP_BAR_ICON_FRAMES, TopBars, type TopBarsTextures } from './TopBars';
 import { FloatingRewards, LevelUpToast } from './FloatingRewards';
 import { liveEnergy, type PlayerState } from '../../game/player-state';
-import { cancelRefund, cookingTime, staleness, stoveStatus, type CookingClient, type CookingSnapshot, type StoveCooking, type StoveStatus } from '../../game/cooking';
+import { boostCost, cancelRefund, cookingTime, staleness, stoveStatus, type CookingClient, type CookingSnapshot, type StoveCooking, type StoveStatus } from '../../game/cooking';
 import {
   PAN_KEY_STEP,
   RoomCamera,
@@ -348,6 +350,8 @@ export class RoomScreen implements Screen {
   /** Placed entertainment machines from the shared world, and their badges. */
   private readonly machines = new Map<string, WorldMachine>();
   private readonly machineEffects = new Map<string, MachineEffects>();
+  private tipJarBadge?: TipJarBadge;
+  private collectingTips = false;
   private energyTickMs = 0;
   private cratesModal?: CratesModal;
   private readonly crateOpener = new CrateOpener();
@@ -862,7 +866,8 @@ export class RoomScreen implements Screen {
           },
           onDragEnd: (event) => this.onDragEnd(event),
           ...(options.roomSnapshot?.canEdit !== false && this.rules?.expansions ? { onExpand: () => this.openExpansion() } : {}),
-          onCashRegister: () => this.openCashDay(),
+          // The header's cash register sells stored items (as in the original store).
+          onCashRegister: () => { if (options.roomSnapshot?.canEdit !== false) this.roomStore!.toggleSellMode(); },
           ...(options.roomSnapshot?.canEdit !== false ? { onSell: (entry: StoreEntry) => this.roomStore!.sell(entry) } : {}),
         } : undefined,
         options.storeTopButtonTexture,
@@ -1055,7 +1060,7 @@ export class RoomScreen implements Screen {
       ...(options.audio ? { audio: options.audio } : {}),
     });
     this.view.addChild(this.currencyModal.view);
-    this.cashDayModal = new CashDayModal({ ...(options.audio ? { audio: options.audio } : {}) });
+    this.cashDayModal = new CashDayModal({ ...(options.audio ? { audio: options.audio } : {}), onCollect: () => this.collectTipJar() });
     this.view.addChild(this.cashDayModal.view);
     // Pantry spices and mystery crates: each player's own, credited by the server.
     this.roomClient = options.roomClient;
@@ -1166,6 +1171,10 @@ export class RoomScreen implements Screen {
     }
     if (event.type === 'payment' && event.payment) {
       this.showPayment(event.payment);
+      if (this.roomSnapshot?.canEdit !== false && this.roomSnapshot?.tipJar && event.payment.tipJar !== undefined) {
+        this.roomSnapshot.tipJar.coins = event.payment.tipJar;
+        if (this.cashDayModal?.isOpen) this.cashDayModal.setJar(this.roomSnapshot.tipJar);
+      }
       const visited = this.roomSnapshot?.canEdit === false ? this.roomSnapshot.cafe : undefined;
       if (visited) {
         visited.popularity = Math.min(105, (event.payment.popularityTenths + (this.roomSnapshot?.decor?.bonusTenths ?? 0)) / 10);
@@ -1749,6 +1758,46 @@ export class RoomScreen implements Screen {
     for (const [id, effect] of this.machineEffects) if (!present.has(id)) { effect.destroy(); this.machineEffects.delete(id); }
   }
 
+  /** The owner's tip jar over the cash register, or the first counter without one. */
+  private updateTipJar(deltaMs: number): void {
+    const jar = this.roomSnapshot?.canEdit !== false ? this.roomSnapshot?.tipJar : undefined;
+    const anchor = jar ? this.model.items.find((item) => item.kind === 'register') ?? this.model.items.find((item) => item.kind === 'counter') : undefined;
+    if (!jar || !anchor || jar.coins <= 0) {
+      if (this.tipJarBadge) this.tipJarBadge.view.visible = false;
+      return;
+    }
+    if (!this.tipJarBadge) { this.tipJarBadge = new TipJarBadge(() => this.collectTipJar()); this.world.addChild(this.tipJarBadge.view); }
+    this.tipJarBadge.set(jar.coins, jar.cap);
+    // Beside the counter's dish badge, on the register's top.
+    const lift = anchor.kind === 'register' ? 70 : 40;
+    this.tipJarBadge.view.position.set(tileToScreenX(anchor.tx, anchor.ty) - 46, tileToScreenY(anchor.tx, anchor.ty) - lift);
+    this.tipJarBadge.view.renderable = !this.storeBar?.isOpen;
+    setItemOverlayDepth(this.tipJarBadge.view, anchor);
+    this.tipJarBadge.update(deltaMs);
+  }
+
+  /** The owner taps the jar: its coins go to the wallet. */
+  private collectTipJar(): void {
+    if (this.collectingTips || this.roomSnapshot?.canEdit === false) return;
+    if (this.isModalOpen && !this.cashDayModal?.isOpen) return;
+    this.collectingTips = true;
+    void collectTips().then((result) => {
+      this.collectingTips = false;
+      if (this.destroyed || !this.roomSnapshot) return;
+      this.roomSnapshot.tipJar = result.jar;
+      this.setPlayerState(result.state);
+      const view = this.tipJarBadge?.view;
+      if (view) this.floatingRewards.spawn(view.x, view.y - 60, view.zIndex, result.coins, 0, result.coins);
+      this.audio?.play('coin');
+      if (this.cashDayModal?.isOpen) this.cashDayModal.setJar(result.jar);
+    }).catch((error: unknown) => {
+      this.collectingTips = false;
+      if (this.destroyed) return;
+      this.showNotice(error instanceof Error ? error.message : 'Não foi possível coletar as gorjetas.');
+      if (this.cashDayModal?.isOpen && this.roomSnapshot?.tipJar) this.cashDayModal.setJar(this.roomSnapshot.tipJar);
+    });
+  }
+
   private catalogItem(id: number): RoomCatalogItem | undefined {
     return this.roomSnapshot?.catalog.find((item) => item.id === id);
   }
@@ -2007,7 +2056,12 @@ export class RoomScreen implements Screen {
   private stoveActionsFor(stove: RoomItem, job: StoveCooking | undefined, status: StoveStatus | undefined): StoveAction[] {
     const owner = this.roomSnapshot?.canEdit !== false;
     const actions: StoveAction[] = [];
+    const pantrySpices = owner ? ownedSpices((this.rules?.spices?.list ?? []).map((entry) => ({ ...entry, count: 0 })), this.roomSnapshot?.playerState?.pantry) : [];
     if (status === 'spoiled') {
+      // The Sálvia Salvadora brings the dish back; otherwise it goes in the bin.
+      for (const spice of pantrySpices.filter((entry) => entry.effect === 'rescue')) {
+        actions.push({ kind: 'rescue', label: `stove-action-rescue-${spice.code}`, caption: `Recuperar: ${spice.name} (${spice.count})`, onTap: () => this.rescueStove(stove, spice.code) });
+      }
       if (owner) actions.push({ kind: 'clean', caption: 'Limpar fogão', onTap: () => this.cleanStove(stove) });
       return actions;
     }
@@ -2023,11 +2077,14 @@ export class RoomScreen implements Screen {
       const bonus = this.rules ? Math.max(1, Math.ceil((this.rules.recipes.find((recipe) => recipe.id === job.recipeId)?.servings ?? 1) * this.rules.stove.seasonBonusPercent / 100)) : 1;
       actions.push({ kind: 'season', caption: `Temperar (+${bonus} ${bonus === 1 ? 'porção' : 'porções'})`, onTap: () => this.seasonStove(stove) });
       // The owner's pantry spices: the regular seasoning plus the spice's effect.
-      if (owner) {
-        for (const spice of ownedSpices((this.rules?.spices?.list ?? []).map((entry) => ({ ...entry, count: 0 })), this.roomSnapshot?.playerState?.pantry)) {
-          actions.push({ kind: 'season', label: `stove-action-spice-${spice.code}`, caption: `${spice.name} (${spice.count})`, onTap: () => this.seasonStove(stove, spice.code) });
-        }
+      for (const spice of pantrySpices.filter((entry) => entry.effect !== 'rescue')) {
+        actions.push({ kind: 'season', label: `stove-action-spice-${spice.code}`, caption: `${spice.name} (${spice.count})`, onTap: () => this.seasonStove(stove, spice.code) });
       }
+    }
+    // Energy takes part of the time left on the fire (any batch, drinks too).
+    if (owner && job && this.cookingClient && (status === 'preparing' || status === 'cooking')) {
+      const cost = boostCost(job, this.cookingClient.serverNowMs(), this.rules?.stove.boostPercent ?? 0, this.rules?.stove.boostSecondsPerEnergy ?? 0);
+      if (cost > 0) actions.push({ kind: 'boost', caption: `Acelerar (${cost} de energia)`, onTap: () => this.boostStove(stove) });
     }
     if (owner) actions.push({ kind: 'cancel', caption: 'Cancelar', onTap: () => this.confirmCancel(stove, job) });
     return actions;
@@ -2074,11 +2131,7 @@ export class RoomScreen implements Screen {
     if (!this.cookingClient || !stove.instanceId) return;
     void this.cookingClient.season(stove.instanceId, spice).then((snapshot) => {
       // The spice left the pantry: ask for the HUD values the SSE would bring anyway.
-      if (spice) void loadPantry().then((pantry) => {
-        if (this.destroyed || !this.roomSnapshot?.playerState) return;
-        const counts = Object.fromEntries(pantry.spices.map((entry) => [String(entry.code), entry.count]));
-        this.setPlayerState({ ...this.roomSnapshot.playerState, pantry: counts });
-      }).catch(() => undefined);
+      if (spice) void this.refreshPantryCounts();
       if (this.destroyed) return;
       this.acceptCookingSnapshot(snapshot, false);
       this.stoveEffects.get(stove.instanceId!)?.burst();
@@ -2089,6 +2142,45 @@ export class RoomScreen implements Screen {
     }).catch((error: unknown) => {
       if (!this.destroyed) this.showNotice(error instanceof Error ? error.message : 'Não foi possível temperar.');
     });
+  }
+
+  /** Owner: a Sálvia Salvadora from the pantry makes the spoiled dish ready again. */
+  private rescueStove(stove: RoomItem, spice: number): void {
+    this.closeStoveActions();
+    if (!this.cookingClient || !stove.instanceId) return;
+    void this.cookingClient.rescue(stove.instanceId, spice).then((snapshot) => {
+      void this.refreshPantryCounts();
+      if (this.destroyed) return;
+      this.acceptCookingSnapshot(snapshot, false);
+      this.stoveEffects.get(stove.instanceId!)?.burst();
+      this.audio?.play('season');
+      this.showNotice('Prato recuperado! Sirva antes que estrague de novo.');
+    }).catch((error: unknown) => {
+      if (!this.destroyed) this.showNotice(error instanceof Error ? error.message : 'Não foi possível recuperar o prato.');
+    });
+  }
+
+  /** Owner: spends energy to take part of the time left on the fire. */
+  private boostStove(stove: RoomItem): void {
+    this.closeStoveActions();
+    if (!this.cookingClient || !stove.instanceId) return;
+    void this.cookingClient.boost(stove.instanceId).then((snapshot) => {
+      if (this.destroyed) return;
+      this.acceptCookingSnapshot(snapshot, false);
+      this.stoveEffects.get(stove.instanceId!)?.burst();
+    }).catch((error: unknown) => {
+      if (!this.destroyed) this.showNotice(error instanceof Error ? error.message : 'Não foi possível acelerar.');
+    });
+  }
+
+  /** The pantry counts after a spice was used, before the SSE brings the HUD. */
+  private async refreshPantryCounts(): Promise<void> {
+    try {
+      const pantry = await loadPantry();
+      if (this.destroyed || !this.roomSnapshot?.playerState) return;
+      const counts = Object.fromEntries([...pantry.spices, ...(pantry.items ?? [])].map((entry) => [String(entry.code), entry.count]));
+      this.setPlayerState({ ...this.roomSnapshot.playerState, pantry: counts });
+    } catch { /* The next player_state event brings the pantry. */ }
   }
 
   /** Throws a spoiled dish away so the stove can cook again. */
@@ -2546,7 +2638,7 @@ export class RoomScreen implements Screen {
       : { name: visited?.name ?? '', popularity: visited?.popularity ?? 0, maximum: state?.satisfaction.maximum ?? 105, owner, ...(decor ? { decor } : {}) });
   }
 
-  /** Caixa do dia, from the cash register in the store header. */
+  /** Caixa do dia with the tip jar, from the cash register in the café. */
   private openCashDay(): void {
     if (!this.cashDayModal || this.isModalOpen) return;
     this.audio?.play('coin');
@@ -2554,7 +2646,7 @@ export class RoomScreen implements Screen {
     void loadProgress().then((progress) => {
       if (this.destroyed || this.isModalOpen) return;
       this.acceptProgress(progress);
-      this.cashDayModal?.show({ today: progress.today ?? {}, register });
+      this.cashDayModal?.show({ today: progress.today ?? {}, register, ...(this.roomSnapshot?.tipJar ? { jar: this.roomSnapshot.tipJar } : {}) });
     }).catch((error: unknown) => this.showNotice(error instanceof Error ? error.message : 'Caixa indisponível.'));
   }
 
@@ -2913,7 +3005,7 @@ export class RoomScreen implements Screen {
         if (cooksOn(item)) {
           this.stoveViews.set(item, [sprite]);
           this.bindStoveTap(sprite, item);
-        } else if (item.kind === 'entertainment' || item.kind === 'shelf') {
+        } else if (item.kind === 'entertainment' || item.kind === 'shelf' || item.kind === 'register') {
           this.bindFurnitureTap(sprite, item);
         }
         this.world.addChild(sprite);
@@ -2924,7 +3016,7 @@ export class RoomScreen implements Screen {
     // Sem arte: um pedaço de caixa por tile da pegada, cada um com sua
     // própria profundidade.
     for (const graphics of createItemViews(item)) {
-      if (item.kind === 'entertainment' || item.kind === 'shelf') this.bindFurnitureTap(graphics, item);
+      if (item.kind === 'entertainment' || item.kind === 'shelf' || item.kind === 'register') this.bindFurnitureTap(graphics, item);
       if (cooksOn(item)) {
         const views = this.stoveViews.get(item) ?? [];
         views.push(graphics);
@@ -2947,6 +3039,7 @@ export class RoomScreen implements Screen {
       event.stopPropagation();
       if (this.roomSnapshot?.canEdit === false) { this.showNotice('Apenas no seu próprio café.'); return; }
       if (item.kind === 'shelf') this.openPantry();
+      else if (item.kind === 'register') this.openCashDay();
       else if (item.inventoryUnitId) this.openMachine(item.inventoryUnitId);
     });
   }
@@ -3566,6 +3659,7 @@ export class RoomScreen implements Screen {
       if (state && state.energy.current < state.energy.maximum) this.showPlayerHud(state);
     }
     this.updateMachineEffects(deltaMs);
+    this.updateTipJar(deltaMs);
     this.cookModal?.update(deltaMs);
     this.wardrobeModal?.update(deltaMs);
     this.storeBar?.update(deltaMs);
@@ -3796,6 +3890,7 @@ export class RoomScreen implements Screen {
     this.cratesModal?.destroy();
     this.machineModal?.destroy();
     this.machineEffects.forEach((effect) => effect.destroy()); this.machineEffects.clear();
+    this.tipJarBadge?.destroy();
     this.partyLights.destroy();
     this.partyBadge.destroy();
     this.audio?.setOverride?.(null);

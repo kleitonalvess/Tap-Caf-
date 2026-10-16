@@ -54,6 +54,8 @@ export interface RoomSnapshot {
   decor?: DecorSummary;
   /** Placed stoves and counters against the café's limit. */
   equipment?: { stoves: EquipmentCount; counters: EquipmentCount };
+  /** The owner's tip jar (absent for visitors). */
+  tipJar?: { coins: number; cap: number };
 }
 export interface ItemManifest extends RoomCatalogItem {
   itemHeight: number; parts: (IndoorArtFrame & { rotation?: number })[];

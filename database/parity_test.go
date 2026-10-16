@@ -436,6 +436,48 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 	log("shelf harvest", map[string]any{"err": outcome(err), "spice": harvested.FreeSpice})
 	shelfPantry, err := cafe.SnapshotPantry(s, owner)
 	log("pantry with a shelf", map[string]any{"err": outcome(err), "limit": shelfPantry.SpiceLimit, "shelf": shelfPantry.Shelf, "items": shelfPantry.Items})
+
+	// Sprint 16: the tip jar (player_rooms.tip_jar, filled by the payments
+	// above), the legacy granted marking, a spoiled dish rescued with the
+	// Sálvia Salvadora and a batch accelerated with energy.
+	late := t0.Add(100 * time.Hour)
+	jarRoom := room("tip jar room")
+	log("tip jar", jarRoom.TipJar)
+	tips, err := cafe.CollectTips(s, owner, late)
+	log("collect tips", map[string]any{"err": outcome(err), "coins": tips.Coins, "jar": tips.Jar, "gold": tips.State.Gold})
+	_, err = cafe.CollectTips(s, owner, late)
+	log("collect an empty jar", outcome(err))
+	inventory, err := s.Find("player_inventory", cafe.Query{Where: cafe.Where{"user": owner}, Limit: 10000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, unit := range inventory {
+		unit.Set("granted", false)
+		if err := s.Save(unit); err != nil {
+			t.Fatal(err)
+		}
+	}
+	marked, err := cafe.MarkLegacyGranted(s, owner)
+	log("legacy granted", map[string]any{"err": outcome(err), "marked": marked})
+	again, err := cafe.MarkLegacyGranted(s, owner)
+	log("legacy granted again", map[string]any{"err": outcome(err), "marked": again})
+	salvia, err := cafe.BuySpice(s, owner, 800003, late)
+	log("buy salvia", map[string]any{"err": outcome(err), "pantry": salvia.State.Pantry})
+	cooking("spoiled multi-stove", late)
+	for _, stove := range func() []cafe.StoveView { c, _ := cafe.SnapshotCooking(s, owner, late); return c.Stoves }() {
+		if stove.ItemID != 3070005 || stove.Cooking == nil {
+			continue
+		}
+		log("rescue", outcome(cafe.RescueCooking(s, owner, stove.ID, 800003, late)))
+		cooking("rescued", late)
+		log("serve rescued", outcome(cafe.ServeCooking(s, owner, stove.ID, late.Add(time.Second))))
+		log("cook to boost", outcome(cafe.StartCooking(s, owner, stove.ID, "coxinha", late.Add(time.Minute))))
+		boostAt := late.Add(time.Minute + gamerules.PrepareDuration() + 10*time.Second)
+		log("boost", outcome(cafe.BoostCooking(s, owner, stove.ID, boostAt)))
+		cooking("boosted", boostAt)
+		boosted, _ := s.First(cafe.PlayerCollection, cafe.Where{"user": owner})
+		log("energy after the boost", map[string]any{"current": boosted.GetInt("energy_current"), "at": offset(boosted.GetTime("energy_at").UTC().Format(cafe.TimeLayout))})
+	}
 	world("final")
 	return lines
 }

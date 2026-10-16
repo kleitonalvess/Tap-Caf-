@@ -17,6 +17,8 @@ export interface SharedPayment {
   /** coins is the total credited; tip (waiter or party) and freshCoins (farm) are parts of it. */
   actorId?: string; recipeId: string; coins: number; tip?: number; freshCoins?: number; freshXp?: number; freshLeft?: number; xp: number; level: number;
   levelUp?: boolean; levelReward?: number; servingsLeft: number; popularityTenths: number;
+  /** Coins in the owner's tip jar after this serving's deposit. */
+  tipJar?: number;
 }
 /** fetching: a customer without a waiter fetching a serving from the counter. */
 export interface SharedAction { kind: 'cooking' | 'serving' | 'cleaning' | 'seated' | 'eating' | 'fetching'; stoveId?: string; startedAt: number; duration: number }

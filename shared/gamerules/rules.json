@@ -2,7 +2,7 @@
   "source": "ripped/game-config.xml.txt (referência modificada). Níveis, popularidade, frequência, gorjetas (tabela por nível, sem uso) e vagas de funcionários vêm do arquivo. Preços e níveis das expansões, o custo por vaga de funcionário, a Fazenda e a Discoteca (street) e o expediente offline (offline) e a Carta de Boas-Vindas do correio (mail, +50 moedas no lugar das 5.000 do nível 1) foram definidos pelo responsável pelo projeto (o config só traz em <expansions><newsFeed> o prêmio de 250 moedas por cliques de amigos na publicação, aqui pago ao concluir cada expansão). O bônus diário (daily) tem os 6 dias do <dailyBonus> do config, mas lá os prêmios premiavam cliques de amigos numa publicação (newsFeed): os dias 1 e 2 reaproveitam esses 100 e 250 moedas; os demais valores e a Grana (2 no 3º dia, 10 no 6º) foram aprovados pelo responsável. As conquistas (achievements) com code 1 a 5 são as do <achievements> do config, com metas e prêmios de lá (amount_neighbors e sent_gifts ficam ocultas até existirem vizinhos e presentes); as demais conquistas, com Grana nos níveis Prata e Ouro, e as missões diárias (missions; o config só cita 25 códigos de metas, sem definições; +1 Grana só ao completar as três do dia) foram aprovadas pelo responsável. Receitas, fogão (inclusive o reembolso ao cancelar), mesas, perfis e tempos dos funcionários, XP das expansões, atraso do autosserviço, gorjeta do garçom e paciência dos clientes são valores de design provisórios: o repositório não contém a lista original de receitas nem dados de sujeira (o config só nomeia dishPickupTime, adulterado).",
   "popularity": { "min": 5, "max": 105, "satisfiedDelta": 0.1, "unsatisfiedDelta": 0.3 },
   "customers": { "patienceSeconds": 40, "cookingArrivalFactor": 1.5 },
-  "stove": { "prepareSeconds": 2, "cleaningCoins": 0, "cleaningXp": 1, "seasonBonusPercent": 25, "seasonXp": 1, "cancelRefundPercent": 50 },
+  "stove": { "prepareSeconds": 2, "cleaningCoins": 0, "cleaningXp": 1, "seasonBonusPercent": 25, "seasonXp": 1, "cancelRefundPercent": 50, "boostPercent": 50, "boostSecondsPerEnergy": 180 },
   "tables": { "cleaningSeconds": 2, "cleaningXp": 0 },
   "service": { "selfPickupMs": 3500, "waiterTipPercent": 10, "waiterTipMin": 1 },
   "offline": { "minAwaySeconds": 120, "maxAwaySeconds": 28800, "seatCycleSeconds": 30, "deliverySeconds": 20 },
@@ -29,7 +29,7 @@
       { "day": 3, "coins": 400, "cash": 2 },
       { "day": 4, "coins": 600, "cash": 0 },
       { "day": 5, "coins": 800, "cash": 0, "spices": 1 },
-      { "day": 6, "coins": 500, "cash": 10, "spices": 1 }
+      { "day": 6, "coins": 500, "cash": 10, "spices": 1, "crates": 1 }
     ]
   },
   "mail": {
@@ -43,32 +43,31 @@
   "decor": {
     "fullCopies": 3, "halfCopies": 3, "maxBonusTenths": 150,
     "sets": {
-      "provisional": true,
       "themes": [
-        { "id": "japan", "name": "Japão" },
-        { "id": "italy", "name": "Itália" },
+        { "id": "japan", "name": "Banzai (Japão)" },
+        { "id": "italy", "name": "Mamma Mia (Itália)" },
         { "id": "noble", "name": "Nobreza Clássica" }
       ],
       "tiers": [ { "pieces": 3, "tenths": 10 }, { "pieces": 6, "tenths": 25 } ]
     }
   },
-  "energy": { "provisional": true, "max": 50, "regenSeconds": 120, "cap": 200 },
+  "energy": { "max": 50, "regenSeconds": 120, "cap": 200 },
   "consumables": [
     { "code": 810001, "name": "Cafezinho Turbo", "kind": "energy", "amount": 10, "priceCoins": 150, "description": "Devolve 10 de energia na hora." },
     { "code": 810002, "name": "Energético de Guaraná", "kind": "energy", "amount": 30, "priceCash": 1, "description": "Devolve 30 de energia na hora." },
     { "code": 820001, "name": "Peça de Máquina", "kind": "part", "amount": 1, "priceCash": 1, "description": "Monta e melhora a jukebox e o fliperama." }
   ],
-  "pantry": { "provisional": true, "spiceLimit": 5, "shelfSpiceLimit": 15, "shelfHarvestPercent": 25 },
+  "pantry": { "spiceLimit": 5, "shelfSpiceLimit": 15, "shelfHarvestPercent": 25 },
   "drinks": [
-    { "id": "cafe_expresso", "name": "Café Expresso", "machine": "coffee", "level": 4, "costCoins": 6, "energy": 2, "cookSeconds": 30, "servings": 6, "pricePerServing": 3, "xpPerServing": 1, "spoilSeconds": 1800, "provisional": true },
-    { "id": "cappuccino", "name": "Cappuccino", "machine": "coffee", "level": 9, "costCoins": 20, "energy": 3, "cookSeconds": 90, "servings": 10, "pricePerServing": 5, "xpPerServing": 2, "spoilSeconds": 2700, "provisional": true },
-    { "id": "mocha_gelado", "name": "Mocha Gelado", "machine": "coffee", "level": 16, "costCoins": 45, "energy": 4, "cookSeconds": 240, "servings": 14, "pricePerServing": 7, "xpPerServing": 2, "spoilSeconds": 3600, "provisional": true },
-    { "id": "suco_laranja", "name": "Suco de Laranja", "machine": "juice", "level": 5, "costCoins": 8, "energy": 2, "cookSeconds": 45, "servings": 6, "pricePerServing": 3, "xpPerServing": 1, "spoilSeconds": 1800, "provisional": true },
-    { "id": "suco_maracuja", "name": "Suco de Maracujá", "machine": "juice", "level": 11, "costCoins": 24, "energy": 3, "cookSeconds": 120, "servings": 10, "pricePerServing": 5, "xpPerServing": 2, "spoilSeconds": 2700, "provisional": true },
-    { "id": "vitamina_acai", "name": "Vitamina de Açaí", "machine": "juice", "level": 18, "costCoins": 60, "energy": 4, "cookSeconds": 300, "servings": 14, "pricePerServing": 8, "xpPerServing": 3, "spoilSeconds": 3600, "provisional": true }
+    { "id": "cafe_expresso", "name": "Café Expresso", "machine": "coffee", "level": 4, "costCoins": 6, "energy": 2, "cookSeconds": 30, "servings": 6, "pricePerServing": 3, "xpPerServing": 1, "spoilSeconds": 1800 },
+    { "id": "cappuccino", "name": "Cappuccino", "machine": "coffee", "level": 9, "costCoins": 20, "energy": 3, "cookSeconds": 90, "servings": 10, "pricePerServing": 5, "xpPerServing": 2, "spoilSeconds": 2700 },
+    { "id": "mocha_gelado", "name": "Mocha Gelado", "machine": "coffee", "level": 16, "costCoins": 45, "energy": 4, "cookSeconds": 240, "servings": 14, "pricePerServing": 7, "xpPerServing": 2, "spoilSeconds": 3600 },
+    { "id": "suco_laranja", "name": "Suco de Laranja", "machine": "juice", "level": 5, "costCoins": 8, "energy": 2, "cookSeconds": 45, "servings": 6, "pricePerServing": 3, "xpPerServing": 1, "spoilSeconds": 1800 },
+    { "id": "suco_maracuja", "name": "Suco de Maracujá", "machine": "juice", "level": 11, "costCoins": 24, "energy": 3, "cookSeconds": 120, "servings": 10, "pricePerServing": 5, "xpPerServing": 2, "spoilSeconds": 2700 },
+    { "id": "vitamina_acai", "name": "Vitamina de Açaí", "machine": "juice", "level": 18, "costCoins": 60, "energy": 4, "cookSeconds": 300, "servings": 14, "pricePerServing": 8, "xpPerServing": 3, "spoilSeconds": 3600 }
   ],
   "entertainment": {
-    "provisional": true, "runSeconds": 1800, "maintenanceRuns": 4, "startEnergy": 5, "repairEnergy": 8,
+    "runSeconds": 1800, "maintenanceRuns": 4, "startEnergy": 5, "repairEnergy": 8,
     "machines": [
       { "item": 3700002, "levels": [
         { "parts": 3, "coins": 0, "runCoins": 60, "runXp": 6, "patiencePercent": 10 },
@@ -81,18 +80,22 @@
     ]
   },
   "equipment": {
-    "provisional": true,
     "stoves": [2, 3, 4, 5, 6, 7, 8],
     "counters": [2, 3, 4, 5, 6, 7, 8],
     "sellPercent": 50
   },
   "spices": {
+    "provisional": true,
     "list": [
-      { "code": 800001, "name": "Tempero Caseiro", "effect": "double", "description": "Dobra as porções extras do tempero.", "priceCoins": 150 },
-      { "code": 800002, "name": "Tempero do Chef", "effect": "rush", "description": "Adianta pela metade o tempo que falta no fogo.", "priceCoins": 400 },
-      { "code": 800003, "name": "Tempero Real", "effect": "preserve", "description": "O prato pronto demora 3 vezes mais para estragar.", "priceCoins": 800 }
+      { "code": 800001, "name": "Sal Turbinado", "effect": "servings", "percent": 5, "minExtra": 1, "random": true, "description": "Tempera e rende 5% a mais de porções (pelo menos 1).", "priceCoins": 150 },
+      { "code": 800004, "name": "Pimenta Poderosa", "effect": "servings", "percent": 10, "minExtra": 2, "description": "Tempera e rende 10% a mais de porções (pelo menos 2).", "priceCoins": 300 },
+      { "code": 800002, "name": "Tomilho Acelerador", "effect": "rush", "percent": 50, "random": true, "description": "Tempera e corta pela metade o tempo que falta no fogo.", "priceCoins": 400 },
+      { "code": 800005, "name": "Tomilho Ultrarrápido", "effect": "rush", "percent": 80, "description": "Tempera e corta 80% do tempo que falta no fogo.", "priceCoins": 700 },
+      { "code": 800006, "name": "Condimento Instantâneo", "effect": "instant", "description": "Tempera e deixa o prato pronto na hora.", "priceCoins": 1200 },
+      { "code": 800003, "name": "Sálvia Salvadora", "effect": "rescue", "random": true, "description": "Recupera um prato estragado no fogão: ele volta a ficar pronto para servir.", "priceCoins": 800 }
     ]
   },
+  "tipJar": { "depositPercent": 20, "depositMin": 1, "provisional": true },
   "crates": {
     "freeMax": 10,
     "list": [
@@ -500,12 +503,29 @@
     { "id": "pao_de_queijo", "name": "Pão de Queijo", "level": 1, "costCoins": 3, "cookSeconds": 15, "servings": 3, "pricePerServing": 3, "xpPerServing": 1, "spoilSeconds": 120, "provisional": true },
     { "id": "cake_1", "name": "Bolo", "level": 1, "costCoins": 5, "cookSeconds": 30, "servings": 4, "pricePerServing": 4, "xpPerServing": 1, "spoilSeconds": 120, "provisional": true },
     { "id": "coxinha", "name": "Coxinha", "level": 2, "costCoins": 15, "cookSeconds": 120, "servings": 10, "pricePerServing": 4, "xpPerServing": 1, "spoilSeconds": 300, "provisional": true },
-    { "id": "brigadeiro", "name": "Brigadeiro", "level": 3, "costCoins": 25, "cookSeconds": 300, "servings": 15, "pricePerServing": 5, "xpPerServing": 1, "spoilSeconds": 600, "provisional": true },
-    { "id": "misto_quente", "name": "Misto-Quente", "level": 5, "costCoins": 40, "cookSeconds": 600, "servings": 18, "pricePerServing": 6, "xpPerServing": 2, "spoilSeconds": 900, "provisional": true },
+    { "id": "mousse_maracuja", "name": "Mousse de Maracujá", "level": 3, "costCoins": 22, "cookSeconds": 240, "servings": 12, "pricePerServing": 5, "xpPerServing": 1, "spoilSeconds": 600, "provisional": true, "historical": true },
+    { "id": "pamonha", "name": "Pamonha", "level": 3, "costCoins": 30, "cookSeconds": 480, "servings": 16, "pricePerServing": 5, "xpPerServing": 1, "spoilSeconds": 900, "provisional": true, "historical": true },
+    { "id": "vatapa", "name": "Vatapá", "level": 4, "costCoins": 35, "cookSeconds": 600, "servings": 16, "pricePerServing": 6, "xpPerServing": 1, "spoilSeconds": 900, "provisional": true, "historical": true },
+    { "id": "bolo_cenoura", "name": "Bolo de Cenoura", "level": 5, "costCoins": 45, "cookSeconds": 900, "servings": 20, "pricePerServing": 6, "xpPerServing": 2, "spoilSeconds": 1200, "provisional": true, "historical": true },
+    { "id": "bobo_camarao", "name": "Bobó de Camarão", "level": 6, "costCoins": 60, "cookSeconds": 1200, "servings": 22, "pricePerServing": 7, "xpPerServing": 2, "spoilSeconds": 1800, "provisional": true, "historical": true },
+    { "id": "empadao_frango", "name": "Empadão de Frango", "level": 7, "costCoins": 70, "cookSeconds": 1500, "servings": 24, "pricePerServing": 7, "xpPerServing": 2, "spoilSeconds": 1800, "provisional": true, "historical": true },
     { "id": "torta_de_frango", "name": "Torta de Frango", "level": 8, "costCoins": 80, "cookSeconds": 900, "servings": 24, "pricePerServing": 7, "xpPerServing": 2, "spoilSeconds": 1800, "provisional": true },
+    { "id": "feijoada", "name": "Feijoada", "level": 8, "costCoins": 110, "cookSeconds": 2700, "servings": 32, "pricePerServing": 8, "xpPerServing": 2, "spoilSeconds": 3600, "provisional": true, "historical": true },
+    { "id": "pudim", "name": "Pudim de Leite", "level": 9, "costCoins": 100, "cookSeconds": 1800, "servings": 30, "pricePerServing": 8, "xpPerServing": 2, "spoilSeconds": 3600, "provisional": true, "historical": true },
     { "id": "lasanha", "name": "Lasanha", "level": 10, "costCoins": 120, "cookSeconds": 1800, "servings": 30, "pricePerServing": 8, "xpPerServing": 2, "spoilSeconds": 2700, "provisional": true },
-    { "id": "feijoada", "name": "Feijoada", "level": 12, "costCoins": 200, "cookSeconds": 3600, "servings": 40, "pricePerServing": 10, "xpPerServing": 3, "spoilSeconds": 3600, "provisional": true },
-    { "id": "pudim", "name": "Pudim de Leite", "level": 15, "costCoins": 300, "cookSeconds": 7200, "servings": 50, "pricePerServing": 12, "xpPerServing": 3, "spoilSeconds": 7200, "provisional": true },
-    { "id": "moqueca", "name": "Moqueca", "level": 20, "costCoins": 500, "cookSeconds": 14400, "servings": 70, "pricePerServing": 14, "xpPerServing": 4, "spoilSeconds": 14400, "provisional": true }
+    { "id": "churrasco", "name": "Churrasco", "level": 12, "costCoins": 200, "cookSeconds": 3600, "servings": 40, "pricePerServing": 10, "xpPerServing": 3, "spoilSeconds": 3600, "provisional": true, "historical": true },
+    { "id": "fondue", "name": "Fondue", "level": 15, "costCoins": 260, "cookSeconds": 5400, "servings": 46, "pricePerServing": 11, "xpPerServing": 3, "spoilSeconds": 5400, "provisional": true, "historical": true },
+    { "id": "brigadeiro", "name": "Brigadeiro", "level": 17, "costCoins": 150, "cookSeconds": 600, "servings": 24, "pricePerServing": 11, "xpPerServing": 3, "spoilSeconds": 1800, "provisional": true, "historical": true },
+    { "id": "picanha", "name": "Picanha", "level": 19, "costCoins": 420, "cookSeconds": 10800, "servings": 64, "pricePerServing": 13, "xpPerServing": 4, "spoilSeconds": 10800, "provisional": true, "historical": true },
+    { "id": "moqueca", "name": "Moqueca", "level": 20, "costCoins": 500, "cookSeconds": 14400, "servings": 70, "pricePerServing": 14, "xpPerServing": 4, "spoilSeconds": 14400, "provisional": true },
+    { "id": "pastel", "name": "Pastel", "level": 29, "costCoins": 300, "cookSeconds": 900, "servings": 30, "pricePerServing": 16, "xpPerServing": 4, "spoilSeconds": 1800, "provisional": true, "historical": true },
+    { "id": "pudim_banana", "name": "Pudim de Banana", "level": 42, "costCoins": 700, "cookSeconds": 3600, "servings": 50, "pricePerServing": 20, "xpPerServing": 5, "spoilSeconds": 5400, "provisional": true, "historical": true },
+    { "id": "carne_assada", "name": "Carne Assada", "level": 43, "costCoins": 1200, "cookSeconds": 21600, "servings": 90, "pricePerServing": 22, "xpPerServing": 6, "spoilSeconds": 21600, "provisional": true, "historical": true },
+    { "id": "misto_quente", "name": "Misto-Quente", "level": 44, "costCoins": 400, "cookSeconds": 300, "servings": 24, "pricePerServing": 20, "xpPerServing": 5, "spoilSeconds": 1200, "provisional": true, "historical": true },
+    { "id": "milho_cozido", "name": "Milho Cozido", "level": 45, "costCoins": 600, "cookSeconds": 1800, "servings": 40, "pricePerServing": 21, "xpPerServing": 5, "spoilSeconds": 3600, "provisional": true, "historical": true },
+    { "id": "salgados_festa", "name": "Salgados de Festa", "level": 46, "costCoins": 900, "cookSeconds": 7200, "servings": 70, "pricePerServing": 22, "xpPerServing": 6, "spoilSeconds": 7200, "provisional": true, "historical": true },
+    { "id": "sushi", "name": "Sushi", "level": 47, "costCoins": 1000, "cookSeconds": 5400, "servings": 60, "pricePerServing": 24, "xpPerServing": 6, "spoilSeconds": 5400, "provisional": true, "historical": true },
+    { "id": "peixe_frito", "name": "Peixe Frito", "level": 48, "costCoins": 800, "cookSeconds": 2700, "servings": 50, "pricePerServing": 23, "xpPerServing": 6, "spoilSeconds": 3600, "provisional": true, "historical": true },
+    { "id": "yakisoba", "name": "Yakisoba", "level": 49, "costCoins": 1500, "cookSeconds": 28800, "servings": 100, "pricePerServing": 25, "xpPerServing": 7, "spoilSeconds": 28800, "provisional": true, "historical": true }
   ]
 }

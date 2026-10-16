@@ -23,6 +23,7 @@ const BOXES: Readonly<Record<string, BoxPalette>> = {
   'stove-teppan': { top: '#c9d1d7', edge: '#7e8a93', left: '#aab4bc', right: '#8a959e', trim: '#4f5a63' },
   'stove-multi': { top: '#e3e8ec', edge: '#97a3ac', left: '#c2cbd2', right: '#a3aeb7', trim: '#b8322a' },
   'stove-oven': { top: '#b8613a', edge: '#7a3a1f', left: '#c8724a', right: '#a5552f', trim: '#5e2a14' },
+  'counter-italy': { top: '#f1e6cf', edge: '#b59b6b', left: '#2f7a3d', right: '#24602f', trim: '#7a1f18' },
 };
 
 /** Wall decoration: a flat picture sheared onto either wall, framed like basic_window. */
@@ -166,6 +167,25 @@ function drawBox(g: Ctx, style: string, height: number): void {
       poly(g, [[x0, top + 10 + i * 10], [x0 + 18, top + 19 + i * 10], [x0 + 18, top + 44 + i * 10], [x0, top + 35 + i * 10]], i % 2 ? '#1d3f73' : '#24508f', '#13284a', 1.5);
     }
     ellipse(g, cx - w + 42, top + 34, 6, 6, '#f4efe2');
+    return;
+  }
+  if (style === 'counter-italy') {
+    // Pequena Itália: a tricolour band on the front, a red-and-white awning along
+    // the back of the worktop, a pizza and a breadstick jar on top.
+    for (const [i, color] of ['#2f9e44', '#f4efe2', '#d63a2c'].entries()) {
+      const x0 = cx - w + 12 + i * 14;
+      poly(g, [[x0, top + 14 + i * 7], [x0 + 14, top + 21 + i * 7], [x0 + 14, top + 46 + i * 7], [x0, top + 39 + i * 7]], color, '#3d2614', 1);
+    }
+    for (let i = 0; i < 6; i++) {
+      const x0 = cx - w + 18 + i * 10, y0 = top - 6 - i * 5;
+      poly(g, [[x0, y0], [x0 + 10, y0 - 5], [x0 + 10, y0 - 22], [x0, y0 - 17]], i % 2 ? '#f4efe2' : '#d63a2c', '#7a1f18', 1);
+    }
+    ellipse(g, cx + 10, top + 2, 20, 9, '#e8a24a', '#9a5a22', 1.5);
+    ellipse(g, cx + 10, top + 1, 16, 7, '#d8452c');
+    for (const [x, y] of [[cx + 4, top], [cx + 14, top + 3], [cx + 12, top - 2], [cx + 20, top + 1]] as const) ellipse(g, x, y, 2.5, 1.5, '#f6e6b0');
+    poly(g, [[cx + 30, top - 10], [cx + 40, top - 10], [cx + 39, top + 6], [cx + 31, top + 6]], 'rgba(200,230,245,0.7)', '#6e8fa3', 1.2);
+    g.strokeStyle = '#d9a35a'; g.lineWidth = 2;
+    for (const dx of [-3, 0, 3]) { g.beginPath(); g.moveTo(cx + 35 + dx, top + 4); g.lineTo(cx + 35 + dx * 1.6, top - 22); g.stroke(); }
     return;
   }
   if (style === 'counter-glass') {
@@ -331,7 +351,7 @@ function drawWallPicture(g: Ctx, style: string): void {
 
 /** Floor ornaments drawn by drawOrnament (the older five plus the themed sets). */
 const ORNAMENTS = new Set(['vase-flowers', 'fern', 'floor-lamp', 'statue', 'fountain',
-  'shoji', 'bonsai', 'paper-lantern', 'amphora', 'olive-tree', 'candelabra', 'piano']);
+  'shoji', 'bonsai', 'paper-lantern', 'amphora', 'olive-tree', 'candelabra', 'piano', 'vespa', 'wine-rack', 'spiral-post']);
 const TABLES = new Set(['table-low', 'table-checker', 'table-imperial']);
 const MACHINES = new Set(['machine-coffee', 'machine-juice', 'jukebox', 'arcade', 'spice-shelf']);
 const THEMED_WALL_ART = new Set(['scroll', 'painting-canal', 'curtain-velvet', 'neon-sign']);
@@ -536,6 +556,61 @@ function drawThemedOrnament(g: Ctx, style: string, cx: number, floor: number, he
       g.fillStyle = '#2b1a10'; g.fillRect(cx - 24, floor - height + 40, 48, 8);
       g.strokeStyle = '#e8a46a'; g.lineWidth = 1.2;
       for (let k = 0; k < 6; k++) { const x = cx - 22 + k * 8; g.beginPath(); g.moveTo(x, floor - height + 46); g.lineTo(x, floor - height + 42); g.lineTo(x + 5, floor - height + 42); g.lineTo(x + 5, floor - height + 45); g.stroke(); }
+      break;
+    }
+    case 'vespa': {
+      // A mint scooter at the game's angle: two small wheels, the curved body
+      // and leg shield, a brown seat, chrome handlebar and a round headlight.
+      ellipse(g, cx + 24, floor - 12, 12, 12, '#2a2a2e', '#111', 2); ellipse(g, cx + 24, floor - 12, 5, 5, '#c9cfd4');
+      ellipse(g, cx - 26, floor - 4, 11, 11, '#2a2a2e', '#111', 2); ellipse(g, cx - 26, floor - 4, 5, 5, '#c9cfd4');
+      g.beginPath();
+      g.moveTo(cx - 8, floor - 16); g.bezierCurveTo(cx + 2, floor - 36, cx + 34, floor - 44, cx + 40, floor - 22);
+      g.lineTo(cx + 36, floor - 12); g.lineTo(cx + 6, floor - 8); g.closePath();
+      g.fillStyle = '#7fd3c0'; g.fill(); g.strokeStyle = '#2f7a6a'; g.lineWidth = 2; g.stroke();
+      poly(g, [[cx - 22, floor - 14], [cx - 8, floor - 16], [cx - 4, floor - 58], [cx - 18, floor - 62]], '#8fdccb', '#2f7a6a', 2);
+      ellipse(g, cx + 20, floor - 40, 18, 6, '#6b3f1c', '#3d2412', 1.5);
+      g.strokeStyle = '#c9cfd4'; g.lineWidth = 4; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(cx - 26, floor - 66); g.lineTo(cx - 2, floor - 72); g.stroke();
+      ellipse(g, cx - 13, floor - 66, 7, 7, '#fff6c2', '#8a8f93', 2);
+      g.lineCap = 'butt';
+      break;
+    }
+    case 'wine-rack': {
+      // Vinoteca: a tall wooden cabinet of diagonal cells full of bottles, with a
+      // bottle and two glasses on top.
+      const top = floor - height + 28;
+      poly(g, [[cx - 30, top], [cx + 4, top + 10], [cx + 4, floor - 2], [cx - 30, floor - 12]], '#7a4a24', '#3d2412', 2);
+      poly(g, [[cx + 4, top + 10], [cx + 32, top - 2], [cx + 32, floor - 14], [cx + 4, floor - 2]], '#5e3418', '#3d2412', 2);
+      poly(g, [[cx - 30, top], [cx - 2, top - 12], [cx + 32, top - 2], [cx + 4, top + 10]], '#9b6232', '#3d2412', 2);
+      for (let row = 0; row < 5; row++) for (let col = 0; col < 3; col++) {
+        const x = cx - 24 + col * 10, y = top + 14 + row * 18 + col * 3;
+        ellipse(g, x, y, 4, 4, row % 2 === col % 2 ? '#5a1022' : '#1f4a2a', '#111', 1);
+      }
+      g.fillStyle = '#1f4a2a'; g.fillRect(cx - 4, top - 30, 7, 22); g.fillRect(cx - 2, top - 38, 3, 9);
+      for (const x of [cx + 12, cx + 22]) {
+        g.strokeStyle = 'rgba(220,240,250,0.9)'; g.lineWidth = 1.5;
+        g.beginPath(); g.moveTo(x, top - 6); g.lineTo(x, top - 14); g.stroke();
+        ellipse(g, x, top - 18, 4, 5, 'rgba(160,20,40,0.75)', 'rgba(220,240,250,0.9)', 1);
+      }
+      break;
+    }
+    case 'spiral-post': {
+      // Poste Espiral: a black iron post twisted in a spiral, two glowing lamps.
+      ellipse(g, cx, floor - 4, 16, 6, '#26262a', '#111', 1.5);
+      poly(g, [[cx - 10, floor - 6], [cx + 10, floor - 6], [cx + 6, floor - 22], [cx - 6, floor - 22]], '#2f2f34', '#111', 1.5);
+      const postTop = floor - height + 40;
+      g.fillStyle = '#2f2f34'; g.fillRect(cx - 3, postTop, 6, floor - 22 - postTop);
+      g.strokeStyle = '#55555c'; g.lineWidth = 2;
+      for (let y = floor - 26; y > postTop + 6; y -= 10) { g.beginPath(); g.moveTo(cx - 4, y); g.quadraticCurveTo(cx + 8, y - 5, cx - 4, y - 10); g.stroke(); }
+      g.strokeStyle = '#2f2f34'; g.lineWidth = 3.5;
+      for (const dir of [-1, 1]) {
+        g.beginPath(); g.moveTo(cx, postTop + 8); g.bezierCurveTo(cx + dir * 10, postTop - 8, cx + dir * 26, postTop - 4, cx + dir * 24, postTop + 10); g.stroke();
+        const lx = cx + dir * 24, ly = postTop + 20;
+        const glow = g.createRadialGradient(lx, ly, 2, lx, ly, 22);
+        glow.addColorStop(0, 'rgba(255,214,120,0.5)'); glow.addColorStop(1, 'rgba(255,214,120,0)');
+        g.fillStyle = glow; g.beginPath(); g.arc(lx, ly, 22, 0, Math.PI * 2); g.fill();
+        poly(g, [[lx - 7, ly - 8], [lx + 7, ly - 8], [lx + 5, ly + 8], [lx - 5, ly + 8]], '#ffe39a', '#2f2f34', 2);
+      }
       break;
     }
     case 'olive-tree': {

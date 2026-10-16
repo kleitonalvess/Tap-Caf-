@@ -31,7 +31,9 @@ type DailyClaim struct {
 	// Coins for the level-ups the reward caused, if any (rewards carry no XP today).
 	LevelReward int64 `json:"levelReward,omitempty"`
 	// The random spices the day added to the pantry (codes).
-	Spices []int          `json:"spices,omitempty"`
+	Spices []int `json:"spices,omitempty"`
+	// Free crates the day added (fewer than the reward's when the HUD's limit is reached).
+	Crates int            `json:"crates,omitempty"`
 	State  PlayerSnapshot `json:"state"`
 }
 
@@ -98,10 +100,16 @@ func ClaimDaily(s Store, user string, now time.Time) (DailyClaim, error) {
 		state.Set("daily_claimed_on", bonusDate(now))
 		state.Set("daily_streak", current.Day)
 		spices := randomSpices(state, reward.Spices)
+		crates := 0
+		for range reward.Crates {
+			if grantFreeCrate(state) {
+				crates++
+			}
+		}
 		if err := tx.Save(state); err != nil {
 			return err
 		}
-		claim = DailyClaim{Daily: dailyState(state, now), Reward: reward, LevelReward: progress.LevelReward, Spices: spices, State: PlayerView(state)}
+		claim = DailyClaim{Daily: dailyState(state, now), Reward: reward, LevelReward: progress.LevelReward, Spices: spices, Crates: crates, State: PlayerView(state)}
 		return nil
 	})
 	return claim, err

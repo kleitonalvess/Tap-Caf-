@@ -1,7 +1,7 @@
 // Renders docs/ASSET_CATALOG.md from the item manifests, so the catalog of
 // assets never drifts from game/public/assets/items/*/item.json.
 
-const THEMES = { japan: 'Japão', italy: 'Itália (Mamma Mia)', noble: 'Nobreza Clássica' };
+const THEMES = { japan: 'Banzai (Japão)', italy: 'Mamma Mia (Itália)', noble: 'Nobreza Clássica' };
 
 /** Same rule as storeCategory in game/src/game/shop.ts. */
 export function storeCategory(item) {
@@ -67,9 +67,9 @@ function pivot(item, byClass) {
 export function renderAssetCatalog(items) {
   const byClass = new Map(items.map((item) => [item.classname, item]));
   const count = (origin) => items.filter((item) => assetOrigin(item) === origin).length;
-  const header = '| id | name | category | theme | origin | dimensions | pivot | rotatable | priceCoins | priceCash | minLevel | functionType | visualStates | spriteSource |';
-  const rule = '| --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- |';
-  const row = (item) => `| ${item.id} | ${item.name}${item.purchasable ? '' : ' (fora da loja)'} | ${storeCategory(item)} | ${THEMES[item.theme] ?? '—'} | ${assetOrigin(item)} | ${item.sizeX}×${item.sizeY} tiles, ${item.itemHeight} px | ${pivot(item, byClass)} | ${rotatable(item, byClass) ? 'sim' : 'não'} | ${item.priceGold} | ${item.priceCash ?? 0} | ${item.level ?? 1} | ${FUNCTION_TYPES[item.kind] ?? item.kind} | ${VISUAL_STATES[item.kind] ?? 'estático'} | ${spriteSource(item)} |`;
+  const header = '| id | name | nameSource | category | theme | origin | dimensions | pivot | rotatable | priceCoins | priceCash | minLevel | functionType | visualStates | spriteSource |';
+  const rule = '| --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- |';
+  const row = (item) => `| ${item.id} | ${item.name}${item.purchasable ? '' : ' (fora da loja)'} | ${item.nameSource === 'blog-2010' ? 'historical_reported' : 'project'} | ${storeCategory(item)} | ${THEMES[item.theme] ?? '—'} | ${assetOrigin(item)} | ${item.sizeX}×${item.sizeY} tiles, ${item.itemHeight} px | ${pivot(item, byClass)} | ${rotatable(item, byClass) ? 'sim' : 'não'} | ${item.priceGold} | ${item.priceCash ?? 0} | ${item.level ?? 1} | ${FUNCTION_TYPES[item.kind] ?? item.kind} | ${VISUAL_STATES[item.kind] ?? 'estático'} | ${spriteSource(item)} |`;
   return `# Catálogo de assets
 
 Gerado por \`npm run assets:room\` (\`scripts/asset-catalog-doc.mjs\`) a partir de \`game/public/assets/items/*/item.json\`. Não edite à mão.
@@ -79,6 +79,11 @@ Gerado por \`npm run assets:room\` (\`scripts/asset-catalog-doc.mjs\`) a partir 
 - **historical_confirmed** (${count('historical_confirmed')}): arte PNG do jogo original, fornecida pelo responsável pelo projeto, cujo manifesto guarda o nome de classe original (\`legacyClassName\`). Confirma a existência do objeto e da arte; o nome em português e os valores de loja são nossos.
 - **unverified** (${count('unverified')}): arte PNG sem essa evidência de origem.
 - **project_original** (${count('project_original')}): criados para este projeto, desenhados em canvas (\`placeholder-art.ts\`) ou tingidos de um PNG. Nomes, preços, níveis e funções são de design; os temas Japão, Itália e Nobreza seguem a ideia dos conjuntos temáticos do jogo, sem reproduzir itens históricos (ver \`docs/REFERENCE_AUDIT.md\`).
+
+## Nome
+
+- **historical_reported** (${items.filter((item) => item.nameSource === 'blog-2010').length}): nome de item que o responsável transcreveu dos posts de julho e agosto de 2010 do blog *Jogando Café Mania* (Set Mamma Mia, 26/08/2010). O agente não abriu o blog (bloqueado pela rede); a arte desses itens continua \`project_original\`, desenhada em canvas, sem copiar sprites.
+- **project**: nome criado para este projeto.
 
 Grade nativa: tiles de 160×80 px, projeção 2:1. \`pivot\` é o deslocamento da imagem em relação ao vértice superior do tile de origem.
 

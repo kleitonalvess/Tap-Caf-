@@ -1,0 +1,19 @@
+{
+  "id": 3500014,
+  "classname": "wine_rack",
+  "name": "Vinoteca",
+  "type": 3,
+  "kind": "ornament",
+  "priceGold": 600,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 140,
+  "level": 8,
+  "placeholder": true,
+  "parts": [],
+  "art": "wine-rack",
+  "charm": 5,
+  "theme": "italy",
+  "nameSource": "blog-2010"
+}

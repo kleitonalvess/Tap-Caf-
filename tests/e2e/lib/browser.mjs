@@ -126,6 +126,16 @@ function pixi(page, run) {
       const bounds = views[0].getBounds();
       return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height * 0.35 };
     }),
+    /** Screen point of the first placed item of a kind (register, counter...), or null. */
+    itemPoint: (kind) => page.evaluate((kind) => {
+      for (const [item, views] of window.__coffeMania.screens.active.itemViews) {
+        const view = views.find((entry) => !entry.destroyed);
+        if (item.kind !== kind || !view) continue;
+        const bounds = view.getBounds();
+        return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height * 0.5 };
+      }
+      return null;
+    }, kind),
     /** Closes the daily bonus if it opens (it does once a day on entry). */
     async skipDaily(timeout = 20000) {
       const opened = await page.waitForFunction(() => window.__coffeMania.screens.active.dailyModal?.isOpen, null, { timeout, polling: 200 }).then(() => true, () => false);

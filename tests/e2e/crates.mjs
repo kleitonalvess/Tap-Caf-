@@ -77,7 +77,7 @@ try {
   await game.page.close();
   game = await open();
 
-  // 3. Comprar o Tempero Caseiro (800001, dobra o bônus do tempero).
+  // 3. Comprar o Sal Turbinado (800001: +5% de porções, pelo menos 1, além do tempero).
   const rules = await game.room(() => window.__coffeMania.screens.active.rules);
   const caseiro = rules.spices.list.find((spice) => spice.code === 800001);
   const rich = await state(game);
@@ -98,7 +98,7 @@ try {
   await game.page.keyboard.press('Escape');
   await sleep(1500);
 
-  // 4. Temperar com o tempero da despensa: o bônus de porções dobra e a carga é gasta.
+  // 4. Temperar com o tempero da despensa: as porções extras somam e a carga é gasta.
   const recipe = rules.recipes.filter((entry) => entry.level <= 1).sort((a, b) => b.cookSeconds - a.cookSeconds)[0];
   await game.cook(recipe.id);
   const stove = await game.stovePoint();
@@ -113,7 +113,8 @@ try {
     return body.stoves.find((stove) => stove.cooking)?.cooking;
   });
   const regular = Math.max(1, Math.ceil(recipe.servings * rules.stove.seasonBonusPercent / 100));
-  run.check(job.spice === 800001 && job.servings === recipe.servings + 2 * regular, 'o Tempero Caseiro dobra o bônus do tempero', { job, recipe: recipe.servings, regular });
+  const extra = Math.max(caseiro.minExtra ?? 0, Math.ceil(recipe.servings * (caseiro.percent ?? 0) / 100));
+  run.check(job.spice === 800001 && job.servings === recipe.servings + regular + extra, 'o Sal Turbinado soma as porções extras ao tempero', { job, recipe: recipe.servings, regular, extra });
   const spent = await state(game);
   run.check((spent.pantry['800001'] ?? 0) === held, 'a carga do tempero sai da despensa', { held: held + 1, now: spent.pantry });
   await sleep(1000);

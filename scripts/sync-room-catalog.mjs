@@ -25,6 +25,9 @@ const items = readdirSync(directory, { withFileTypes: true }).filter((entry) => 
     (item.featured !== undefined && typeof item.featured !== 'boolean') ||
     !optionalInt(item.servingsBonusPercent, 0, 100) || (item.kind !== 'stove' && item.servingsBonusPercent) ||
     (item.theme !== undefined && !['japan', 'italy', 'noble'].includes(item.theme)) ||
+    // nameSource: where the Portuguese name comes from (blog-2010: the 2010 posts
+    // of the Jogando Café Mania blog, as transcribed by the project owner).
+    (item.nameSource !== undefined && !['blog-2010'].includes(item.nameSource)) ||
     ((item.kind === 'machine') !== ['coffee', 'juice'].includes(item.machine))) {
     throw new Error(`Campos de loja inválidos: ${entry.name}`);
   }

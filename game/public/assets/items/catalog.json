@@ -266,6 +266,11 @@
       "manifest": "sushi_counter/item.json"
     },
     {
+      "id": 3080005,
+      "classname": "little_italy_counter",
+      "manifest": "little_italy_counter/item.json"
+    },
+    {
       "id": 3090000,
       "classname": "room_wall",
       "manifest": "room_wall/item.json"
@@ -359,6 +364,21 @@
       "id": 3500012,
       "classname": "spice_shelf",
       "manifest": "spice_shelf/item.json"
+    },
+    {
+      "id": 3500013,
+      "classname": "italian_vespa",
+      "manifest": "italian_vespa/item.json"
+    },
+    {
+      "id": 3500014,
+      "classname": "wine_rack",
+      "manifest": "wine_rack/item.json"
+    },
+    {
+      "id": 3500015,
+      "classname": "spiral_lamp_post",
+      "manifest": "spiral_lamp_post/item.json"
     },
     {
       "id": 3600000,

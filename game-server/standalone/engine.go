@@ -70,6 +70,13 @@ func New(store *cafe.MemoryStore, profile Profile, lastSeen time.Time, options g
 	}
 	e := &Engine{store: store, profile: profile, options: options, hooks: hooks, conns: map[*Connection]bool{}, stop: make(chan struct{})}
 	store.OnCommit = e.committed
+	// Saves from before the granted flag get the same marking as the server's
+	// migration 202610270001 (idempotent: a marked café changes nothing).
+	if _, err := store.First("player_rooms", cafe.Where{"user": profile.ID}); err == nil {
+		if _, err := cafe.MarkLegacyGranted(store, profile.ID); err != nil {
+			return nil, err
+		}
+	}
 	if err := e.restore(lastSeen); err != nil {
 		return nil, err
 	}

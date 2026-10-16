@@ -73,9 +73,15 @@ func addSpices(state Record, code, count int) {
 	writePantry(state, pantry)
 }
 
-// randomSpices adds n spices drawn from the pantry list.
+// randomSpices adds n spices drawn from the random ones of the pantry list
+// (the config's rewardSpice randomValues).
 func randomSpices(state Record, n int) []int {
-	spices := gamerules.Spices()
+	spices := []gamerules.Spice{}
+	for _, spice := range gamerules.Spices() {
+		if spice.Random {
+			spices = append(spices, spice)
+		}
+	}
 	drawn := []int{}
 	for range n {
 		if len(spices) == 0 {
@@ -423,29 +429,42 @@ func grantFreeCrate(state Record) bool {
 // seasoning bonus is already set on the job.
 func applySpice(job Record, spice gamerules.Spice, now time.Time) {
 	switch spice.Effect {
-	case gamerules.SpiceDouble:
-		job.Set("bonus_servings", job.GetInt("bonus_servings")*2)
+	case gamerules.SpiceServings:
+		base := 1
+		if recipe, ok := gamerules.RecipeByID(job.GetString("recipe_id")); ok {
+			base = recipe.Servings
+		}
+		job.Set("bonus_servings", job.GetInt("bonus_servings")+spice.ExtraServings(base))
 	case gamerules.SpiceRush:
-		// Half of what is left on the fire, counted from the later of now and the start.
-		from := job.GetTime("started_at")
-		if now.After(from) {
-			from = now
-		}
-		ready := job.GetTime("ready_at")
-		if left := ready.Sub(from); left > 0 {
-			shift := left / 2
-			job.Set("ready_at", ready.Add(-shift))
-			if spoils := job.GetTime("spoils_at"); !spoils.IsZero() {
-				job.Set("spoils_at", spoils.Add(-shift))
-			}
-		}
-	case gamerules.SpicePreserve:
-		ready, spoils := job.GetTime("ready_at"), job.GetTime("spoils_at")
-		if !spoils.IsZero() && spoils.After(ready) {
-			job.Set("spoils_at", ready.Add(3*spoils.Sub(ready)))
-		}
+		shortenCooking(job, spice.Percent, now)
+	case gamerules.SpiceInstant:
+		shortenCooking(job, 100, now)
 	}
 	job.Set("spice", spice.Code)
+}
+
+// shortenCooking takes percent of the time left on the fire, counted from the
+// later of now and the start; the wait before spoiling moves with the ready
+// instant. It returns the time saved.
+func shortenCooking(job Record, percent int, now time.Time) time.Duration {
+	from := job.GetTime("started_at")
+	if now.After(from) {
+		from = now
+	}
+	ready := job.GetTime("ready_at")
+	left := ready.Sub(from)
+	if left <= 0 {
+		return 0
+	}
+	shift := left * time.Duration(percent) / 100
+	if percent >= 100 {
+		shift = left
+	}
+	job.Set("ready_at", ready.Add(-shift))
+	if spoils := job.GetTime("spoils_at"); !spoils.IsZero() {
+		job.Set("spoils_at", spoils.Add(-shift))
+	}
+	return shift
 }
 
 // PantryErrorStatus maps a pantry or crate error to its HTTP status and message.

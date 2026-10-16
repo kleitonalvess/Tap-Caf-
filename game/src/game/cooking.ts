@@ -167,6 +167,28 @@ export class CookingClient {
     return this.read(response);
   }
 
+  /** Owner only: a rescue spice (Sálvia Salvadora) makes a spoiled dish ready again. */
+  async rescue(stoveId: string, spice: number): Promise<CookingSnapshot> {
+    const response = await this.request('/rescue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stoveId, spice }),
+    });
+    if (response.status === 409 || response.status === 400) throw await this.conflict(response, 'Não foi possível recuperar o prato.');
+    return this.read(response);
+  }
+
+  /** Owner only: spends energy to take part of the time left on the fire. */
+  async boost(stoveId: string): Promise<CookingSnapshot> {
+    const response = await this.request('/boost', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stoveId }),
+    });
+    if (response.status === 409) throw await this.conflict(response, 'Não foi possível acelerar.');
+    return this.read(response);
+  }
+
   /** Owners and visitors may season; the room id selects whose stove. The
    * owner may add a pantry spice (its code). */
   async season(stoveId: string, spice?: number): Promise<CookingSnapshot> {
@@ -178,4 +200,15 @@ export class CookingClient {
     if (response.status === 409 || response.status === 403) throw await this.conflict(response, 'Não foi possível temperar.');
     return this.read(response);
   }
+}
+
+/** Energy that accelerating a batch costs at nowMs, mirroring shared/cafe BoostCost:
+ * percent of the time left (from the later of now and the start), one energy
+ * per secondsPerEnergy saved, at least one; 0 when the batch is not on the fire. */
+export function boostCost(job: Pick<StoveCooking, 'startedAt' | 'readyAt'>, nowMs: number, percent: number, secondsPerEnergy: number): number {
+  const ready = cookingTime(job.readyAt);
+  const from = Math.max(nowMs, cookingTime(job.startedAt));
+  const left = ready - from;
+  if (!(left > 0) || percent <= 0 || secondsPerEnergy <= 0) return 0;
+  return Math.max(1, Math.ceil((left * percent / 100) / (secondsPerEnergy * 1000)));
 }

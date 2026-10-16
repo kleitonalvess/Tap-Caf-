@@ -54,7 +54,8 @@ func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.T
 		// An unknown recipe still feeds the customer; it just pays nothing.
 		recipe, _ := gamerules.RecipeByID(food.GetString("recipe_id"))
 		party := false
-		if room, err := tx.First("player_rooms", Where{"user": owner}); err == nil {
+		room, err := tx.First("player_rooms", Where{"user": owner})
+		if err == nil {
 			party = partyActive(room, at)
 		} else if !errors.Is(err, ErrNotFound) {
 			return err
@@ -83,6 +84,14 @@ func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.T
 		if err = leavePlate(tx, owner, tableID); err != nil {
 			return err
 		}
+		// Every paid serving drops a little into the tip jar, up to its limit.
+		var jar int64
+		if room != nil {
+			jar = fillTipJar(room, state.GetInt("level"), gamerules.TipJarDeposit(recipe.PricePerServing))
+			if err = tx.Save(room); err != nil {
+				return err
+			}
+		}
 		if err = countStats(tx, owner, at, statChange{stat: gamerules.StatCustomers, delta: 1},
 			statChange{stat: gamerules.StatEarnedCoins, delta: progress.Coins}, statChange{stat: gamerules.StatTips, delta: tip}); err != nil {
 			return err
@@ -91,7 +100,7 @@ func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.T
 			RecipeID: food.GetString("recipe_id"), Coins: progress.Coins, Tip: tip, XP: progress.XP,
 			FreshCoins: freshCoins, FreshXP: freshXP, FreshLeft: freshLeft,
 			Level: progress.Level, LevelUp: progress.LevelUp, LevelReward: progress.LevelReward,
-			ServingsLeft: left, PopularityTenths: progress.PopularityTenths,
+			ServingsLeft: left, PopularityTenths: progress.PopularityTenths, TipJar: jar,
 		}
 		return nil
 	})

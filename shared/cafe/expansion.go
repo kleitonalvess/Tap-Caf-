@@ -19,6 +19,7 @@ var ErrExpansionPay = errors.New("Forma de pagamento inválida.")
 // Starter structure: the wall segment and the floor used when none is placed.
 const (
 	wallSegmentID  = 3090000
+	wallCornerID   = 3090001
 	defaultFloorID = 3050000
 )
 

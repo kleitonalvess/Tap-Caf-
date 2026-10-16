@@ -63,6 +63,8 @@ type RoomSnapshot struct {
 	AwaySummary *gamewire.AwaySummary `json:"awaySummary,omitempty"`
 	// Placed stoves and counters against the café's limit.
 	Equipment Equipment `json:"equipment"`
+	// The owner's tip jar (never sent to visitors).
+	TipJar *TipJarView `json:"tipJar,omitempty"`
 }
 
 type EquipmentCount struct {
@@ -210,6 +212,8 @@ func SnapshotRoom(s Store, userID string) (RoomSnapshot, error) {
 		return result, err
 	}
 	result.PlayerState = PlayerView(state)
+	jar := tipJarView(room, state.GetInt("level"))
+	result.TipJar = &jar
 	decor, err := RoomDecor(s, userID)
 	if err != nil {
 		return result, err

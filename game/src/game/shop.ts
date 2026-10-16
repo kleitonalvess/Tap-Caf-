@@ -66,7 +66,8 @@ export function itemPerk(item: RoomCatalogItem): string {
   return parts.join(' · ');
 }
 
-export const THEME_NAMES: Readonly<Record<string, string>> = { japan: 'Japão', italy: 'Itália', noble: 'Nobreza Clássica' };
+/** Set names: Banzai (22/07/2010) and Mamma Mia (26/08/2010) as transcribed from the 2010 blog posts. */
+export const THEME_NAMES: Readonly<Record<string, string>> = { japan: 'Banzai (Japão)', italy: 'Mamma Mia (Itália)', noble: 'Nobreza Clássica' };
 
 /** What selling a stored unit returns (shared/gamerules SellValue): a share of
  * its coin price; Grana items and items outside the store have none. */
