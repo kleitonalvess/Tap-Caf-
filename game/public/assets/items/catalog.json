@@ -356,6 +356,11 @@
       "manifest": "grand_piano/item.json"
     },
     {
+      "id": 3500012,
+      "classname": "spice_shelf",
+      "manifest": "spice_shelf/item.json"
+    },
+    {
       "id": 3600000,
       "classname": "landscape_painting",
       "manifest": "landscape_painting/item.json"
@@ -389,6 +394,26 @@
       "id": 3600006,
       "classname": "neon_sign",
       "manifest": "neon_sign/item.json"
+    },
+    {
+      "id": 3700000,
+      "classname": "coffee_machine",
+      "manifest": "coffee_machine/item.json"
+    },
+    {
+      "id": 3700001,
+      "classname": "juice_machine",
+      "manifest": "juice_machine/item.json"
+    },
+    {
+      "id": 3700002,
+      "classname": "jukebox",
+      "manifest": "jukebox/item.json"
+    },
+    {
+      "id": 3700003,
+      "classname": "arcade_machine",
+      "manifest": "arcade_machine/item.json"
     },
     {
       "id": 9000001,

@@ -26,13 +26,16 @@ type Resource struct {
 }
 
 type PlayerSnapshot struct {
-	Appearance   string   `json:"appearance"`
-	CafeName     string   `json:"cafeName"`
-	Cash         int64    `json:"cash"`
-	Gold         int64    `json:"gold"`
-	Level        int      `json:"level"`
-	Experience   Resource `json:"experience"`
-	Energy       Resource `json:"energy"`
+	Appearance string   `json:"appearance"`
+	CafeName   string   `json:"cafeName"`
+	Cash       int64    `json:"cash"`
+	Gold       int64    `json:"gold"`
+	Level      int      `json:"level"`
+	Experience Resource `json:"experience"`
+	Energy     Resource `json:"energy"`
+	// The instant energy regenerates from (shared/cafe energyNow): the HUD
+	// derives the live value with the server clock and the rules' regen time.
+	EnergyAt     string   `json:"energyAt,omitempty"`
 	Crates       Resource `json:"crates"`
 	Satisfaction Resource `json:"satisfaction"`
 	// Pantry spices by code ("800001": 2): the stove menu offers them.
@@ -64,6 +67,7 @@ func PlayerView(record Record) PlayerSnapshot {
 		Crates:       resource("crates_current", "crates_max", 1),
 		Satisfaction: resource("satisfaction_current_tenths", "satisfaction_max_tenths", 10),
 		Pantry:       pantryCounts(record),
+		EnergyAt:     energyAt(record),
 	}
 }
 
@@ -210,4 +214,11 @@ func SetAppearance(s Store, userID, value string) (PlayerSnapshot, error) {
 		return nil
 	})
 	return state, err
+}
+
+func energyAt(record Record) string {
+	if at := record.GetTime("energy_at"); !at.IsZero() {
+		return at.UTC().Format(TimeLayout)
+	}
+	return ""
 }

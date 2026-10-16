@@ -397,7 +397,7 @@ func (r *room) insideTile(a *entity) (Tile, bool) {
 func (r *room) besideFurniture(t Tile) bool {
 	for _, d := range []Tile{{X: 1}, {X: -1}, {Y: 1}, {Y: -1}} {
 		for _, u := range r.grid.objects[Tile{X: t.X + d.X, Y: t.Y + d.Y}] {
-			if item, _ := roomcatalog.ByID(u.ItemID); item.Kind == "chair" || item.Kind == "table" || item.Kind == "counter" || item.Kind == "stove" {
+			if item, _ := roomcatalog.ByID(u.ItemID); item.Kind == "chair" || item.Kind == "table" || item.Kind == "counter" || item.Kind == "stove" || item.Kind == "machine" || item.Kind == "entertainment" {
 				return true
 			}
 		}

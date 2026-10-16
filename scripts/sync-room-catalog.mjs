@@ -9,7 +9,7 @@ const items = readdirSync(directory, { withFileTypes: true }).filter((entry) => 
   if (item.classname !== entry.name || !/^[a-z][a-z0-9_]*$/.test(item.classname) ||
     !Number.isSafeInteger(item.id) || item.id <= 0 || typeof item.name !== 'string' ||
     ![0, 1, 2, 3].includes(item.type) || !Number.isSafeInteger(item.priceGold) || item.priceGold < 0 || typeof item.purchasable !== 'boolean' ||
-    !['wall', 'window', 'door', 'table', 'chair', 'stove', 'counter', 'bush', 'panel', 'letterbox', 'decor', 'ornament', 'register'].includes(item.kind) ||
+    !['wall', 'window', 'door', 'table', 'chair', 'stove', 'counter', 'bush', 'panel', 'letterbox', 'decor', 'ornament', 'register', 'machine', 'entertainment', 'shelf'].includes(item.kind) ||
     ![item.sizeX, item.sizeY].every((n) => Number.isInteger(n) && n >= 1 && n <= 8) ||
     // Placeholder items have no PNG yet; the client draws them until parts are registered.
     !Array.isArray(item.parts) || (item.parts.length === 0 && item.placeholder !== true) || !Number.isFinite(item.itemHeight) || item.itemHeight < 0 ||
@@ -24,7 +24,8 @@ const items = readdirSync(directory, { withFileTypes: true }).filter((entry) => 
     (item.priceCash > 0 && item.priceGold > 0) || (item.kind !== 'stove' && (item.cookSpeedPercent || item.spoilBonusPercent)) ||
     (item.featured !== undefined && typeof item.featured !== 'boolean') ||
     !optionalInt(item.servingsBonusPercent, 0, 100) || (item.kind !== 'stove' && item.servingsBonusPercent) ||
-    (item.theme !== undefined && !['japan', 'italy', 'noble'].includes(item.theme))) {
+    (item.theme !== undefined && !['japan', 'italy', 'noble'].includes(item.theme)) ||
+    ((item.kind === 'machine') !== ['coffee', 'juice'].includes(item.machine))) {
     throw new Error(`Campos de loja inválidos: ${entry.name}`);
   }
   // Art without PNG parts: a tinted copy of another item's PNGs, or a drawing

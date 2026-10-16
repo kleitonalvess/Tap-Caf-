@@ -1,0 +1,17 @@
+{
+  "id": 3500012,
+  "classname": "spice_shelf",
+  "name": "Prateleira de Temperos",
+  "type": 3,
+  "kind": "shelf",
+  "priceGold": 900,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 110,
+  "level": 6,
+  "placeholder": true,
+  "parts": [],
+  "art": "spice-shelf",
+  "charm": 2
+}

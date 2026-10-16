@@ -37,7 +37,16 @@ type Item struct {
 	Theme string `json:"theme,omitempty"`
 	// Stoves only: every batch yields this share more servings (rounded up).
 	ServingsBonusPercent int `json:"servingsBonusPercent,omitempty"`
+	// Drink machines only: the drinks it makes (gamerules drinks with this machine).
+	Machine string `json:"machine,omitempty"`
 }
+
+// Machines are the drink machines' kinds.
+var Machines = []string{"coffee", "juice"}
+
+// Cooks reports whether a placed unit of this item has a cooking row
+// (player_stoves): stoves cook recipes, drink machines make drinks.
+func (i Item) Cooks() bool { return i.Kind == "stove" || i.Kind == "machine" }
 
 // Themes are the decoration sets an item may belong to.
 var Themes = []string{"japan", "italy", "noble"}
@@ -72,7 +81,8 @@ func init() {
 			item.Charm < 0 || item.Charm > 100 || item.CookSpeedPercent < 0 || item.CookSpeedPercent > 50 ||
 			item.SpoilBonusPercent < 0 || item.SpoilBonusPercent > 200 ||
 			item.Kind != "stove" && (item.CookSpeedPercent > 0 || item.SpoilBonusPercent > 0 || item.ServingsBonusPercent > 0) ||
-			item.ServingsBonusPercent < 0 || item.ServingsBonusPercent > 100 || item.Theme != "" && !slices.Contains(Themes, item.Theme) {
+			item.ServingsBonusPercent < 0 || item.ServingsBonusPercent > 100 || item.Theme != "" && !slices.Contains(Themes, item.Theme) ||
+			(item.Kind == "machine") != (item.Machine != "") || item.Machine != "" && !slices.Contains(Machines, item.Machine) {
 			panic("invalid room catalogue")
 		}
 		seen[item.ID] = true

@@ -133,13 +133,21 @@ func TestOpenCratePaysDrawsAndRemembers(t *testing.T) {
 		t.Fatalf("new account crates %d/%d", state.GetInt("crates_current"), state.GetInt("crates_max"))
 	}
 	surprise, _ := gamerules.CrateByID("surprise")
-	// Draw the spice prize of the free crate (weights 4, 2, then the spice).
-	fixedDraws(t, 6)
+	// Draw the free crate's first spice prize: the roll lands after the weights before it.
+	roll, spicePrize := 0, gamerules.CratePrize{}
+	for _, prize := range surprise.Prizes {
+		if prize.Spice > 0 {
+			spicePrize = prize
+			break
+		}
+		roll += prize.Weight
+	}
+	fixedDraws(t, roll)
 	result, err := OpenCrate(s, "owner", "surprise", "request-free-000001", progressT0)
-	if err != nil || result.Prize.Spice != surprise.Prizes[2].Spice || result.State.Crates.Current != 3 {
+	if err != nil || result.Prize.Spice != spicePrize.Spice || result.State.Crates.Current != 3 {
 		t.Fatalf("free crate: %+v %v", result, err)
 	}
-	if pantryOf(t, s, "owner")[surprise.Prizes[2].Spice] != 1 {
+	if pantryOf(t, s, "owner")[spicePrize.Spice] != 1 {
 		t.Fatal("the spice prize did not reach the pantry")
 	}
 	// A repeated request answers the same prize without paying again.
@@ -157,13 +165,21 @@ func TestOpenCratePaysDrawsAndRemembers(t *testing.T) {
 		t.Fatalf("too little Grana: %v", err)
 	}
 	setPlayer(t, s, "owner", map[string]any{"cash": purple.Cash})
-	fixedDraws(t, 0)
+	itemRoll, itemPrize := 0, gamerules.CratePrize{}
+	for _, prize := range purple.Prizes {
+		if prize.Item > 0 {
+			itemPrize = prize
+			break
+		}
+		itemRoll += prize.Weight
+	}
+	fixedDraws(t, itemRoll)
 	item, err := OpenCrate(s, "owner", "purple", "request-purple-0002", progressT0)
-	if err != nil || item.Prize.Item != purple.Prizes[0].Item || item.Prize.UnitID == "" || item.State.Cash != 0 {
+	if err != nil || item.Prize.Item != itemPrize.Item || item.Prize.UnitID == "" || item.State.Cash != 0 {
 		t.Fatalf("item crate: %+v %v", item, err)
 	}
 	unit, err := s.Get("player_inventory", item.Prize.UnitID)
-	if err != nil || unit.GetBool("placed") || unit.GetInt("item_id") != purple.Prizes[0].Item || unit.GetString("user") != "owner" {
+	if err != nil || unit.GetBool("placed") || unit.GetInt("item_id") != itemPrize.Item || unit.GetString("user") != "owner" {
 		t.Fatalf("prize unit: %v", err)
 	}
 	// Free crates run out.

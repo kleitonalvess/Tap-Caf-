@@ -26,6 +26,10 @@ var ErrCrateEmpty = errors.New("Você não tem caixas surpresa para abrir.")
 var ErrCrateCoins = errors.New("Moedas insuficientes para esta caixa.")
 var ErrCrateCash = errors.New("Grana insuficiente para esta caixa.")
 var ErrCrateRequest = errors.New("Pedido de abertura inválido.")
+var ErrSpiceFull = errors.New("A despensa já está cheia deste tempero. Uma Prateleira de Temperos no café guarda mais.")
+var ErrPantryCash = errors.New("Grana insuficiente para este item.")
+var ErrPantryEmpty = errors.New("Você não tem este item na despensa.")
+var ErrPantryUse = errors.New("Este item é usado nas máquinas, não direto da despensa.")
 
 // RandomIntn draws a number in [0, n) for crates and random spices; crypto/rand
 // in the game. Tests replace it to play the same draws on both stores.
@@ -89,22 +93,52 @@ type SpiceView struct {
 	Count int `json:"count"`
 }
 
+type ConsumableView struct {
+	gamerules.Consumable
+	Count int `json:"count"`
+}
+
 // PantrySnapshot is the pantry window and the crates window.
 type PantrySnapshot struct {
-	Spices     []SpiceView       `json:"spices"`
+	Spices []SpiceView `json:"spices"`
+	// Energy drinks and machine parts.
+	Items []ConsumableView `json:"items"`
+	// Charges of each spice the pantry holds (more with a spice shelf placed).
+	SpiceLimit int               `json:"spiceLimit"`
+	Shelf      bool              `json:"shelf"`
 	FreeCrates int               `json:"freeCrates"`
 	FreeMax    int               `json:"freeMax"`
 	Crates     []gamerules.Crate `json:"crates"`
 }
 
-func pantryView(state Record) PantrySnapshot {
+func spiceLimit(shelf bool) int {
+	if shelf {
+		return gamerules.Pantry().ShelfSpiceLimit
+	}
+	return gamerules.Pantry().SpiceLimit
+}
+
+func pantryView(state Record, shelf bool) PantrySnapshot {
 	pantry := readPantry(state)
 	rules := gamerules.CrateRulesNow()
-	snapshot := PantrySnapshot{Spices: []SpiceView{}, FreeCrates: state.GetInt("crates_current"), FreeMax: rules.FreeMax, Crates: rules.List}
+	snapshot := PantrySnapshot{Spices: []SpiceView{}, Items: []ConsumableView{}, SpiceLimit: spiceLimit(shelf), Shelf: shelf,
+		FreeCrates: state.GetInt("crates_current"), FreeMax: rules.FreeMax, Crates: rules.List}
 	for _, spice := range gamerules.Spices() {
 		snapshot.Spices = append(snapshot.Spices, SpiceView{Spice: spice, Count: pantry[spice.Code]})
 	}
+	for _, item := range gamerules.Consumables() {
+		snapshot.Items = append(snapshot.Items, ConsumableView{Consumable: item, Count: pantry[item.Code]})
+	}
 	return snapshot
+}
+
+// ownerPantryView reads whether the café has a spice shelf placed.
+func ownerPantryView(s Store, user string, state Record) (PantrySnapshot, error) {
+	shelf, err := hasPlacedKind(s, user, "shelf")
+	if err != nil {
+		return PantrySnapshot{}, err
+	}
+	return pantryView(state, shelf), nil
 }
 
 func SnapshotPantry(s Store, user string) (PantrySnapshot, error) {
@@ -112,7 +146,7 @@ func SnapshotPantry(s Store, user string) (PantrySnapshot, error) {
 	if err != nil {
 		return PantrySnapshot{}, err
 	}
-	return pantryView(state), nil
+	return ownerPantryView(s, user, state)
 }
 
 // PantryResult answers a purchase: the new pantry and HUD.
@@ -121,10 +155,12 @@ type PantryResult struct {
 	State  PlayerSnapshot `json:"state"`
 }
 
-// BuySpice adds one spice to the pantry for its coin price.
+// BuySpice adds one pantry item: a spice for coins (up to the pantry's limit
+// per spice), or a consumable for its coin or Grana price.
 func BuySpice(s Store, user string, code int, now time.Time) (PantryResult, error) {
-	spice, ok := gamerules.SpiceByCode(code)
-	if !ok {
+	spice, isSpice := gamerules.SpiceByCode(code)
+	item, isItem := gamerules.ConsumableByCode(code)
+	if !isSpice && !isItem {
 		return PantryResult{}, ErrSpiceUnknown
 	}
 	if _, err := GetOrCreatePlayer(s, user); err != nil {
@@ -136,19 +172,70 @@ func BuySpice(s Store, user string, code int, now time.Time) (PantryResult, erro
 		if err != nil {
 			return err
 		}
-		if state.GetInt64("gold") < spice.PriceCoins {
+		shelf, err := hasPlacedKind(tx, user, "shelf")
+		if err != nil {
+			return err
+		}
+		coins, cash := spice.PriceCoins, int64(0)
+		if isItem {
+			coins, cash = item.PriceCoins, item.PriceCash
+		} else if readPantry(state)[code] >= spiceLimit(shelf) {
+			return ErrSpiceFull
+		}
+		if state.GetInt64("gold") < coins {
 			return ErrSpiceCoins
 		}
-		state.Set("gold", state.GetInt64("gold")-spice.PriceCoins)
+		if state.GetInt64("cash") < cash {
+			return ErrPantryCash
+		}
+		state.Set("gold", state.GetInt64("gold")-coins)
+		state.Set("cash", state.GetInt64("cash")-cash)
 		addSpices(state, code, 1)
 		if err := tx.Save(state); err != nil {
 			return err
 		}
-		if err := count(tx, user, now, gamerules.StatSpentCoins, spice.PriceCoins); err != nil {
+		if coins > 0 {
+			if err := count(tx, user, now, gamerules.StatSpentCoins, coins); err != nil {
+				return err
+			}
+		}
+		result = PantryResult{Pantry: pantryView(state, shelf), State: PlayerView(state)}
+		return nil
+	})
+	return result, err
+}
+
+// UseConsumable drinks an energy item from the pantry.
+func UseConsumable(s Store, user string, code int, now time.Time) (PantryResult, error) {
+	item, ok := gamerules.ConsumableByCode(code)
+	if !ok {
+		return PantryResult{}, ErrSpiceUnknown
+	}
+	if item.Kind != gamerules.ConsumableEnergy {
+		return PantryResult{}, ErrPantryUse
+	}
+	if _, err := GetOrCreatePlayer(s, user); err != nil {
+		return PantryResult{}, err
+	}
+	var result PantryResult
+	err := s.Transaction(func(tx Store) error {
+		state, err := tx.First(PlayerCollection, Where{"user": user})
+		if err != nil {
 			return err
 		}
-		result = PantryResult{Pantry: pantryView(state), State: PlayerView(state)}
-		return nil
+		pantry := readPantry(state)
+		if pantry[code] < 1 {
+			return ErrPantryEmpty
+		}
+		pantry[code]--
+		writePantry(state, pantry)
+		AddEnergy(state, item.Amount, now)
+		if err := tx.Save(state); err != nil {
+			return err
+		}
+		result.Pantry, err = ownerPantryView(tx, user, state)
+		result.State = PlayerView(state)
+		return err
 	})
 	return result, err
 }
@@ -195,6 +282,9 @@ func PrizeName(prize gamerules.CratePrize) string {
 	case prize.Spice > 0:
 		spice, _ := gamerules.SpiceByCode(prize.Spice)
 		return strconv.Itoa(prize.Count) + "× " + spice.Name
+	case prize.Stock > 0:
+		item, _ := gamerules.ConsumableByCode(prize.Stock)
+		return strconv.Itoa(prize.Count) + "× " + item.Name
 	case prize.Item > 0:
 		item, _ := roomcatalog.ByID(prize.Item)
 		return item.Name
@@ -241,8 +331,9 @@ func openCrate(s Store, user string, crate gamerules.Crate, requestKey string, n
 			if err != nil {
 				return err
 			}
-			result.Pantry, result.State = pantryView(state), PlayerView(state)
-			return nil
+			result.State = PlayerView(state)
+			result.Pantry, err = ownerPantryView(tx, user, state)
+			return err
 		} else if !errors.Is(err, ErrNotFound) {
 			return err
 		}
@@ -279,6 +370,8 @@ func openCrate(s Store, user string, crate gamerules.Crate, requestKey string, n
 			state.Set("cash", state.GetInt64("cash")+prize.Cash)
 		case prize.Spice > 0:
 			addSpices(state, prize.Spice, prize.Count)
+		case prize.Stock > 0:
+			addSpices(state, prize.Stock, prize.Count)
 		case prize.Item > 0:
 			item, _ := roomcatalog.ByID(prize.Item)
 			unit, err := tx.New("player_inventory")
@@ -307,8 +400,9 @@ func openCrate(s Store, user string, crate gamerules.Crate, requestKey string, n
 		if err := tx.Save(opening); err != nil {
 			return err
 		}
-		result.Pantry, result.State = pantryView(state), PlayerView(state)
-		return nil
+		result.State = PlayerView(state)
+		result.Pantry, err = ownerPantryView(tx, user, state)
+		return err
 	})
 	return result, err
 }
@@ -357,7 +451,8 @@ func PantryErrorStatus(err error) (int, string) {
 	case errors.Is(err, ErrSpiceUnknown), errors.Is(err, ErrCrateUnknown), errors.Is(err, ErrCrateRequest):
 		return 400, err.Error()
 	case errors.Is(err, ErrSpiceCoins), errors.Is(err, ErrSpiceEmpty), errors.Is(err, ErrSpiceOwner), errors.Is(err, ErrCrateEmpty),
-		errors.Is(err, ErrCrateCoins), errors.Is(err, ErrCrateCash):
+		errors.Is(err, ErrCrateCoins), errors.Is(err, ErrCrateCash), errors.Is(err, ErrSpiceFull), errors.Is(err, ErrPantryCash),
+		errors.Is(err, ErrPantryEmpty), errors.Is(err, ErrPantryUse):
 		return 409, err.Error()
 	}
 	return 500, "Não foi possível concluir agora."

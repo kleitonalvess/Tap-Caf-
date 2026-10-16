@@ -366,6 +366,62 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 		}
 	}
 	cooking("multi-stove batch", multiAt.Add(time.Second))
+
+	// Sprint 15b: energy (energy_at), pantry consumables and the spice shelf,
+	// drink machines and an entertainment machine (room_machines), read back.
+	at := t0.Add(96 * time.Hour)
+	machineLog := func(views []cafe.MachineView) []string {
+		lines := []string{}
+		for _, v := range views {
+			lines = append(lines, fmt.Sprintf("%d L%d/%d %s parts=%d/%d next=%d runs=%d pay=%d+%dxp patience=%d%% on=%s ready=%s",
+				v.ItemID, v.Level, v.MaxLevel, v.State, v.Parts, v.PartsNeeded, v.NextCoins, v.Runs, v.RunCoins, v.RunXP, v.PatiencePercent, offset(v.ActivatedAt), offset(v.ReadyAt)))
+		}
+		return lines
+	}
+	for _, code := range []int{810001, 810002, 820001, 820001, 820001} {
+		bought, err := cafe.BuySpice(s, owner, code, at)
+		log(fmt.Sprintf("buy %d", code), map[string]any{"err": outcome(err), "pantry": bought.State.Pantry, "gold": bought.State.Gold, "cash": bought.State.Cash})
+	}
+	shelfRoom := shop("spice shelf", "purchase", 3500012, "", 2, 8)
+	log("shelf", len(shelfRoom.Inventory))
+	machineRoom := shop("coffee machine", "purchase", 3700000, "", 4, 8)
+	jukeboxRoom := shop("jukebox", "purchase", 3700002, "", 8, 8)
+	for _, u := range machineRoom.Inventory {
+		if u.ItemID == 3700000 && u.Placed {
+			log("brew", outcome(cafe.StartCooking(s, owner, u.StoveID, "cafe_expresso", at)))
+			espresso, _ := gamerules.RecipeByID("cafe_expresso")
+			ready := at.Add(gamerules.PrepareDuration() + espresso.CookDuration())
+			log("brew served", outcome(cafe.ServeCooking(s, owner, u.StoveID, ready)))
+		}
+	}
+	energy, err := s.First(cafe.PlayerCollection, cafe.Where{"user": owner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	log("energy after the coffee", map[string]any{"current": energy.GetInt("energy_current"), "at": offset(energy.GetTime("energy_at").UTC().Format(cafe.TimeLayout))})
+	used, err := cafe.UseConsumable(s, owner, 810001, at.Add(time.Hour))
+	log("energy drink", map[string]any{"err": outcome(err), "energy": used.State.Energy, "at": offset(used.State.EnergyAt), "pantry": used.State.Pantry})
+	for _, u := range jukeboxRoom.Inventory {
+		if u.ItemID != 3700002 || !u.Placed {
+			continue
+		}
+		for i := 0; i < 3; i++ {
+			result, err := cafe.OperateMachine(s, owner, "machine_install", u.UnitID, at.Add(time.Hour))
+			log("install part", map[string]any{"err": outcome(err), "machines": machineLog(result.Machines)})
+		}
+		started, err := cafe.OperateMachine(s, owner, "machine_start", u.UnitID, at.Add(time.Hour))
+		log("jukebox on", map[string]any{"err": outcome(err), "machines": machineLog(started.Machines), "energy": started.State.Energy})
+		collected, err := cafe.OperateMachine(s, owner, "machine_collect", u.UnitID, at.Add(time.Hour+gamerules.EntertainmentRun()))
+		log("jukebox collected", map[string]any{"err": outcome(err), "coins": collected.Coins, "xp": collected.XP, "machines": machineLog(collected.Machines)})
+	}
+	machinesNow, err := cafe.SnapshotMachines(s, owner, at.Add(2*time.Hour))
+	log("machines", map[string]any{"err": outcome(err), "machines": machineLog(machinesNow)})
+	machineWorld, err := cafe.PublicWorld(s, owner, at.Add(2*time.Hour))
+	log("world machines", map[string]any{"err": outcome(err), "machines": len(machineWorld.Machines)})
+	harvested, err := cafe.HarvestFarm(s, owner, at.Add(3*time.Hour))
+	log("shelf harvest", map[string]any{"err": outcome(err), "spice": harvested.FreeSpice})
+	shelfPantry, err := cafe.SnapshotPantry(s, owner)
+	log("pantry with a shelf", map[string]any{"err": outcome(err), "limit": shelfPantry.SpiceLimit, "shelf": shelfPantry.Shelf, "items": shelfPantry.Items})
 	world("final")
 	return lines
 }

@@ -180,6 +180,26 @@ func registerRewardRoutes(e *core.ServeEvent) {
 		}
 		return r.JSON(http.StatusOK, result)
 	}).Bind(apis.BodyLimit(256)).BindFunc(mutation)
+	e.Router.POST("/api/coffe/pantry/use", func(r *core.RequestEvent) error {
+		r.Response.Header().Set("Cache-Control", "no-store")
+		user := sessionRecord(r)
+		if user == nil {
+			return r.UnauthorizedError("Entre para jogar.", nil)
+		}
+		var body struct {
+			Code int `json:"code"`
+		}
+		decoder := json.NewDecoder(r.Request.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil || decoder.Decode(new(any)) != io.EOF {
+			return r.BadRequestError("Item inválido.", nil)
+		}
+		result, err := cafe.UseConsumable(pb(r.App), user.Id, body.Code, time.Now())
+		if err != nil {
+			return pantryFailure(r, err)
+		}
+		return r.JSON(http.StatusOK, result)
+	}).Bind(apis.BodyLimit(256)).BindFunc(mutation)
 	e.Router.POST("/api/coffe/crates/open", func(r *core.RequestEvent) error {
 		r.Response.Header().Set("Cache-Control", "no-store")
 		user := sessionRecord(r)

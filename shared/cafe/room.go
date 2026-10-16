@@ -310,9 +310,9 @@ func MutateRoom(s Store, userID, action string, command RoomCommand, now time.Ti
 					return err
 				}
 			}
-			// A bought stove cooks: it gets its own row in the cooking table,
-			// positioned below when the unit is placed.
-			if item.Kind == "stove" {
+			// A bought stove or drink machine cooks: it gets its own row in the
+			// cooking table, positioned below when the unit is placed.
+			if item.Cooks() {
 				stove, err := tx.New("player_stoves")
 				if err != nil {
 					return err
@@ -342,12 +342,22 @@ func MutateRoom(s Store, userID, action string, command RoomCommand, now time.Ti
 					return err
 				}
 			}
-			if item.Kind == "counter" {
+			if item.Kind == "counter" || item.Kind == "machine" {
 				_, err := tx.First("room_food", Where{"user": userID, "counter": unit.ID()})
 				if err == nil {
 					return ErrCounterBusy
 				}
 				if !errors.Is(err, ErrNotFound) {
+					return err
+				}
+			}
+			// A machine stays where it is while switched on.
+			if isEntertainment(item) && action == "store" {
+				if row, err := tx.First(RoomMachines, Where{"user": userID, "unit": unit.ID()}); err == nil {
+					if status := MachineState(row, now); status == MachineRunning || status == MachineReady {
+						return ErrMachineRunning
+					}
+				} else if !errors.Is(err, ErrNotFound) {
 					return err
 				}
 			}
@@ -415,6 +425,12 @@ func MutateRoom(s Store, userID, action string, command RoomCommand, now time.Ti
 		}
 		if action != "sell" {
 			if err := tx.Save(unit); err != nil {
+				return err
+			}
+		}
+		// A bought jukebox or arcade starts as a frame that parts will build.
+		if action == "purchase" && isEntertainment(item) {
+			if err := newMachineRow(tx, userID, unit.ID(), item.ID); err != nil {
 				return err
 			}
 		}
@@ -523,6 +539,13 @@ func sellUnit(tx Store, userID, unitID string) error {
 		} else if !errors.Is(err, ErrNotFound) {
 			return err
 		}
+	}
+	if row, err := tx.First(RoomMachines, Where{"user": userID, "unit": unit.ID()}); err == nil {
+		if err := tx.Delete(row); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, ErrNotFound) {
+		return err
 	}
 	state, err := tx.First(PlayerCollection, Where{"user": userID})
 	if err != nil {

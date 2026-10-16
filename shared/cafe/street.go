@@ -64,6 +64,23 @@ func HarvestFarm(s Store, owner string, now time.Time) (gamewire.Street, error) 
 			return err
 		}
 		state = StreetState(room)
+		// A spice shelf in the café: a chance of a free spice with every harvest.
+		shelf, err := hasPlacedKind(tx, owner, "shelf")
+		if err != nil {
+			return err
+		}
+		if chance := gamerules.Pantry().ShelfHarvestPercent; shelf && chance > 0 && RandomIntn(100) < chance {
+			player, err := GetOrCreatePlayer(tx, owner)
+			if err != nil {
+				return err
+			}
+			if drawn := randomSpices(player, 1); len(drawn) == 1 {
+				state.FreeSpice = drawn[0]
+			}
+			if err := tx.Save(player); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	return state, err

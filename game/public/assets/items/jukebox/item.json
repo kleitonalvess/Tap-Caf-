@@ -1,0 +1,18 @@
+{
+  "id": 3700002,
+  "classname": "jukebox",
+  "name": "Jukebox Retrô",
+  "type": 3,
+  "kind": "entertainment",
+  "priceGold": 1800,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 104,
+  "level": 7,
+  "placeholder": true,
+  "parts": [],
+  "art": "jukebox",
+  "charm": 3,
+  "featured": true
+}

@@ -107,6 +107,8 @@ type entity struct {
 	visits int
 	// Deadline for a seated customer waiting for food; zero otherwise.
 	patienceUntil time.Time
+	// The full wait this customer got (the balloon fills over it).
+	patienceTotal time.Duration
 	// Customer: the waiter bringing the dish, and the wait left when it was paused.
 	servedBy       string
 	pausedPatience time.Duration
@@ -1071,7 +1073,7 @@ func (r *room) sit(a *entity, now time.Time) {
 	a.due = now.Add(2 * time.Second)
 	a.Action = &gamewire.ActorAction{Kind: "seated", StartedAt: now.UnixMilli(), Duration: 2000}
 	if a.Kind == "npc" {
-		a.restorePatience(now.Add(gamerules.CustomerPatience()))
+		r.startPatience(a, now)
 	}
 	for _, u := range r.world.Units {
 		if u.ID == a.ChairID {
@@ -1192,6 +1194,7 @@ func (r *room) updateWorld(w gamewire.World) {
 	foodsChanged := fmt.Sprint(w.Foods) != fmt.Sprint(r.world.Foods)
 	dirtChanged := fmt.Sprint(w.Dirt) != fmt.Sprint(r.world.Dirt)
 	streetChanged := fmt.Sprint(w.Street) != fmt.Sprint(r.world.Street)
+	machinesChanged := fmt.Sprint(w.Machines) != fmt.Sprint(r.world.Machines)
 	// An expansion only grows the room towards the front (walls stay on tx=0
 	// and ty=0), so every actor and path stays valid; the grid is rebuilt
 	// for the new bounds and the next world event carries them.
@@ -1239,8 +1242,11 @@ func (r *room) updateWorld(w gamewire.World) {
 			}
 		}
 	}
-	if len(changes) > 0 || cookingChanged || resized || streetChanged {
+	if len(changes) > 0 || cookingChanged || resized || streetChanged || machinesChanged {
 		e := gamewire.Event{Type: "world", Units: changes, Revision: w.Revision}
+		if machinesChanged {
+			e.Machines = w.Machines
+		}
 		if cookingChanged {
 			e.Cooking = w.Cooking
 		}

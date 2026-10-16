@@ -6,7 +6,7 @@ Gerado por `npm run assets:room` (`scripts/asset-catalog-doc.mjs`) a partir de `
 
 - **historical_confirmed** (13): arte PNG do jogo original, fornecida pelo responsável pelo projeto, cujo manifesto guarda o nome de classe original (`legacyClassName`). Confirma a existência do objeto e da arte; o nome em português e os valores de loja são nossos.
 - **unverified** (2): arte PNG sem essa evidência de origem.
-- **project_original** (65): criados para este projeto, desenhados em canvas (`placeholder-art.ts`) ou tingidos de um PNG. Nomes, preços, níveis e funções são de design; os temas Japão, Itália e Nobreza seguem a ideia dos conjuntos temáticos do jogo, sem reproduzir itens históricos (ver `docs/REFERENCE_AUDIT.md`).
+- **project_original** (70): criados para este projeto, desenhados em canvas (`placeholder-art.ts`) ou tingidos de um PNG. Nomes, preços, níveis e funções são de design; os temas Japão, Itália e Nobreza seguem a ideia dos conjuntos temáticos do jogo, sem reproduzir itens históricos (ver `docs/REFERENCE_AUDIT.md`).
 
 Grade nativa: tiles de 160×80 px, projeção 2:1. `pivot` é o deslocamento da imagem em relação ao vértice superior do tile de origem.
 
@@ -85,6 +85,7 @@ Grade nativa: tiles de 160×80 px, projeção 2:1. `pivot` é o deslocamento da 
 | 3500009 | Oliveira em Vaso | flower | Itália (Mamma Mia) | project_original | 1×1 tiles, 126 px | vértice superior do tile (Asset Studio) | não | 380 | 0 | 9 | decoração | estático | canvas procedural (`olive-tree`) |
 | 3500010 | Candelabro Dourado | flower | Nobreza Clássica | project_original | 1×1 tiles, 112 px | vértice superior do tile (Asset Studio) | não | 800 | 0 | 16 | decoração | estático | canvas procedural (`candelabra`) |
 | 3500011 | Piano Clássico | flower | Nobreza Clássica | project_original | 1×1 tiles, 96 px | vértice superior do tile (Asset Studio) | não | 3500 | 0 | 20 | decoração | estático | canvas procedural (`piano`) |
+| 3500012 | Prateleira de Temperos | machine | — | project_original | 1×1 tiles, 110 px | vértice superior do tile (Asset Studio) | não | 900 | 0 | 6 | prateleira de temperos | estático | canvas procedural (`spice-shelf`) |
 | 3600000 | Quadro de Paisagem | flower-window | — | project_original | 1×1 tiles, 195.2 px | vértice superior do tile (Asset Studio) | sim | 140 | 0 | 3 | decoração de parede | estático | canvas procedural (`painting-landscape`) |
 | 3600001 | Relógio de Parede | flower-window | — | project_original | 1×1 tiles, 195.2 px | vértice superior do tile (Asset Studio) | sim | 220 | 0 | 6 | decoração de parede | estático | canvas procedural (`wall-clock`) |
 | 3600002 | Quadro do Café | flower-window | — | project_original | 1×1 tiles, 195.2 px | vértice superior do tile (Asset Studio) | sim | 400 | 0 | 10 | decoração de parede | estático | canvas procedural (`painting-coffee`) |
@@ -92,5 +93,9 @@ Grade nativa: tiles de 160×80 px, projeção 2:1. `pivot` é o deslocamento da 
 | 3600004 | Quadro do Canal | flower-window | Itália (Mamma Mia) | project_original | 1×1 tiles, 195.2 px | vértice superior do tile (Asset Studio) | sim | 260 | 0 | 7 | decoração de parede | estático | canvas procedural (`painting-canal`) |
 | 3600005 | Cortina de Veludo | flower-window | Nobreza Clássica | project_original | 1×1 tiles, 195.2 px | vértice superior do tile (Asset Studio) | sim | 520 | 0 | 15 | decoração de parede | estático | canvas procedural (`curtain-velvet`) |
 | 3600006 | Letreiro Neon Café | flower-window | — | project_original | 1×1 tiles, 195.2 px | vértice superior do tile (Asset Studio) | sim | 700 | 0 | 12 | decoração de parede | estático | canvas procedural (`neon-sign`) |
+| 3700000 | Máquina de Café Expresso | machine | — | project_original | 1×1 tiles, 72 px | vértice superior do tile (Asset Studio) | não | 1200 | 0 | 4 | máquina de bebidas | vazia, preparando, pronta, estragada | canvas procedural (`machine-coffee`) |
+| 3700001 | Máquina de Sucos Naturais | machine | — | project_original | 1×1 tiles, 72 px | vértice superior do tile (Asset Studio) | não | 1400 | 0 | 5 | máquina de bebidas | vazia, preparando, pronta, estragada | canvas procedural (`machine-juice`) |
+| 3700002 | Jukebox Retrô | machine | — | project_original | 1×1 tiles, 104 px | vértice superior do tile (Asset Studio) | não | 1800 | 0 | 7 | entretenimento montável | em montagem, parada, ligada, em manutenção (níveis 1–3) | canvas procedural (`jukebox`) |
+| 3700003 | Fliperama Clássico | machine | — | project_original | 1×1 tiles, 112 px | vértice superior do tile (Asset Studio) | não | 2500 | 0 | 10 | entretenimento montável | em montagem, parada, ligada, em manutenção (níveis 1–3) | canvas procedural (`arcade`) |
 | 9000001 | Piso Máfia | floor | — | unverified | 1×1 tiles, 0 px | left -82, top -2 | não | 1 | 0 | 1 | piso | estático | PNG (mafia_tile_floor.png) |
 | 9000002 | Parede Máfia | wallpaper | — | unverified | 1×1 tiles, 233 px | left -80, top -193 | não | 1 | 0 | 1 | parede | estático | PNG (mafia_wall.png) |

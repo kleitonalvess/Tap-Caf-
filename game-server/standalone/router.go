@@ -158,6 +158,18 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 			return failure(cafe.PantryErrorStatus(err))
 		}
 		return reply(200, result)
+	case "/api/coffe/pantry/use":
+		var request struct {
+			Code int `json:"code"`
+		}
+		if strictJSON(body, &request) != nil {
+			return failure(400, "Item inválido.")
+		}
+		result, err := cafe.UseConsumable(e.store, e.profile.ID, request.Code, time.Now())
+		if err != nil {
+			return failure(cafe.PantryErrorStatus(err))
+		}
+		return reply(200, result)
 	case "/api/coffe/crates/open":
 		var request struct {
 			Crate     string `json:"crate"`
@@ -249,6 +261,12 @@ func (e *Engine) get(path string, query url.Values) (int, []byte) {
 			return failure(500, "Não foi possível carregar a despensa.")
 		}
 		return reply(200, pantry)
+	case "/api/coffe/machines":
+		machines, err := cafe.SnapshotMachines(e.store, owner, time.Now())
+		if err != nil {
+			return failure(500, "Não foi possível carregar as máquinas.")
+		}
+		return reply(200, map[string]any{"machines": machines})
 	case "/api/coffe/staff":
 		snapshot, err := cafe.SnapshotStaff(e.store, owner)
 		if err != nil {
@@ -300,6 +318,9 @@ var operations = func() map[string]string {
 		routes["/api/coffe/staff/"+path] = action
 	}
 	for path, action := range cafe.StreetActions {
+		routes[path] = action
+	}
+	for path, action := range cafe.MachineActions {
 		routes[path] = action
 	}
 	return routes
@@ -364,6 +385,9 @@ var operationFields = func() map[string][]string {
 	}
 	for _, action := range cafe.StaffActions {
 		fields[action] = []string{"profileId", "staffId", "role"}
+	}
+	for _, action := range cafe.MachineActions {
+		fields[action] = []string{"unitId"}
 	}
 	return fields
 }()

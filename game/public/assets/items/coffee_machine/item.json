@@ -1,0 +1,19 @@
+{
+  "id": 3700000,
+  "classname": "coffee_machine",
+  "name": "Máquina de Café Expresso",
+  "type": 3,
+  "kind": "machine",
+  "priceGold": 1200,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 72,
+  "level": 4,
+  "placeholder": true,
+  "parts": [],
+  "art": "machine-coffee",
+  "charm": 2,
+  "featured": true,
+  "machine": "coffee"
+}

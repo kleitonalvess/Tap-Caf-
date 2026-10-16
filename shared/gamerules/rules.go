@@ -37,6 +37,9 @@ type Recipe struct {
 	SpoilSeconds int `json:"spoilSeconds"`
 	// Provisional marks design placeholders, not values recovered from the original game.
 	Provisional bool `json:"provisional,omitempty"`
+	// Drinks only: the machine that makes it (coffee, juice) and the energy a batch costs.
+	Machine string `json:"machine,omitempty"`
+	Energy  int    `json:"energy,omitempty"`
 }
 
 // StoveRules cover the parts of the stove cycle shared by every recipe.
@@ -153,9 +156,11 @@ type AchievementGoal struct {
 // player and the São Paulo date, renewed at midnight. TrioCash is the Grana
 // paid with the last of the day's missions, for completing them all.
 type MissionRules struct {
-	Slots       [][]Mission `json:"slots"`
-	TrioCash    int64       `json:"trioCash"`
-	Provisional bool        `json:"provisional,omitempty"`
+	Slots    [][]Mission `json:"slots"`
+	TrioCash int64       `json:"trioCash"`
+	// TrioStock: consumables the day's last mission also gives.
+	TrioStock   []StockReward `json:"trioStock,omitempty"`
+	Provisional bool          `json:"provisional,omitempty"`
 }
 
 // Mission is complete when any of its goals is reached that day.
@@ -221,8 +226,10 @@ type CratePrize struct {
 	Coins  int64 `json:"coins,omitempty"`
 	Cash   int64 `json:"cash,omitempty"`
 	Spice  int   `json:"spice,omitempty"`
-	Count  int   `json:"count,omitempty"`
-	Item   int   `json:"item,omitempty"`
+	// Stock is a consumable code (energy drink, machine part), Count of them.
+	Stock int `json:"stock,omitempty"`
+	Count int `json:"count,omitempty"`
+	Item  int `json:"item,omitempty"`
 }
 
 // DecorRules: placed decoration adds its charm to the café's popularity. The
@@ -390,28 +397,33 @@ type PopularityRules struct {
 }
 
 type Rules struct {
-	Popularity        PopularityRules  `json:"popularity"`
-	Customers         CustomerRules    `json:"customers"`
-	Stove             StoveRules       `json:"stove"`
-	Tables            TableRules       `json:"tables"`
-	Service           ServiceRules     `json:"service"`
-	Street            StreetRules      `json:"street"`
-	Offline           OfflineRules     `json:"offline"`
-	Expansions        ExpansionRules   `json:"expansions"`
-	Staff             StaffRules       `json:"staff"`
-	Daily             DailyRules       `json:"daily"`
-	Mail              MailRules        `json:"mail"`
-	Achievements      AchievementRules `json:"achievements"`
-	Decor             DecorRules       `json:"decor"`
-	Spices            SpiceRules       `json:"spices"`
-	Crates            CrateRules       `json:"crates"`
-	Missions          MissionRules     `json:"missions"`
-	Equipment         EquipmentRules   `json:"equipment"`
-	Levels            []Level          `json:"levels"`
-	CustomerFrequency []Frequency      `json:"customerFrequency"`
-	Tips              []Tip            `json:"tips"`
-	EmployeeLocks     []EmployeeLock   `json:"employeeLocks"`
-	Recipes           []Recipe         `json:"recipes"`
+	Popularity        PopularityRules    `json:"popularity"`
+	Customers         CustomerRules      `json:"customers"`
+	Stove             StoveRules         `json:"stove"`
+	Tables            TableRules         `json:"tables"`
+	Service           ServiceRules       `json:"service"`
+	Street            StreetRules        `json:"street"`
+	Offline           OfflineRules       `json:"offline"`
+	Expansions        ExpansionRules     `json:"expansions"`
+	Staff             StaffRules         `json:"staff"`
+	Daily             DailyRules         `json:"daily"`
+	Mail              MailRules          `json:"mail"`
+	Achievements      AchievementRules   `json:"achievements"`
+	Decor             DecorRules         `json:"decor"`
+	Spices            SpiceRules         `json:"spices"`
+	Crates            CrateRules         `json:"crates"`
+	Missions          MissionRules       `json:"missions"`
+	Equipment         EquipmentRules     `json:"equipment"`
+	Energy            EnergyRules        `json:"energy"`
+	Consumables       []Consumable       `json:"consumables"`
+	Pantry            PantryRules        `json:"pantry"`
+	Drinks            []Recipe           `json:"drinks"`
+	Entertainment     EntertainmentRules `json:"entertainment"`
+	Levels            []Level            `json:"levels"`
+	CustomerFrequency []Frequency        `json:"customerFrequency"`
+	Tips              []Tip              `json:"tips"`
+	EmployeeLocks     []EmployeeLock     `json:"employeeLocks"`
+	Recipes           []Recipe           `json:"recipes"`
 }
 
 // Recipe ids are stored in stove_cooking.recipe_id and room_food.recipe_id (max 40).
@@ -492,6 +504,9 @@ func validate(r Rules) string {
 		return message
 	}
 	if message := validateShop(r); message != "" {
+		return message
+	}
+	if message := validateMachines(r); message != "" {
 		return message
 	}
 	if message := validateProgress(r); message != "" {
@@ -607,6 +622,12 @@ func validatePantry(r Rules) string {
 					return "crate prize with an unknown spice: " + crate.ID
 				}
 			}
+			if prize.Stock > 0 {
+				kinds++
+				if _, ok := consumableIn(r, prize.Stock); !ok || prize.Count < 1 {
+					return "crate prize with an unknown consumable: " + crate.ID
+				}
+			}
 			if prize.Item > 0 {
 				kinds++
 				if _, ok := roomcatalog.ByID(prize.Item); !ok {
@@ -662,10 +683,14 @@ func validateProgress(r Rules) string {
 	return ""
 }
 
+// RecipeByID finds a recipe or a drink: both cook on an appliance, wait on a
+// holder and pay per serving.
 func RecipeByID(id string) (Recipe, bool) {
-	for _, recipe := range rules.Recipes {
-		if recipe.ID == id {
-			return recipe, true
+	for _, list := range [][]Recipe{rules.Recipes, rules.Drinks} {
+		for _, recipe := range list {
+			if recipe.ID == id {
+				return recipe, true
+			}
 		}
 	}
 	return Recipe{}, false
@@ -966,6 +991,10 @@ func Public() Rules {
 	snapshot.Crates = CrateRulesNow()
 	snapshot.Missions.Slots = MissionSlots()
 	snapshot.Equipment = Equipment()
+	snapshot.Consumables = Consumables()
+	snapshot.Drinks = Drinks()
+	snapshot.Entertainment = EntertainmentRulesNow()
+	snapshot.Missions.TrioStock = append([]StockReward{}, rules.Missions.TrioStock...)
 	snapshot.Decor.Sets.Themes = append([]SetTheme{}, rules.Decor.Sets.Themes...)
 	snapshot.Decor.Sets.Tiers = append([]SetTier{}, rules.Decor.Sets.Tiers...)
 	return snapshot

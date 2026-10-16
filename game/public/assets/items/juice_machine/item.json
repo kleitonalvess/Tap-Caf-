@@ -1,0 +1,18 @@
+{
+  "id": 3700001,
+  "classname": "juice_machine",
+  "name": "Máquina de Sucos Naturais",
+  "type": 3,
+  "kind": "machine",
+  "priceGold": 1400,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 72,
+  "level": 5,
+  "placeholder": true,
+  "parts": [],
+  "art": "machine-juice",
+  "charm": 2,
+  "machine": "juice"
+}

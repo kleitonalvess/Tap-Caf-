@@ -42,6 +42,9 @@ func PublicWorld(s Store, owner string, now time.Time) (gamewire.World, error) {
 	if w.Staff, err = RoomStaff(s, owner); err != nil {
 		return w, err
 	}
+	if w.Machines, err = worldMachines(s, owner, now); err != nil {
+		return w, err
+	}
 	return w, nil
 }
 
@@ -126,6 +129,14 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 		if err == nil {
 			body, err = SnapshotStaff(s, op.Owner)
 		}
+	case "machine_install", "machine_start", "machine_collect", "machine_repair":
+		var command struct {
+			UnitID string `json:"unitId"`
+		}
+		if json.Unmarshal(op.Body, &command) != nil || command.UnitID == "" {
+			return fail(400, "Pedido inválido.")
+		}
+		body, err = OperateMachine(s, op.Owner, op.Action, command.UnitID, now)
 	case "farm_harvest":
 		body, err = HarvestFarm(s, op.Owner, now)
 	case "party_start":
@@ -173,7 +184,7 @@ func errorStatus(err error) (int, string) {
 		return false
 	}
 	switch {
-	case is(ErrRoomOwned, ErrStoveNotOwned):
+	case is(ErrRoomOwned, ErrStoveNotOwned, ErrMachineMissing):
 		return 404, "Item indisponível."
 	case is(ErrStaffMissing):
 		return 404, err.Error()
@@ -197,6 +208,11 @@ func errorStatus(err error) (int, string) {
 	case is(ErrSpiceEmpty, ErrSpiceOwner):
 		return 409, err.Error()
 	case is(ErrRoomLevel, ErrRoomCash, ErrRoomCapacity, ErrSellPlaced, ErrSellValue, ErrSellLast):
+		return 409, err.Error()
+	case is(ErrWrongAppliance):
+		return 400, err.Error()
+	case is(ErrEnergy, ErrDrinkSeason, ErrMachineFull, ErrMachineParts, ErrMachineCoins, ErrMachineMax, ErrMachineBuilding,
+		ErrMachineRunning, ErrMachineNotReady, ErrMachineBroken, ErrMachineFine, ErrMachineIdle):
 		return 409, err.Error()
 	case is(ErrRoomGold, ErrRoomConflict, ErrRoomOperation, ErrRoomBusy, ErrCounterBusy, ErrRecipeLocked, ErrCookingCoins,
 		ErrStoveDirty, ErrDishSpoiled, ErrNothingToClean, ErrCleaningCoins, ErrNoCounter, ErrSeasonClosed,

@@ -39,6 +39,8 @@ type Street struct {
 	PartyStartedAt int64 `json:"partyStartedAt,omitempty"`
 	PartyEndsAt    int64 `json:"partyEndsAt,omitempty"`
 	PartyReadyAt   int64 `json:"partyReadyAt,omitempty"`
+	// Only in a harvest's answer: the spice a spice shelf gave with it (0: none).
+	FreeSpice int `json:"freeSpice,omitempty"`
 }
 
 // AwaySummary is what the café did while the owner was away: the room slept
@@ -99,15 +101,17 @@ type Payment struct {
 	PopularityTenths int   `json:"popularityTenths"`
 }
 type World struct {
-	RoomID   string          `json:"roomId"`
-	Revision int             `json:"revision"`
-	TilesX   int             `json:"tilesX"`
-	TilesY   int             `json:"tilesY"`
-	Units    []Unit          `json:"units"`
-	Foods    []Food          `json:"foods"`
-	Dirt     []Dirt          `json:"dirt"`
-	Staff    []StaffMember   `json:"staff"`
-	Street   *Street         `json:"street,omitempty"`
+	RoomID   string        `json:"roomId"`
+	Revision int           `json:"revision"`
+	TilesX   int           `json:"tilesX"`
+	TilesY   int           `json:"tilesY"`
+	Units    []Unit        `json:"units"`
+	Foods    []Food        `json:"foods"`
+	Dirt     []Dirt        `json:"dirt"`
+	Staff    []StaffMember `json:"staff"`
+	Street   *Street       `json:"street,omitempty"`
+	// Placed entertainment machines: a running one lifts the customers' patience.
+	Machines []Machine       `json:"machines,omitempty"`
 	Cooking  json.RawMessage `json:"cooking,omitempty"`
 }
 
@@ -219,13 +223,15 @@ type Event struct {
 	// Welcome to the owner only: what happened while they were away.
 	Away *AwaySummary `json:"away,omitempty"`
 	// Set on a world event when the farm or the disco changed.
-	Street    *Street         `json:"street,omitempty"`
-	Cooking   json.RawMessage `json:"cooking,omitempty"`
-	Foods     []Food          `json:"foods,omitempty"`
-	Dirt      []Dirt          `json:"dirt,omitempty"`
-	Payment   *Payment        `json:"payment,omitempty"`
-	RequestID string          `json:"requestId,omitempty"`
-	Message   string          `json:"message,omitempty"`
+	Street  *Street         `json:"street,omitempty"`
+	Cooking json.RawMessage `json:"cooking,omitempty"`
+	// World events: the complete machine list when a machine changed.
+	Machines  []Machine `json:"machines,omitempty"`
+	Foods     []Food    `json:"foods,omitempty"`
+	Dirt      []Dirt    `json:"dirt,omitempty"`
+	Payment   *Payment  `json:"payment,omitempty"`
+	RequestID string    `json:"requestId,omitempty"`
+	Message   string    `json:"message,omitempty"`
 }
 type Command struct {
 	Type      string `json:"type"`
@@ -241,4 +247,14 @@ type Command struct {
 type Latency struct {
 	Type  string  `json:"type"`
 	RTTMs float64 `json:"rttMs"`
+}
+
+// Machine is one placed entertainment machine as the room and visitors see it.
+type Machine struct {
+	UnitID string `json:"unitId"`
+	Level  int    `json:"level"`
+	State  string `json:"state"`
+	// While running (until RunUntil, Unix ms) customers wait PatiencePercent longer.
+	RunUntil        int64 `json:"runUntil,omitempty"`
+	PatiencePercent int   `json:"patiencePercent"`
 }

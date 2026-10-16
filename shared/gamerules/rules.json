@@ -52,6 +52,34 @@
       "tiers": [ { "pieces": 3, "tenths": 10 }, { "pieces": 6, "tenths": 25 } ]
     }
   },
+  "energy": { "provisional": true, "max": 50, "regenSeconds": 120, "cap": 200 },
+  "consumables": [
+    { "code": 810001, "name": "Cafezinho Turbo", "kind": "energy", "amount": 10, "priceCoins": 150, "description": "Devolve 10 de energia na hora." },
+    { "code": 810002, "name": "Energético de Guaraná", "kind": "energy", "amount": 30, "priceCash": 1, "description": "Devolve 30 de energia na hora." },
+    { "code": 820001, "name": "Peça de Máquina", "kind": "part", "amount": 1, "priceCash": 1, "description": "Monta e melhora a jukebox e o fliperama." }
+  ],
+  "pantry": { "provisional": true, "spiceLimit": 5, "shelfSpiceLimit": 15, "shelfHarvestPercent": 25 },
+  "drinks": [
+    { "id": "cafe_expresso", "name": "Café Expresso", "machine": "coffee", "level": 4, "costCoins": 6, "energy": 2, "cookSeconds": 30, "servings": 6, "pricePerServing": 3, "xpPerServing": 1, "spoilSeconds": 1800, "provisional": true },
+    { "id": "cappuccino", "name": "Cappuccino", "machine": "coffee", "level": 9, "costCoins": 20, "energy": 3, "cookSeconds": 90, "servings": 10, "pricePerServing": 5, "xpPerServing": 2, "spoilSeconds": 2700, "provisional": true },
+    { "id": "mocha_gelado", "name": "Mocha Gelado", "machine": "coffee", "level": 16, "costCoins": 45, "energy": 4, "cookSeconds": 240, "servings": 14, "pricePerServing": 7, "xpPerServing": 2, "spoilSeconds": 3600, "provisional": true },
+    { "id": "suco_laranja", "name": "Suco de Laranja", "machine": "juice", "level": 5, "costCoins": 8, "energy": 2, "cookSeconds": 45, "servings": 6, "pricePerServing": 3, "xpPerServing": 1, "spoilSeconds": 1800, "provisional": true },
+    { "id": "suco_maracuja", "name": "Suco de Maracujá", "machine": "juice", "level": 11, "costCoins": 24, "energy": 3, "cookSeconds": 120, "servings": 10, "pricePerServing": 5, "xpPerServing": 2, "spoilSeconds": 2700, "provisional": true },
+    { "id": "vitamina_acai", "name": "Vitamina de Açaí", "machine": "juice", "level": 18, "costCoins": 60, "energy": 4, "cookSeconds": 300, "servings": 14, "pricePerServing": 8, "xpPerServing": 3, "spoilSeconds": 3600, "provisional": true }
+  ],
+  "entertainment": {
+    "provisional": true, "runSeconds": 1800, "maintenanceRuns": 4, "startEnergy": 5, "repairEnergy": 8,
+    "machines": [
+      { "item": 3700002, "levels": [
+        { "parts": 3, "coins": 0, "runCoins": 60, "runXp": 6, "patiencePercent": 10 },
+        { "parts": 4, "coins": 1500, "runCoins": 120, "runXp": 10, "patiencePercent": 20 },
+        { "parts": 6, "coins": 4000, "runCoins": 220, "runXp": 16, "patiencePercent": 30 } ] },
+      { "item": 3700003, "levels": [
+        { "parts": 4, "coins": 0, "runCoins": 90, "runXp": 8, "patiencePercent": 10 },
+        { "parts": 5, "coins": 2500, "runCoins": 170, "runXp": 14, "patiencePercent": 20 },
+        { "parts": 8, "coins": 6000, "runCoins": 300, "runXp": 22, "patiencePercent": 30 } ] }
+    ]
+  },
   "equipment": {
     "provisional": true,
     "stoves": [2, 3, 4, 5, 6, 7, 8],
@@ -69,15 +97,19 @@
     "freeMax": 10,
     "list": [
       { "id": "surprise", "name": "Caixa Surpresa", "free": true, "prizes": [
+        { "weight": 2, "stock": 810001, "count": 1 }, 
         { "weight": 4, "coins": 100 }, { "weight": 2, "coins": 250 }, { "weight": 3, "spice": 800001, "count": 1 },
         { "weight": 2, "spice": 800002, "count": 1 }, { "weight": 1, "spice": 800003, "count": 1 }, { "weight": 1, "cash": 1 } ] },
       { "id": "brown", "code": 980400, "name": "Caixa Marrom", "coins": 2000, "prizes": [
+        { "weight": 2, "stock": 820001, "count": 2 }, 
         { "weight": 3, "coins": 1200 }, { "weight": 2, "coins": 3000 }, { "weight": 2, "spice": 800001, "count": 3 },
         { "weight": 2, "spice": 800002, "count": 2 }, { "weight": 1, "item": 3020005 }, { "weight": 1, "item": 3040006 } ] },
       { "id": "purple", "code": 980100, "name": "Caixa Roxa", "cash": 4, "prizes": [
+        { "weight": 2, "stock": 820001, "count": 3 }, 
         { "weight": 2, "item": 3000013 }, { "weight": 2, "item": 3010003 }, { "weight": 2, "item": 3020005 },
         { "weight": 2, "spice": 800003, "count": 3 }, { "weight": 1, "coins": 6000 }, { "weight": 1, "cash": 10 } ] },
       { "id": "gold", "code": 980300, "name": "Caixa Dourada", "cash": 8, "prizes": [
+        { "weight": 2, "stock": 820001, "count": 5 }, 
         { "weight": 2, "item": 3040006 }, { "weight": 2, "item": 3010003 }, { "weight": 2, "item": 3000013 },
         { "weight": 2, "item": 3500004 }, { "weight": 1, "spice": 800002, "count": 4 }, { "weight": 1, "cash": 25 } ] }
     ]
@@ -141,7 +173,7 @@
     ]
   },
   "missions": {
-    "trioCash": 1,
+    "trioCash": 1, "trioStock": [ { "code": 810001, "count": 1 } ],
     "slots": [
       [
         { "id": "cook_2", "title": "Cozinhe 2 receitas", "goals": [{ "stat": "dishes", "target": 2 }], "coins": 60, "xp": 5, "cash": 0 },

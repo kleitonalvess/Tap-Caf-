@@ -175,7 +175,7 @@ func (r *room) watchKitchen(now time.Time) {
 	updates := []gamewire.Actor{}
 	for _, a := range r.actors {
 		if a.Kind == "npc" && a.Browsing && a.State == "seated" && a.Food == nil && !a.patienceUntil.IsZero() {
-			a.restorePatience(now.Add(gamerules.CustomerPatience()))
+			r.startPatience(a, now)
 			updates = append(updates, r.status(a, false))
 		}
 	}
@@ -184,10 +184,32 @@ func (r *room) watchKitchen(now time.Time) {
 	}
 }
 
+// restorePatience sets the deadline; the balloon fills over the full wait the
+// customer got when the wait began (longer with a running entertainment machine).
 func (a *entity) restorePatience(until time.Time) {
-	duration := gamerules.CustomerPatience()
+	duration := a.patienceTotal
+	if duration <= 0 {
+		duration = gamerules.CustomerPatience()
+	}
 	a.patienceUntil = until
 	a.Patience = &gamewire.Patience{StartedAt: until.Add(-duration).UnixMilli(), Duration: duration.Milliseconds()}
+}
+
+// startPatience gives a customer a full wait: the rules' patience, lifted by
+// the best running entertainment machine in the café.
+func (r *room) startPatience(a *entity, now time.Time) {
+	a.patienceTotal = r.patienceDuration(now)
+	a.restorePatience(now.Add(a.patienceTotal))
+}
+
+func (r *room) patienceDuration(now time.Time) time.Duration {
+	bonus := 0
+	for _, m := range r.world.Machines {
+		if m.State == "running" && m.RunUntil > now.UnixMilli() {
+			bonus = max(bonus, m.PatiencePercent)
+		}
+	}
+	return gamerules.CustomerPatience() * time.Duration(100+bonus) / 100
 }
 
 func (a *entity) clearPatience() {
@@ -244,7 +266,7 @@ func (r *room) advanceNPC(a *entity, now time.Time) bool {
 		}
 		// Customers saved before patience existed get the full wait now.
 		if a.patienceUntil.IsZero() {
-			a.restorePatience(now.Add(gamerules.CustomerPatience()))
+			r.startPatience(a, now)
 		}
 		// Without waiters on duty customers help themselves at the counter.
 		if food, ok := r.availableFood(); ok && a.TableID != "" && !r.waitersOnDuty() {

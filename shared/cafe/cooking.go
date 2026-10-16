@@ -28,6 +28,9 @@ var ErrCleaningCoins = errors.New("Moedas insuficientes para limpar o fogão.")
 var ErrNoCounter = errors.New("Nenhum balcão livre para este prato. Coloque ou libere um balcão.")
 var ErrSeasonClosed = errors.New("Só dá para temperar enquanto o prato está no fogo.")
 var ErrAlreadySeasoned = errors.New("Este prato já foi temperado.")
+var ErrWrongAppliance = errors.New("Esta receita não é feita aqui: pratos vão ao fogão e bebidas às máquinas certas.")
+var ErrDrinkSeason = errors.New("Bebidas não levam tempero.")
+var ErrMachineFull = errors.New("A máquina ainda tem outra bebida pronta. Espere os clientes levarem.")
 
 type CookingView struct {
 	ID          string `json:"id"`
@@ -232,8 +235,12 @@ func StartCooking(s Store, userID, stoveID, recipeID string, now time.Time) erro
 			return err
 		}
 		model, ok := roomcatalog.ByID(stove.GetInt("item_id"))
-		if !ok || model.Kind != "stove" {
+		if !ok || !model.Cooks() {
 			return ErrStoveNotOwned
+		}
+		// Dishes cook on stoves; each drink on its own kind of machine.
+		if gamerules.IsDrink(recipe.ID) != (model.Kind == "machine") || recipe.Machine != model.Machine {
+			return ErrWrongAppliance
 		}
 		if job, err := tx.First("stove_cooking", Where{"stove": stoveID}); err == nil {
 			if status, _ := JobState(job, now); status == "spoiled" {
@@ -261,11 +268,17 @@ func StartCooking(s Store, userID, stoveID, recipeID string, now time.Time) erro
 		if state.GetInt64("gold") < cost {
 			return ErrCookingCoins
 		}
-		if cost > 0 {
+		// Drinks also cost energy, taken in the same transaction as the coins.
+		if err := SpendEnergy(state, recipe.Energy, now); err != nil {
+			return err
+		}
+		if cost > 0 || recipe.Energy > 0 {
 			state.Set("gold", state.GetInt64("gold")-cost)
 			if err = tx.Save(state); err != nil {
 				return err
 			}
+		}
+		if cost > 0 {
 			if err = count(tx, userID, now, gamerules.StatSpentCoins, cost); err != nil {
 				return err
 			}
@@ -283,8 +296,10 @@ func StartCooking(s Store, userID, stoveID, recipeID string, now time.Time) erro
 			"spoils_at": ready.Add(StoveSpoilDuration(model, recipe)), "cost_coins": cost,
 			"stove_servings": StoveExtraServings(model, recipe),
 		})
-		// Fresh farm ingredients go into the next batch, whatever the recipe.
-		if room, err := tx.First("player_rooms", Where{"user": userID}); err == nil && room.GetInt("fresh_charges") > 0 {
+		// Fresh farm ingredients go into the next dish, whatever the recipe (not into drinks).
+		if room, err := tx.First("player_rooms", Where{"user": userID}); model.Kind == "machine" {
+			// The charge waits for the next dish.
+		} else if err == nil && room.GetInt("fresh_charges") > 0 {
 			room.Set("fresh_charges", room.GetInt("fresh_charges")-1)
 			if err := tx.Save(room); err != nil {
 				return err
@@ -352,6 +367,26 @@ func pickCounter(s Store, owner, recipeID string) (string, Record, error) {
 	return "", nil, ErrNoCounter
 }
 
+// machineHolder: a drink waits on the machine that made it, which holds one
+// drink at a time (a new batch of the same drink adds to it).
+func machineHolder(s Store, owner, stoveID, recipeID string) (string, Record, error) {
+	unit, err := s.First("player_inventory", Where{"user": owner, "stove_id": stoveID})
+	if err != nil {
+		return "", nil, err
+	}
+	food, err := s.First("room_food", Where{"user": owner, "counter": unit.ID()})
+	if errors.Is(err, ErrNotFound) {
+		return unit.ID(), nil, nil
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	if food.GetString("recipe_id") != recipeID {
+		return "", nil, ErrMachineFull
+	}
+	return unit.ID(), food, nil
+}
+
 // ServeCooking moves a ready dish from the stove to a counter.
 func ServeCooking(s Store, userID, stoveID string, now time.Time) error {
 	_, err := ServeCookingXP(s, userID, stoveID, now)
@@ -379,7 +414,14 @@ func ServeCookingXP(s Store, userID, stoveID string, now time.Time) (int64, erro
 			return ErrDishNotReady
 		}
 		recipeID := job.GetString("recipe_id")
-		counter, food, err := pickCounter(tx, userID, recipeID)
+		drink := gamerules.IsDrink(recipeID)
+		var counter string
+		var food Record
+		if drink {
+			counter, food, err = machineHolder(tx, userID, stoveID, recipeID)
+		} else {
+			counter, food, err = pickCounter(tx, userID, recipeID)
+		}
 		if err != nil {
 			return err
 		}
@@ -399,7 +441,11 @@ func ServeCookingXP(s Store, userID, stoveID string, now time.Time) (int64, erro
 		if err = tx.Save(food); err != nil {
 			return err
 		}
-		changes := []statChange{{stat: gamerules.StatDishes, delta: 1, recipe: recipeID}}
+		// Drinks are not dishes: they never count for the dish achievements and missions.
+		changes := []statChange{}
+		if !drink {
+			changes = append(changes, statChange{stat: gamerules.StatDishes, delta: 1, recipe: recipeID})
+		}
 		if job.GetString("seasoned_by") == userID {
 			changes = append(changes, statChange{stat: gamerules.StatSeasoned, delta: 1})
 			if xp := gamerules.Stove().SeasonXP; xp > 0 {
@@ -530,6 +576,9 @@ func SeasonCooking(s Store, owner, seasoner, stoveID string, spiceCode int, now 
 		}
 		if job.GetString("seasoned_by") != "" {
 			return ErrAlreadySeasoned
+		}
+		if gamerules.IsDrink(job.GetString("recipe_id")) {
+			return ErrDrinkSeason
 		}
 		base := 1
 		if recipe, ok := gamerules.RecipeByID(job.GetString("recipe_id")); ok {

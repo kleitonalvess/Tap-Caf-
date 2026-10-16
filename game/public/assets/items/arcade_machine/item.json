@@ -1,0 +1,17 @@
+{
+  "id": 3700003,
+  "classname": "arcade_machine",
+  "name": "Fliperama Clássico",
+  "type": 3,
+  "kind": "entertainment",
+  "priceGold": 2500,
+  "purchasable": true,
+  "sizeX": 1,
+  "sizeY": 1,
+  "itemHeight": 112,
+  "level": 10,
+  "placeholder": true,
+  "parts": [],
+  "art": "arcade",
+  "charm": 3
+}
