@@ -2715,7 +2715,7 @@ export class RoomScreen implements Screen {
     this.neighborBar?.setNeighbors(this.neighbors);
   }
 
-  /** Visiting: the way back home, over the bottom bar. */
+  /** Visiting: the way back home, in the top-left corner. */
   private createHomeButton(): void {
     const button = new Container();
     button.label = 'room-home-button';
@@ -2723,7 +2723,8 @@ export class RoomScreen implements Screen {
     caption.anchor.set(0.5);
     const width = caption.width + 44;
     button.addChild(new Graphics().roundRect(-width / 2, -28, width, 56, 22).fill(0x3f9a4a).stroke({ color: 0x3d2a14, width: 3 }), caption);
-    button.position.set(STAGE_WIDTH / 2, STAGE_HEIGHT - 230);
+    // Under the audio controls, clear of the HUD bars and the bottom bar.
+    button.position.set(40 + width / 2, 150);
     button.eventMode = 'static';
     button.cursor = 'pointer';
     button.on('pointerdown', (event) => event.stopPropagation());

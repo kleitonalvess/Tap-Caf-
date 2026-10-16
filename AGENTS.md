@@ -69,12 +69,13 @@ npm run e2e -- offline server             # só os nomeados
 | `level-up` | servidor | Sprint 8: subida de nível por pagamento, janela com desbloqueios e atalhos |
 | `street` | servidor | Sprint 9: Fazenda, Festa do Bairro e expediente offline com "Bem-vindo de volta!" |
 | `offline` | standalone | Sprint 10: café no navegador, save, aba escondida, ausência e uma aba por café |
-| `retention` | standalone | Sprint 11: bônus diário, Correio, ícones ("Em breve!" e as janelas da despensa e das caixas), barra de XP, cancelar com reembolso, Configurações e guarda-roupa |
+| `retention` | standalone | Sprint 11: bônus diário, Correio, ícones (as janelas dos presentes, do mapa, da despensa e das caixas), barra de XP, cancelar com reembolso, Configurações e guarda-roupa |
 | `achievements` | standalone | Sprints 11–12: troféu (conquistas e missões, resgate e selo), XP do tempero ao servir, abas do livro, "+" de Moedas e Grana, Popularidade com renomear, retrato, exportar e importar o save, aba "Rosto" e HUD de depuração só com `?debug=1` |
 | `static-build` | build estático | build numa subpasta, recarga com o mesmo perfil e CSP sem eval ou sem WebAssembly |
 | `shop` | standalone | Sprints 13 e 15a: categorias com itens, cadeado por nível, Novidades, itens no modal de nível, compras com moedas e Grana, charme da decoração e conjunto Japão na Popularidade, "Caixa do dia", limite de fogões e venda pelo Inventário com confirmação |
 | `crates` | standalone | Sprint 14: caixa grátis e contador "Caixas", prêmio, pedido repetido, comprar tempero na despensa e temperar com o efeito |
 | `machines` | standalone | Sprint 15b: energia viva no HUD, máquina de café (livro só com cafés, energia gasta, café na máquina), despensa com energético e limite da prateleira, jukebox montada com peças e ligada |
+| `sprint16` | standalone | Sprint 16: barra de vizinhos e setas, mapa, presentes (abrir e enviar), pote de gorjetas, acelerar com energia, Sálvia Salvadora num prato estragado e visita ao Papa dos Pudins com as ajudas (limpar mesa, temperar, animar cliente) e a volta para casa |
 | `art-sheet` | standalone | Sprint 15a: folha de contato de toda a arte desenhada em canvas (`placeholder-art.ts`), para conferir silhuetas e escala |
 | `server` | servidor | login, bônus e Carta gravados no banco, pagamento por WebSocket, HUD por SSE, tempero da despensa pelo servidor do jogo, reembolso e "Sair" |
 

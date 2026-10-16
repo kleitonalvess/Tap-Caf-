@@ -308,7 +308,7 @@ O jogo roda sem servidores (GitHub Pages ou arquivos estáticos), com o save no 
   - `GiftsModal` (`gift`): abas Receber e Enviar.
   - `gift` e `map` deixaram de responder "Em breve!".
 - **Economia a acompanhar**: com oito NPCs, um jogador pode abrir 5 presentes (até 1.250 moedas + 15 XP) e fazer 24 ajudas (480 moedas) por dia, e as conquistas `amount_neighbors` (1.000 moedas no 1º vizinho, 5.000 no 5º) saem no primeiro dia só com NPCs. Os valores do config pressupunham amigos reais.
-- **Verificado**: `shared/cafe/neighbors_test.go`, `TestVisitingANeighborCafe` (standalone), `TestAVisitorCheersOnlyAWaitingCustomer` (runtime), paridade (ajuda, limite diário, presente enviado e aberto, café NPC lido de volta) e Vitest (`tests/unit/neighbors.test.ts`).
+- **Verificado**: `shared/cafe/neighbors_test.go`, `TestVisitingANeighborCafe` (standalone), `TestAVisitorCheersOnlyAWaitingCustomer` (runtime), paridade (ajuda, limite diário, presente enviado e aberto, café NPC lido de volta), Vitest (`tests/unit/neighbors.test.ts`) e o roteiro E2E `sprint16` no Chromium (barra e setas, mapa, presentes, visita ao Papa dos Pudins com as três ajudas e a volta, além do pote de gorjetas, de acelerar e da Sálvia).
 
 ## Auditoria da interface e dos dados (Sprint 9)
 
@@ -356,6 +356,7 @@ Feita por leitura do código (sem execução) e conferida por amostragem. Estado
 - Limite de 20×20: `tileIndex` do cliente empacota `ty * MAX_NUM_TILES_X + tx` com `MAX_NUM_TILES_X = 20`. Salas maiores (o servidor aceita até 40) exigem trocar essa chave antes de criar novos passos.
 - Falha intermitente não reproduzida: em uma execução, `cook_start` voltou sem chegar à persistência (sem `game-internal/operation` no log). As candidatas são as validações do servidor ("Aproxime seu personagem do fogão" e "Aguarde o preparo"), herdadas da versão inicial. Duas repetições passaram.
 - Falha intermitente no E2E `kitchen` (Sprint 15, uma vez em duas rodadas com o mesmo código dos clientes): depois das reclamações por paciência, nenhum cliente voltou a comer em 120 s com porções no balcão (a captura mostra três clientes saindo). A repetição passou em 418 s. Se voltar, rode com `COFFE_E2E_KEEP=1` e guarde o log do servidor do jogo (intervalo de chegada, lotação e estado de cada NPC) antes de mudar a espera do roteiro ou as regras de chegada.
+- Teste instável `TestWaiterOnTheDoorLetsCustomersOut` (`game-server/gameruntime/door_test.go`): falhou cerca de 3 vezes em 40 rodadas na Sprint 16 e 1 em 40 no commit anterior à sprint (`be23a09`), logo a instabilidade é antiga e não vem das mudanças da sprint. A falha registra o dono em (1,4), uma mesa suja e o garçom parado em (3,4) sem caminho. O teste ainda não foi corrigido. Antes de mexer nele, registre o estado do quarto como pede o item do travamento na porta.
 - Lockfile: o npm 10.9 falha com `edgesOut` ao adicionar dependências com peers opcionais, e o npm 11.6 remove os campos `libc` do lockfile. Para alterar dependências, use npm ≥ 11.20 (o projeto exige Node 24, que traz o npm 11).
 
 ## Verificação
