@@ -187,11 +187,13 @@ func registerGameBridge(e *core.ServeEvent) error {
 			TableID string `json:"tableId"`
 			// The room confirms a waiter handed the dish over: the customer tips.
 			Waiter bool `json:"waiter"`
+			// A special visitor (gamerules.Visitor id) pays its bonus.
+			VIP string `json:"vip"`
 		}
 		if r.BindBody(&body) != nil || body.FoodID == "" {
 			return r.BadRequestError("Inválido.", nil)
 		}
-		payment, err := serveCustomerBy(r.App, r.Request.PathValue("owner"), body.FoodID, body.TableID, body.Waiter)
+		payment, err := serveCustomerAs(r.App, r.Request.PathValue("owner"), body.FoodID, body.TableID, gamewire.ServeOptions{Waiter: body.Waiter, VIP: body.VIP})
 		if errors.Is(err, errFoodGone) {
 			return r.NotFoundError("Prato indisponível.", nil)
 		}

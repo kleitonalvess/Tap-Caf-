@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"coffe-mania/shared/gamerules"
+	"coffe-mania/shared/gamewire"
 	"coffe-mania/shared/roomcatalog"
 )
 
@@ -122,7 +123,7 @@ func TestCashRegisterMakesSelfServiceTip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		payment, err := ServeServing(s, "owner", food.ID(), "", false, at.Add(time.Hour))
+		payment, err := ServeServing(s, "owner", food.ID(), "", gamewire.ServeOptions{}, at.Add(time.Hour))
 		if err != nil {
 			t.Fatal(err)
 		}

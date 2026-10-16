@@ -304,8 +304,8 @@ func (s storage) Operate(_ context.Context, op gamewire.Operation) (gamewire.Res
 	return cafe.Operate(s.store, op, time.Now()), nil
 }
 
-func (s storage) Consume(_ context.Context, room, food, table string, waiter bool) (gamewire.Payment, error) {
-	payment, err := cafe.ServeCustomer(s.store, room, food, table, waiter, time.Now())
+func (s storage) Consume(_ context.Context, room, food, table string, options gamewire.ServeOptions) (gamewire.Payment, error) {
+	payment, err := cafe.ServeCustomerAs(s.store, room, food, table, options, time.Now())
 	if errors.Is(err, cafe.ErrFoodGone) {
 		return payment, gameruntime.ErrFoodGone
 	}

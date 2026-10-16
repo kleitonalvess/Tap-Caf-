@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { boostCost } from '../../game/src/game/cooking';
 import { rewardText } from '../../game/src/game/rewards';
 import { tipJarCap } from '../../game/src/game/tipjar';
+import { visitorReview } from '../../game/src/game/visitors';
 
 const at = (ms: number) => new Date(ms).toISOString().replace('T', ' ');
 
@@ -32,5 +33,13 @@ describe('pote de gorjetas', () => {
 describe('bônus diário', () => {
   it('o 6º dia cita a caixa grátis', () => {
     expect(rewardText({ coins: 500, cash: 10, spices: 1, crates: 1 })).toBe('+500 moedas e +10 Grana e +1 tempero e +1 caixa');
+  });
+});
+
+describe('visitantes especiais', () => {
+  it('o crítico elogia e mostra a popularidade ganha', () => {
+    const critic = { id: 'critic_initial', name: 'Chef Jacquinho', title: 'Crítico gastronômico', critic: true, coinsMultiplier: 3.5, popularityTenths: 50, tipJarCoins: 50, review: 'Que prato!' };
+    expect(visitorReview(critic)).toEqual({ title: 'Chef Jacquinho elogiou o café!', detail: '“Que prato!” · +5 de popularidade' });
+    expect(visitorReview({ ...critic, critic: false, name: 'Mick Jaca', popularityTenths: 25 }).detail).toBe('“Que prato!” · +2,5 de popularidade');
   });
 });

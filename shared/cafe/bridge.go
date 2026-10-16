@@ -312,5 +312,5 @@ func LoadSeed(s Store, owner string, now time.Time) (gamewire.Seed, error) {
 	if err != nil {
 		return gamewire.Seed{}, err
 	}
-	return gamewire.Seed{World: world, NPCs: npcs, Looks: looks, PopularityTenths: state.GetInt("satisfaction_current_tenths"), Away: away}, nil
+	return gamewire.Seed{World: world, NPCs: npcs, Looks: looks, PopularityTenths: state.GetInt("satisfaction_current_tenths"), Level: state.GetInt("level"), Away: away}, nil
 }

@@ -26,7 +26,7 @@ type Storage interface {
 	// Consume takes one serving for a customer at a table and returns the payment
 	// already credited to the owner; the same transaction leaves the table dirty.
 	// waiter marks a staff delivery, which adds the customer's tip.
-	Consume(ctx context.Context, room, food, table string, waiter bool) (gamewire.Payment, error)
+	Consume(ctx context.Context, room, food, table string, options gamewire.ServeOptions) (gamewire.Payment, error)
 	// Feedback records a customer verdict that came without a payment.
 	Feedback(context.Context, string, bool) error
 	// Clean clears a table's plates for the staff (no reward); an already
@@ -145,6 +145,10 @@ type room struct {
 	sleepFailures int
 	// Owner popularity in tenths, mirrored from persistence to pace arrivals.
 	popularity int
+	// Owner level (special visitors need gamerules.Visitors().MinLevel) and the
+	// earliest moment the next special visitor may arrive.
+	level   int
+	vipFrom time.Time
 	// Last kitchenIdle result, to notice the first dish going on the fire.
 	kitchenWasIdle, kitchenKnown bool
 	// Servings promised to waiters (food id → count) and tables taken by staff.
@@ -184,6 +188,7 @@ func (m *Manager) get(ctx context.Context, id string) (*room, error) {
 		} else {
 			r := &room{manager: m, id: id, epoch: uuid.NewString(), world: seed.World, grid: newGrid(seed.World), actors: map[string]*entity{}, peers: map[string]*Peer{}, seats: map[string]string{}, looks: seed.Looks, tasks: make(chan task, 256), done: make(chan struct{}), stop: make(chan struct{}), idleAt: time.Now(), spawnAt: time.Now().Add(time.Second)}
 			r.popularity = seed.PopularityTenths
+			r.level = seed.Level
 			r.away = seed.Away
 			if low, _ := gamerules.PopularityBoundsTenths(); r.popularity < low {
 				r.popularity = low

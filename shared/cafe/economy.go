@@ -15,7 +15,13 @@ var ErrFoodGone = errors.New("Prato indisponível.")
 // A waiter's delivery adds the customer's tip to the coins (Payment.Coins is
 // the total, Payment.Tip its share).
 func ServeCustomer(s Store, owner, foodID, tableID string, waiter bool, now time.Time) (gamewire.Payment, error) {
-	return ServeServing(s, owner, foodID, tableID, waiter, now)
+	return ServeServing(s, owner, foodID, tableID, gamewire.ServeOptions{Waiter: waiter}, now)
+}
+
+// ServeCustomerAs is ServeCustomer with the delivery details the room knows:
+// a waiter's delivery and a special visitor.
+func ServeCustomerAs(s Store, owner, foodID, tableID string, options gamewire.ServeOptions, now time.Time) (gamewire.Payment, error) {
+	return ServeServing(s, owner, foodID, tableID, options, now)
 }
 
 // ServeServing credits one serving as of the given instant (the offline
@@ -23,7 +29,8 @@ func ServeCustomer(s Store, owner, foodID, tableID string, waiter bool, now time
 // party the tip is multiplied and self-served customers tip too, as they do
 // when the café has a cash register. A fresh serving (farm ingredients) adds
 // its bonus to coins and XP.
-func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.Time) (gamewire.Payment, error) {
+func ServeServing(s Store, owner, foodID, tableID string, options gamewire.ServeOptions, at time.Time) (gamewire.Payment, error) {
+	waiter := options.Waiter
 	var payment gamewire.Payment
 	err := s.Transaction(func(tx Store) error {
 		food, err := tx.Get("room_food", foodID)
@@ -77,7 +84,19 @@ func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.T
 		if fresh > 0 {
 			freshCoins, freshXP = gamerules.FreshBonus(recipe.PricePerServing), gamerules.FreshBonus(recipe.XPPerServing)
 		}
-		progress := Award(state, recipe.PricePerServing+tip+freshCoins, recipe.XPPerServing+freshXP)
+		price, xp := recipe.PricePerServing, recipe.XPPerServing
+		// A special visitor pays its multiplier, adds XP and popularity, and
+		// fills the tip jar generously; an unknown id pays as a regular customer.
+		visitor, vip := gamerules.VisitorByID(options.VIP)
+		if vip {
+			price, xp = visitor.VisitorPay(price, xp)
+		}
+		progress := Award(state, price+tip+freshCoins, xp+freshXP)
+		if vip && visitor.PopularityTenths > 0 {
+			value := min(state.GetInt("satisfaction_max_tenths"), state.GetInt("satisfaction_current_tenths")+visitor.PopularityTenths)
+			state.Set("satisfaction_current_tenths", value)
+			progress.PopularityTenths = value
+		}
 		if err = tx.Save(state); err != nil {
 			return err
 		}
@@ -87,7 +106,11 @@ func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.T
 		// Every paid serving drops a little into the tip jar, up to its limit.
 		var jar int64
 		if room != nil {
-			jar = fillTipJar(room, state.GetInt("level"), gamerules.TipJarDeposit(recipe.PricePerServing))
+			deposit := gamerules.TipJarDeposit(recipe.PricePerServing)
+			if vip {
+				deposit += visitor.TipJarCoins
+			}
+			jar = fillTipJar(room, state.GetInt("level"), deposit)
 			if err = tx.Save(room); err != nil {
 				return err
 			}
@@ -101,6 +124,12 @@ func ServeServing(s Store, owner, foodID, tableID string, waiter bool, at time.T
 			FreshCoins: freshCoins, FreshXP: freshXP, FreshLeft: freshLeft,
 			Level: progress.Level, LevelUp: progress.LevelUp, LevelReward: progress.LevelReward,
 			ServingsLeft: left, PopularityTenths: progress.PopularityTenths, TipJar: jar,
+		}
+		if vip {
+			payment.VIP = visitor.ID
+			if err = count(tx, owner, at, gamerules.StatVisitors, 1); err != nil {
+				return err
+			}
 		}
 		return nil
 	})

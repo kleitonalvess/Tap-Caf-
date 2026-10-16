@@ -143,8 +143,13 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 	if len(w.Foods) != 1 {
 		t.Fatalf("foods = %+v", w.Foods)
 	}
+	// The second meal is the critic's (Sprint 16): multiplied pay, popularity and tip jar.
 	for i, table := range []string{firstTable, secondTable, firstTable} {
-		payment, err := cafe.ServeServing(s, owner, w.Foods[0].ID, table, i == 2, ready.Add(time.Duration(i+1)*time.Second))
+		options := gamewire.ServeOptions{Waiter: i == 2}
+		if i == 1 {
+			options.VIP = "critic_initial"
+		}
+		payment, err := cafe.ServeServing(s, owner, w.Foods[0].ID, table, options, ready.Add(time.Duration(i+1)*time.Second))
 		log(fmt.Sprintf("payment %d", i), map[string]any{"err": outcome(err), "payment": payment})
 	}
 	world("after meals")
@@ -187,10 +192,14 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 	log("expand again", outcome(err))
 	room("expanded")
 
-	npc := gamewire.Actor{ID: "npc:parity", Kind: "npc", State: "seated", X: 2, Y: 3}
+	npc := gamewire.Actor{ID: "npc:parity", Kind: "npc", State: "seated", X: 2, Y: 3, VIP: "rock_jagger"}
 	log("sleep", outcome(cafe.SaveDormant(s, owner, gamewire.Sleep{NPCs: []gamewire.Actor{npc}}, t0)))
 	seed, err := cafe.LoadSeed(s, owner, t0.Add(time.Minute))
-	log("short wake", map[string]any{"err": outcome(err), "npcs": len(seed.NPCs), "looks": len(seed.Looks), "away": seed.Away != nil, "popularity": seed.PopularityTenths})
+	wokenVIP := ""
+	if len(seed.NPCs) > 0 {
+		wokenVIP = seed.NPCs[0].VIP
+	}
+	log("short wake", map[string]any{"err": outcome(err), "npcs": len(seed.NPCs), "vip": wokenVIP, "looks": len(seed.Looks), "away": seed.Away != nil, "popularity": seed.PopularityTenths, "level": seed.Level})
 	log("sleep again", outcome(cafe.SaveDormant(s, owner, gamewire.Sleep{NPCs: []gamewire.Actor{npc}}, t0)))
 	summary, err := cafe.WakeRoom(s, owner, t0.Add(2*time.Hour))
 	if summary != nil {

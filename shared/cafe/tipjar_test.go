@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"coffe-mania/shared/gamerules"
+	"coffe-mania/shared/gamewire"
 )
 
 // serveFood puts a dish of the recipe on the counter and serves n portions.
@@ -84,5 +85,45 @@ func TestTheSixthDayClosesTheWeekWithAFreeCrate(t *testing.T) {
 	claim, err = ClaimDaily(s, "owner", progressT0.Add(24*time.Hour))
 	if err != nil || claim.Crates != 0 || claim.State.Crates.Current != float64(gamerules.CrateRulesNow().FreeMax) {
 		t.Fatalf("day 6 at the limit: %+v %v", claim, err)
+	}
+}
+
+func TestTheCriticPaysMoreLiftsPopularityAndFillsTheJar(t *testing.T) {
+	s, _ := newCafe(t, "owner")
+	critic, ok := gamerules.VisitorByID("critic_initial")
+	if !ok || !critic.Critic || critic.CoinsMultiplier != 3.5 {
+		t.Fatalf("critic rules: %+v", critic)
+	}
+	recipe, _ := gamerules.RecipeByID("coxinha")
+	food, _ := s.New("room_food")
+	setAll(food, map[string]any{"user": "owner", "recipe_id": recipe.ID, "job_id": "j", "servings": 3, "counter": "c"})
+	_ = s.Save(food)
+	regular, err := ServeCustomer(s, "owner", food.ID(), "", false, progressT0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vip, err := ServeCustomerAs(s, "owner", food.ID(), "", gamewire.ServeOptions{VIP: critic.ID}, progressT0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCoins, wantXP := critic.VisitorPay(recipe.PricePerServing, recipe.XPPerServing)
+	if vip.VIP != critic.ID || vip.Coins != wantCoins || vip.XP != wantXP || wantCoins <= regular.Coins {
+		t.Fatalf("critic paid %d coins and %d XP (want %d and %d); a regular customer %d", vip.Coins, vip.XP, wantCoins, wantXP, regular.Coins)
+	}
+	lift := vip.PopularityTenths - regular.PopularityTenths
+	if lift != critic.PopularityTenths+gamerules.ApplyCustomer(regular.PopularityTenths, true)-regular.PopularityTenths {
+		t.Fatalf("popularity %d → %d (critic +%d)", regular.PopularityTenths, vip.PopularityTenths, critic.PopularityTenths)
+	}
+	deposit := gamerules.TipJarDeposit(recipe.PricePerServing)
+	if vip.TipJar != regular.TipJar+deposit+critic.TipJarCoins {
+		t.Fatalf("tip jar %d → %d", regular.TipJar, vip.TipJar)
+	}
+	if stats, err := s.First(StatsCollection, Where{"user": "owner"}); err != nil || readStats(stats).counts[gamerules.StatVisitors] != 1 {
+		t.Fatalf("visitors served: %v", err)
+	}
+	// An unknown visitor id pays as a regular customer.
+	plain, err := ServeCustomerAs(s, "owner", food.ID(), "", gamewire.ServeOptions{VIP: "nobody"}, progressT0)
+	if err != nil || plain.VIP != "" || plain.Coins != regular.Coins {
+		t.Fatalf("unknown visitor: %+v %v", plain, err)
 	}
 }

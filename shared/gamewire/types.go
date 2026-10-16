@@ -101,6 +101,16 @@ type Payment struct {
 	PopularityTenths int   `json:"popularityTenths"`
 	// Coins in the owner's tip jar after this serving's deposit.
 	TipJar int64 `json:"tipJar,omitempty"`
+	// A special visitor (gamerules.Visitor id) paid: Coins and XP include the
+	// visitor's bonus, PopularityTenths its extra popularity.
+	VIP string `json:"vip,omitempty"`
+}
+
+// ServeOptions: how a serving reached the customer. A waiter's delivery tips;
+// a special visitor (VIP, a gamerules.Visitor id) pays its bonus.
+type ServeOptions struct {
+	Waiter bool   `json:"waiter"`
+	VIP    string `json:"vip,omitempty"`
 }
 type World struct {
 	RoomID   string        `json:"roomId"`
@@ -178,6 +188,8 @@ type Actor struct {
 	Patience        *Patience    `json:"patience,omitempty"`
 	// A customer who came in while nothing could be served: leaving unserved costs nothing.
 	Browsing bool `json:"browsing,omitempty"`
+	// A special visitor (critic or celebrity, gamerules.Visitor id); saved with the dormancy.
+	VIP string `json:"vip,omitempty"`
 	// Staff role ("waiter" or "cleaner"); empty for customers and players.
 	Role string `json:"role,omitempty"`
 	// Paths/timers are saved only on dormancy; they are never broadcast in hot updates.
@@ -191,6 +203,8 @@ type Seed struct {
 	Looks []string `json:"looks"`
 	// Owner popularity in tenths; it paces customer arrivals.
 	PopularityTenths int `json:"popularityTenths"`
+	// Owner level: special visitors come from gamerules.Visitors().MinLevel.
+	Level int `json:"level,omitempty"`
 	// The owner's unacknowledged absence summary, handed over on their welcome.
 	Away *AwaySummary `json:"away,omitempty"`
 }

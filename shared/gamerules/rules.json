@@ -96,6 +96,16 @@
     ]
   },
   "tipJar": { "depositPercent": 20, "depositMin": 1, "provisional": true },
+  "visitors": {
+    "provisional": true,
+    "minLevel": 4, "chancePercent": 10, "cooldownSeconds": 300,
+    "list": [
+      { "id": "critic_initial", "code": 7, "name": "Chef Jacquinho", "title": "Crítico gastronômico", "critic": true, "coinsMultiplier": 3.5, "xpBase": 2, "xpMultiplier": 0.5, "popularityTenths": 50, "tipJarCoins": 50, "review": "Que prato! Recomendo este café a todos os meus leitores." },
+      { "id": "rock_jagger", "code": 4, "name": "Mick Jaca", "title": "Astro do rock", "coinsMultiplier": 3.5, "xpMultiplier": 0.15, "popularityTenths": 20, "tipJarCoins": 30, "review": "Satisfação garantida! Vou contar para a banda inteira.", "minLevel": 6 },
+      { "id": "rock_mercury", "code": 5, "name": "Freddie Mercúrio", "title": "Astro do rock", "coinsMultiplier": 3.5, "xpMultiplier": 0.15, "popularityTenths": 20, "tipJarCoins": 30, "review": "Que café campeão! Eu quero tudo, e quero agora!", "minLevel": 8 },
+      { "id": "ana_maria_broa", "name": "Ana Maria Broa", "title": "Apresentadora de TV", "coinsMultiplier": 3, "xpBase": 1, "xpMultiplier": 0.3, "popularityTenths": 30, "tipJarCoins": 40, "review": "Acorda, menina! Esse café merece o meu programa da manhã!", "minLevel": 10 }
+    ]
+  },
   "crates": {
     "freeMax": 10,
     "list": [

@@ -18,6 +18,12 @@ export interface RecipeRule {
   energy?: number;
 }
 
+export interface VisitorRule {
+  id: string; code?: number; name: string; title: string; critic?: boolean;
+  coinsMultiplier: number; xpBase?: number; xpMultiplier?: number;
+  popularityTenths: number; tipJarCoins: number; review: string; minLevel?: number;
+}
+
 export interface Consumable { code: number; name: string; kind: 'energy' | 'part'; amount: number; priceCoins?: number; priceCash?: number; description: string }
 export interface EntertainmentLevel { parts: number; coins: number; runCoins: number; runXp: number; patiencePercent: number }
 
@@ -56,6 +62,8 @@ export interface GameRules {
   /** The config's <tips> bands: the tip jar holds up to `coins` from `level`. */
   tips?: { level: number; coins: number }[];
   tipJar?: { depositPercent: number; depositMin: number };
+  /** Special visitors: the critic and the parody celebrities (config <visitors>). */
+  visitors?: { minLevel: number; chancePercent: number; cooldownSeconds: number; list: VisitorRule[] };
   /** Theme sets (Banzai, Mamma Mia, Nobreza) and their tiers. */
   decor?: { sets?: { themes: { id: string; name: string }[]; tiers: { pieces: number; tenths: number }[] } };
   /** Stoves and counters allowed per expansion step, and the share a sale returns. */

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"coffe-mania/shared/gamerules"
+	"coffe-mania/shared/gamewire"
 )
 
 func levelUp(t *testing.T, s Store, owner string, level int, fields map[string]any) {
@@ -176,7 +177,7 @@ func TestDrinkMachinesMakeDrinksWithEnergy(t *testing.T) {
 	if err := ServeCooking(s, "owner", unit.StoveID, later); !errors.Is(err, ErrMachineFull) {
 		t.Fatalf("another drink on a busy machine: %v", err)
 	}
-	payment, err := ServeServing(s, "owner", food.ID(), "", false, later)
+	payment, err := ServeServing(s, "owner", food.ID(), "", gamewire.ServeOptions{}, later)
 	if err != nil || payment.Coins != espresso.PricePerServing {
 		t.Fatalf("a customer pays for the coffee: %+v %v", payment, err)
 	}

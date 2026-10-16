@@ -16,6 +16,7 @@ type economyStore struct {
 	payment   gamewire.Payment
 	consumed  []string
 	waiter    []bool
+	vips      []string
 	feedbacks []bool
 	cleaned   []string
 	slept     *gamewire.Sleep
@@ -32,11 +33,13 @@ func (s *economyStore) Sleep(_ context.Context, _ string, state gamewire.Sleep) 
 func (s *economyStore) Operate(context.Context, gamewire.Operation) (gamewire.Result, error) {
 	return gamewire.Result{}, nil
 }
-func (s *economyStore) Consume(_ context.Context, _ string, food, _ string, waiter bool) (gamewire.Payment, error) {
+func (s *economyStore) Consume(_ context.Context, _ string, food, _ string, options gamewire.ServeOptions) (gamewire.Payment, error) {
+	waiter := options.Waiter
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.consumed = append(s.consumed, food)
 	s.waiter = append(s.waiter, waiter)
+	s.vips = append(s.vips, options.VIP)
 	payment := s.payment
 	if waiter {
 		payment.Tip = 1

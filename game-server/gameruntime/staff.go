@@ -467,7 +467,7 @@ func (r *room) deliver(a *entity, now time.Time) {
 	a.Direction = direction(Tile{X: a.X, Y: a.Y}, Tile{X: table.X, Y: table.Y})
 	foodID := a.job.food.ID
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	payment, err := r.manager.store.Consume(ctx, r.id, foodID, customer.TableID, true)
+	payment, err := r.manager.store.Consume(ctx, r.id, foodID, customer.TableID, gamewire.ServeOptions{Waiter: true, VIP: customer.VIP})
 	cancel()
 	r.release(foodID)
 	if err != nil {

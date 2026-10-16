@@ -97,6 +97,8 @@ import { PantryModal } from './PantryModal';
 import { MachineModal } from './MachineModal';
 import { MachineEffects } from './MachineEffects';
 import { TipJarBadge } from './TipJarBadge';
+import { VisitorBadge } from './VisitorBadge';
+import { visitorReview } from '../../game/visitors';
 import { collectTips } from '../../game/tipjar';
 import { loadMachines, machineStateAt, operateMachine, type WorldMachine } from '../../game/machines';
 import { buySpice, CrateOpener, loadPantry, ownedSpices, useConsumable, type CrateResult } from '../../game/pantry';
@@ -390,6 +392,7 @@ export class RoomScreen implements Screen {
   /** Last status seen per stove in this session, to notice a dish spoiling. */
   private readonly stoveStatuses = new Map<string, StoveStatus>();
   private readonly patienceMeters = new Map<string, PatienceMeter>();
+  private readonly visitorBadges = new Map<string, VisitorBadge>();
 
   private readonly cameraLayer = new Container();
   /** Cidade/estrada atrás do quarto, movida e ampliada pela mesma câmera. */
@@ -1215,6 +1218,13 @@ export class RoomScreen implements Screen {
       this.floatingRewards.spawn(view.x, view.y, view.zIndex, payment.coins, payment.xp, payment.tip ?? 0, payment.freshCoins ?? 0);
     }
     this.audio?.play('coin');
+    // A special visitor leaves a review: owner and visitors of the café see it.
+    const visitor = payment.vip ? this.rules?.visitors?.list.find((entry) => entry.id === payment.vip) : undefined;
+    if (visitor) {
+      const review = visitorReview(visitor);
+      this.levelUpToast.showMessage(review.title, review.detail);
+      this.audio?.play('levelUp', 0.6);
+    }
     if (payment.levelUp && this.roomSnapshot?.canEdit !== false) this.celebrateLevel(payment.level, payment.levelReward);
   }
 
@@ -1267,6 +1277,20 @@ export class RoomScreen implements Screen {
     this.mealViews.get(id)?.destroy(); this.mealViews.delete(id);
     this.liveEmotions.get(id)?.effect.destroy(); this.liveEmotions.delete(id);
     this.patienceMeters.get(id)?.destroy(); this.patienceMeters.delete(id);
+    this.visitorBadges.get(id)?.destroy(); this.visitorBadges.delete(id);
+  }
+
+  /** A special visitor wears its name and a star (a notepad for the critic) while inside. */
+  private updateVisitorBadge(id: string, state: SharedActor, actorView: Container, deltaMs: number): void {
+    let badge = this.visitorBadges.get(id);
+    const visitor = state.vip ? this.rules?.visitors?.list.find((entry) => entry.id === state.vip) : undefined;
+    if (!visitor || state.outside) {
+      if (badge) { badge.destroy(); this.visitorBadges.delete(id); }
+      return;
+    }
+    if (!badge) { badge = new VisitorBadge(visitor.name, visitor.title, visitor.critic === true); this.visitorBadges.set(id, badge); this.world.addChild(badge.view); }
+    badge.update(actorView, deltaMs);
+    badge.view.renderable = !this.storeBar?.isOpen;
   }
 
   private async refreshLiveAppearance(id: string, appearance: string): Promise<void> {
@@ -1309,6 +1333,7 @@ export class RoomScreen implements Screen {
       this.advanceActorView(entry.view, deltaMs);
       this.updateLiveEmotion(id, state, entry.view.view, now);
       this.updatePatience(id, state, entry.view.view, now);
+      this.updateVisitorBadge(id, state, entry.view.view, deltaMs);
       const table = state.tableId && this.model.items.find((item) => item.inventoryUnitId === state.tableId);
       if (state.food && table) {
         // The plate shows the recipe the customer actually took from the counter.
@@ -3859,6 +3884,7 @@ export class RoomScreen implements Screen {
     this.counterDishes.forEach((dish) => dish.destroy()); this.counterDishes.clear();
     this.stoveEffects.forEach((effects) => effects.destroy()); this.stoveEffects.clear();
     this.patienceMeters.forEach((meter) => meter.destroy()); this.patienceMeters.clear();
+    this.visitorBadges.forEach((badge) => badge.destroy()); this.visitorBadges.clear();
     this.tableDirt.forEach((view) => view.destroy()); this.tableDirt.clear();
     this.recipeArt.destroy();
     this.streetScenery?.destroy();

@@ -117,6 +117,10 @@ func serveCustomerBy(app core.App, owner, foodID, tableID string, waiter bool) (
 	return cafe.ServeCustomer(pb(app), owner, foodID, tableID, waiter, time.Now())
 }
 
+func serveCustomerAs(app core.App, owner, foodID, tableID string, options gamewire.ServeOptions) (gamewire.Payment, error) {
+	return cafe.ServeCustomerAs(pb(app), owner, foodID, tableID, options, time.Now())
+}
+
 func recordVerdict(app core.App, owner string, satisfied bool) (int, error) {
 	return cafe.RecordVerdict(pb(app), owner, satisfied)
 }

@@ -148,7 +148,7 @@ func catchUp(tx Store, owner string, from, to time.Time) (gamewire.AwaySummary, 
 			break
 		}
 		at := from.Add(time.Duration(float64(i+1) * pace * float64(time.Second)))
-		payment, err := ServeServing(tx, owner, foods[food].ID(), turns[i%len(turns)].Table, summary.Waiters > 0, at)
+		payment, err := ServeServing(tx, owner, foods[food].ID(), turns[i%len(turns)].Table, gamewire.ServeOptions{Waiter: summary.Waiters > 0}, at)
 		if errors.Is(err, ErrFoodGone) {
 			servings[foods[food].ID()] = 0
 			continue

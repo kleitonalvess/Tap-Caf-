@@ -124,6 +124,8 @@ const (
 	// Social stats wait for neighbours and gifts (Sprint 15).
 	StatNeighbors = "neighbors"
 	StatGifts     = "gifts"
+	// Special visitors (critic, celebrities) served.
+	StatVisitors = "visitors"
 )
 
 var dailyStats = map[string]bool{StatDishes: true, StatCustomers: true, StatTables: true, StatSeasoned: true, StatHarvests: true, StatParties: true, StatSpentCoins: true,
@@ -480,6 +482,7 @@ type Rules struct {
 	CustomerFrequency []Frequency        `json:"customerFrequency"`
 	Tips              []Tip              `json:"tips"`
 	TipJar            TipJarRules        `json:"tipJar"`
+	Visitors          VisitorRules       `json:"visitors"`
 	EmployeeLocks     []EmployeeLock     `json:"employeeLocks"`
 	Recipes           []Recipe           `json:"recipes"`
 }
@@ -529,6 +532,9 @@ func validate(r Rules) string {
 		if t.Coins < 0 || i > 0 && t.Level <= r.Tips[i-1].Level {
 			return "tips must increase by level"
 		}
+	}
+	if message := validateVisitors(r); message != "" {
+		return message
 	}
 	if len(r.Tips) == 0 || r.Tips[0].Level != 1 || r.TipJar.DepositPercent < 0 || r.TipJar.DepositPercent > 100 || r.TipJar.DepositMin < 0 {
 		return "invalid tip jar"

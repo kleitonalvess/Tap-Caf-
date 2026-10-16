@@ -48,11 +48,32 @@ func (r *room) spawnNPC(now time.Time) {
 		}
 	}
 	a := &entity{Actor: gamewire.Actor{ID: "npc:" + uuid.NewString(), Kind: "npc", Name: "Cliente", Appearance: look, X: start.X, Y: start.Y, Outside: true, State: "entering", Browsing: r.kitchenIdle(now)}}
+	if visitor, ok := r.chooseVisitor(now, rand.IntN(100), rand.IntN(1<<20)); ok && !a.Browsing {
+		a.VIP, a.Name = visitor.ID, visitor.Name
+	}
 	a.path = append(line(start, turn), line(turn, entry)...)
 	a.path = append(a.path, Tile{X: door.X, Y: door.Y})
 	r.actors[a.ID] = a
 	r.nextStep(a, now)
 	r.broadcast(gamewire.Event{Type: "actors", Actors: []gamewire.Actor{r.status(a, true)}}, "")
+}
+
+// chooseVisitor decides whether an arriving customer is a special visitor
+// (critic or celebrity): at most one inside, one per cooldown, from the owner's
+// level, with chancePercent. roll is in [0, 100) and pick any non-negative draw.
+func (r *room) chooseVisitor(now time.Time, roll, pick int) (gamerules.Visitor, bool) {
+	rules := gamerules.Visitors()
+	list := gamerules.VisitorsFor(r.level)
+	if len(list) == 0 || now.Before(r.vipFrom) || roll >= rules.ChancePercent {
+		return gamerules.Visitor{}, false
+	}
+	for _, a := range r.actors {
+		if a.Kind == "npc" && a.VIP != "" {
+			return gamerules.Visitor{}, false
+		}
+	}
+	r.vipFrom = now.Add(gamerules.VisitorCooldown())
+	return list[pick%len(list)], true
 }
 
 // decorTenths is the decoration bonus of the placed units, in popularity tenths.
@@ -314,7 +335,7 @@ func (r *room) finishFetch(a *entity, now time.Time) {
 	a.Action = nil
 	r.release(food.ID)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	payment, err := r.manager.store.Consume(ctx, r.id, food.ID, a.TableID, false)
+	payment, err := r.manager.store.Consume(ctx, r.id, food.ID, a.TableID, gamewire.ServeOptions{VIP: a.VIP})
 	cancel()
 	if err == nil {
 		a.pausedPatience = 0
@@ -365,6 +386,9 @@ func (r *room) startMeal(a *entity, food gamewire.Food, payment gamewire.Payment
 	a.Food = &food
 	a.clearPatience()
 	r.popularity = payment.PopularityTenths
+	if payment.Level > r.level {
+		r.level = payment.Level
+	}
 	a.State = "eating"
 	a.due = now.Add(8 * time.Second)
 	a.Action = &gamewire.ActorAction{Kind: "eating", StartedAt: now.UnixMilli(), Duration: 8000}

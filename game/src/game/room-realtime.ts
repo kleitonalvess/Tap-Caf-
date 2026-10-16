@@ -19,6 +19,8 @@ export interface SharedPayment {
   levelUp?: boolean; levelReward?: number; servingsLeft: number; popularityTenths: number;
   /** Coins in the owner's tip jar after this serving's deposit. */
   tipJar?: number;
+  /** A special visitor (rules.visitors id) paid, with its bonus included. */
+  vip?: string;
 }
 /** fetching: a customer without a waiter fetching a serving from the counter. */
 export interface SharedAction { kind: 'cooking' | 'serving' | 'cleaning' | 'seated' | 'eating' | 'fetching'; stoveId?: string; startedAt: number; duration: number }
@@ -31,6 +33,8 @@ export interface SharedActor {
   action?: SharedAction; emotion?: SharedEmotion; patience?: SharedPatience;
   /** Came in while nothing could be served: leaving unserved costs nothing. */
   browsing?: boolean;
+  /** A special visitor: critic or celebrity (rules.visitors id). */
+  vip?: string;
   /** Staff only. */
   role?: 'waiter' | 'cleaner';
 }
