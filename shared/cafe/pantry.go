@@ -227,6 +227,9 @@ func UseConsumable(s Store, user string, code int, now time.Time) (PantryResult,
 		if pantry[code] < 1 {
 			return ErrPantryEmpty
 		}
+		if current, _ := energyNow(state, now); current >= gamerules.Energy().Cap {
+			return ErrEnergyFull
+		}
 		pantry[code]--
 		writePantry(state, pantry)
 		AddEnergy(state, item.Amount, now)
@@ -452,7 +455,7 @@ func PantryErrorStatus(err error) (int, string) {
 		return 400, err.Error()
 	case errors.Is(err, ErrSpiceCoins), errors.Is(err, ErrSpiceEmpty), errors.Is(err, ErrSpiceOwner), errors.Is(err, ErrCrateEmpty),
 		errors.Is(err, ErrCrateCoins), errors.Is(err, ErrCrateCash), errors.Is(err, ErrSpiceFull), errors.Is(err, ErrPantryCash),
-		errors.Is(err, ErrPantryEmpty), errors.Is(err, ErrPantryUse):
+		errors.Is(err, ErrPantryEmpty), errors.Is(err, ErrPantryUse), errors.Is(err, ErrEnergyFull):
 		return 409, err.Error()
 	}
 	return 500, "Não foi possível concluir agora."

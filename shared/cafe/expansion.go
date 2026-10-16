@@ -142,7 +142,8 @@ func extendStructure(tx Store, owner string, oldX, oldY, size int) error {
 		if err != nil {
 			return err
 		}
-		setAll(unit, map[string]any{"user": owner, "item_id": id, "tx": x, "ty": y, "rotation": rotation, "placed": true, "layer": roomcatalog.Layer(item)})
+		// granted: the new tiles come with the expansion, so they never sell for coins.
+		setAll(unit, map[string]any{"user": owner, "item_id": id, "tx": x, "ty": y, "rotation": rotation, "placed": true, "layer": roomcatalog.Layer(item), "granted": true})
 		return tx.Save(unit)
 	}
 	wall := func(x, y, rotation int) error {

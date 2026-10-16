@@ -117,7 +117,8 @@ func EnsureRoom(s Store, userID string) error {
 			if err != nil {
 				return err
 			}
-			setAll(unit, map[string]any{"user": userID, "item_id": id, "tx": x, "ty": y, "rotation": rotation, "placed": true, "layer": roomcatalog.Layer(item)})
+			// granted: the starter room is free, so it never sells for coins.
+			setAll(unit, map[string]any{"user": userID, "item_id": id, "tx": x, "ty": y, "rotation": rotation, "placed": true, "layer": roomcatalog.Layer(item), "granted": true})
 			if item.Kind == "stove" {
 				stove, err := tx.First("player_stoves", Where{"user": userID, "item_id": id})
 				if err != nil {
@@ -520,7 +521,11 @@ func sellUnit(tx Store, userID, unitID string) error {
 			return ErrSellLast
 		}
 	}
+	// Units the game gave away (starter room, expansion floor and walls) were never paid for.
 	value := gamerules.SellValue(item)
+	if unit.GetBool("granted") {
+		value = 0
+	}
 	if value <= 0 {
 		return ErrSellValue
 	}

@@ -330,21 +330,76 @@ func TestTheLastStoveCounterOrDoorIsNeverSold(t *testing.T) {
 			t.Fatalf("selling the last %s: %v", classname, err)
 		}
 	}
-	// With a second stove the stored one sells, and its cooking row goes with it.
+	// The starter stove came with the café: with a second stove it still has no
+	// sale value, while a bought one sells and its cooking row goes with it.
 	setPlayer(t, s, "owner", map[string]any{"gold": 1000, "level": 5, "experience_current": gamerules.Public().Levels[4].RequiredXP})
-	if _, err := buy(t, s, "owner", catalogItem(t, "starter_stove").ID, 4, 4); err != nil {
+	stove := catalogItem(t, "starter_stove")
+	starter := unitOf(room, stove.ID, true)
+	bought, err := buy(t, s, "owner", stove.ID, 4, 4)
+	if err != nil {
 		t.Fatal(err)
 	}
-	stored := unitOf(room, catalogItem(t, "starter_stove").ID, true)
-	if _, err := roomCommand(t, s, "owner", "sell", RoomCommand{UnitID: stored.UnitID}); err != nil {
+	if _, err := roomCommand(t, s, "owner", "sell", RoomCommand{UnitID: starter.UnitID}); !errors.Is(err, ErrSellValue) {
+		t.Fatalf("selling the granted starter stove: %v", err)
+	}
+	var second RoomUnit
+	for _, u := range bought.Inventory {
+		if u.ItemID == stove.ID && u.UnitID != starter.UnitID {
+			second = u
+		}
+	}
+	if _, err := roomCommand(t, s, "owner", "store", RoomCommand{UnitID: second.UnitID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Get("player_stoves", stored.StoveID); !errors.Is(err, ErrNotFound) {
+	if _, err := roomCommand(t, s, "owner", "sell", RoomCommand{UnitID: second.UnitID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get("player_stoves", second.StoveID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("the sold stove still cooks: %v", err)
 	}
-	cooking, _ := SnapshotCooking(s, "owner", progressT0)
+	// The stored starter stove keeps its row, and no extra stove is created for
+	// a café whose only stove is stored.
+	if _, err := SnapshotCooking(s, "owner", progressT0); err != nil {
+		t.Fatal(err)
+	}
+	if rows, _ := s.Find("player_stoves", Query{Where: Where{"user": "owner"}, Limit: 10}); len(rows) != 1 || rows[0].ID() != starter.StoveID {
+		t.Fatalf("stove rows after the sale = %d", len(rows))
+	}
+}
+
+func TestSellingAnOldStarterStoveLeavesNoGhostStove(t *testing.T) {
+	s, _ := newCafe(t, "owner")
+	setPlayer(t, s, "owner", map[string]any{"gold": 1000, "level": 5, "experience_current": gamerules.Public().Levels[4].RequiredXP})
+	stove := catalogItem(t, "starter_stove")
+	room, _ := SnapshotRoom(s, "owner")
+	starter := unitOf(room, stove.ID, true)
+	// Units from before the granted flag keep their sale value.
+	unit, err := s.Get("player_inventory", starter.UnitID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit.Set("granted", false)
+	if err := s.Save(unit); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := buy(t, s, "owner", stove.ID, 4, 4); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := roomCommand(t, s, "owner", "store", RoomCommand{UnitID: starter.UnitID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := roomCommand(t, s, "owner", "sell", RoomCommand{UnitID: starter.UnitID}); err != nil {
+		t.Fatal(err)
+	}
+	cooking, err := SnapshotCooking(s, "owner", progressT0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(cooking.Stoves) != 1 {
-		t.Fatalf("stoves after the sale = %d", len(cooking.Stoves))
+		t.Fatalf("stoves after selling the old starter = %d (a ghost stove came back)", len(cooking.Stoves))
+	}
+	if rows, _ := s.Find("player_stoves", Query{Where: Where{"user": "owner"}, Limit: 10}); len(rows) != 1 {
+		t.Fatalf("stove rows = %d", len(rows))
 	}
 }
 

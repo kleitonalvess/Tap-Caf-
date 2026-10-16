@@ -341,3 +341,68 @@ func TestTheMissionTrioGivesAnEnergyDrink(t *testing.T) {
 		t.Fatalf("trio stock: %+v pantry %v", last.Stock, last.State.Pantry)
 	}
 }
+
+func TestAStoredMachineDoesNotPlay(t *testing.T) {
+	s, _ := newCafe(t, "owner")
+	levelUp(t, s, "owner", 12, map[string]any{"gold": 100000})
+	jukebox := catalogItem(t, "jukebox")
+	rules, _ := gamerules.EntertainmentFor(jukebox.ID)
+	bought, err := buy(t, s, "owner", jukebox.ID, 4, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit := unitOf(bought, jukebox.ID, true).UnitID
+	state, _ := GetOrCreatePlayer(s, "owner")
+	addSpices(state, MachinePartCode, rules.Levels[0].Parts)
+	_ = s.Save(state)
+	for range rules.Levels[0].Parts {
+		if _, err := OperateMachine(s, "owner", "machine_install", unit, progressT0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := roomCommand(t, s, "owner", "store", RoomCommand{UnitID: unit}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OperateMachine(s, "owner", "machine_start", unit, progressT0); !errors.Is(err, ErrMachineStored) {
+		t.Fatalf("starting a stored machine: %v", err)
+	}
+	if status, _ := ErrorStatus(ErrMachineStored); status != 409 {
+		t.Fatalf("status of a stored machine: %d", status)
+	}
+}
+
+func TestEnergyDrinksStopAtTheCapAndOldRowsCountAsFull(t *testing.T) {
+	s, _ := newCafe(t, "owner")
+	rules := gamerules.Energy()
+	setPlayer(t, s, "owner", map[string]any{"energy_current": rules.Cap, "energy_at": progressT0})
+	state, _ := GetOrCreatePlayer(s, "owner")
+	addSpices(state, 810001, 1)
+	_ = s.Save(state)
+	if _, err := UseConsumable(s, "owner", 810001, progressT0); !errors.Is(err, ErrEnergyFull) {
+		t.Fatalf("a drink at the cap: %v", err)
+	}
+	if status, _ := PantryErrorStatus(ErrEnergyFull); status != 409 {
+		t.Fatalf("status at the cap: %d", status)
+	}
+	// The drink stays in the pantry.
+	pantry, _ := SnapshotPantry(s, "owner")
+	kept := 0
+	for _, item := range pantry.Items {
+		if item.Code == 810001 {
+			kept = item.Count
+		}
+	}
+	if kept != 1 {
+		t.Fatalf("the refused drink was spent: %d left", kept)
+	}
+	// A row from before energy_at (fixed 50/50 bar, or lower) counts as full.
+	setPlayer(t, s, "owner", map[string]any{"energy_current": 10, "energy_at": ""})
+	state, _ = GetOrCreatePlayer(s, "owner")
+	limit := state.GetInt("energy_max")
+	if limit < 1 {
+		limit = rules.Max
+	}
+	if got, _ := energyNow(state, progressT0); got != limit {
+		t.Fatalf("an old row without energy_at: %d", got)
+	}
+}

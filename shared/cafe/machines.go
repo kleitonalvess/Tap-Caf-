@@ -25,6 +25,7 @@ var ErrMachineNotReady = errors.New("A rodada ainda não terminou.")
 var ErrMachineBroken = errors.New("A máquina quebrou e precisa de conserto.")
 var ErrMachineFine = errors.New("A máquina não precisa de conserto.")
 var ErrMachineIdle = errors.New("A máquina está desligada.")
+var ErrMachineStored = errors.New("Coloque a máquina no café antes de ligá-la.")
 
 // Machine states, derived by MachineState.
 const (
@@ -211,6 +212,10 @@ func OperateMachine(s Store, owner, action, unitID string, now time.Time) (Machi
 			pantry[MachinePartCode]--
 			writePantry(state, pantry)
 		case "machine_start":
+			// Only a machine standing in the café plays (and lifts the customers' patience).
+			if unit, err := tx.Get("player_inventory", unitID); err != nil || !unit.GetBool("placed") {
+				return ErrMachineStored
+			}
 			switch status {
 			case MachineAssembling:
 				return ErrMachineBuilding

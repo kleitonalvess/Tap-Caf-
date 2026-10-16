@@ -73,9 +73,12 @@ type CookingSnapshot struct {
 	SeasonXP int64 `json:"seasonXp,omitempty"`
 }
 
+// EnsureStarterStove gives a café its first stove once. A café with any stove
+// row (the starter may have been sold after buying another) gets nothing: a
+// recreated starter row would cook with no unit in the room.
 func EnsureStarterStove(s Store, userID string) error {
 	return s.Transaction(func(tx Store) error {
-		_, err := tx.First("player_stoves", Where{"user": userID, "item_id": starterStoveItemID})
+		_, err := tx.First("player_stoves", Where{"user": userID})
 		if err == nil {
 			return nil
 		}

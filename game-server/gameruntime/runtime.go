@@ -207,6 +207,8 @@ func (m *Manager) get(ctx context.Context, id string) (*room, error) {
 				r.actors[a.ID] = &entity{Actor: a, path: a.Path, due: r.frozenAt.Add(time.Duration(a.ActionRemaining) * time.Millisecond), visits: a.Visits}
 				r.actors[a.ID].Path = nil
 				if a.Patience != nil {
+					// The saved balloon keeps its full wait (longer with a running machine).
+					r.actors[a.ID].patienceTotal = time.Duration(a.Patience.Duration) * time.Millisecond
 					r.actors[a.ID].restorePatience(r.frozenAt.Add(time.Duration(a.PatienceRemaining) * time.Millisecond))
 				}
 				r.actors[a.ID].PatienceRemaining = 0

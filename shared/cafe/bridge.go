@@ -212,7 +212,7 @@ func errorStatus(err error) (int, string) {
 	case is(ErrWrongAppliance):
 		return 400, err.Error()
 	case is(ErrEnergy, ErrDrinkSeason, ErrMachineFull, ErrMachineParts, ErrMachineCoins, ErrMachineMax, ErrMachineBuilding,
-		ErrMachineRunning, ErrMachineNotReady, ErrMachineBroken, ErrMachineFine, ErrMachineIdle):
+		ErrMachineRunning, ErrMachineNotReady, ErrMachineBroken, ErrMachineFine, ErrMachineIdle, ErrMachineStored, ErrEnergyFull):
 		return 409, err.Error()
 	case is(ErrRoomGold, ErrRoomConflict, ErrRoomOperation, ErrRoomBusy, ErrCounterBusy, ErrRecipeLocked, ErrCookingCoins,
 		ErrStoveDirty, ErrDishSpoiled, ErrNothingToClean, ErrCleaningCoins, ErrNoCounter, ErrSeasonClosed,

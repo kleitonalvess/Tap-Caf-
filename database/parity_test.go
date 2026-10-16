@@ -352,6 +352,20 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 	shop("store a stove to sell", "store", 0, stoveUnit, 0, 0)
 	sold := shop("sell stored stove", "sell", 0, stoveUnit, 0, 0)
 	log("sold", map[string]any{"equipment": sold.Equipment, "units": len(sold.Inventory)})
+	// The starter stove came with the café (player_inventory.granted, a column
+	// the PocketBase schema has to declare): stored, it still has no sale value.
+	starterStove := ""
+	for _, u := range sold.Inventory {
+		if u.ItemID == 3070000 && u.Placed && u.UnitID != stoveUnit {
+			if unit, err := s.Get("player_inventory", u.UnitID); err == nil && unit.GetBool("granted") {
+				starterStove = u.UnitID
+			}
+		}
+	}
+	log("granted starter stove", starterStove != "")
+	shop("store the starter stove", "store", 0, starterStove, 0, 0)
+	shop("sell the starter stove", "sell", 0, starterStove, 0, 0)
+	shop("starter stove back", "move", 0, starterStove, 6, 2)
 	shop("sky floor over the old one", "purchase", 3050001, "", 2, 2)
 	for i, item := range []int{3500006, 3500007, 3500005} {
 		shop(fmt.Sprintf("japan piece %d", i), "purchase", item, "", 8, 2+2*i)

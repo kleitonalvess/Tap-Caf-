@@ -7,6 +7,7 @@ import (
 	"coffe-mania/shared/gamerules"
 )
 
+var ErrEnergyFull = errors.New("A energia já está no máximo que dá para guardar.")
 var ErrEnergy = errors.New("Energia insuficiente. Ela volta com o tempo ou com um Cafezinho Turbo da despensa.")
 
 // Energy lives in player_state as energy_current and energy_at: the stored
@@ -21,11 +22,15 @@ func energyNow(state Record, now time.Time) (int, time.Time) {
 	}
 	current := state.GetInt("energy_current")
 	at := state.GetTime("energy_at")
-	if current >= limit || at.IsZero() || !now.After(at) {
-		// Full (or a save from before energy_at): nothing accumulates until it is spent.
-		if at.IsZero() || current >= limit {
-			return current, now
-		}
+	if current >= limit {
+		// Full: nothing accumulates until it is spent.
+		return current, now
+	}
+	if at.IsZero() {
+		// A row from before energy_at had a fixed bar: it counts as refilled.
+		return limit, now
+	}
+	if !now.After(at) {
 		return current, at
 	}
 	regen := gamerules.EnergyRegen()

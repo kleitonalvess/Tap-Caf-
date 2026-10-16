@@ -271,3 +271,20 @@ func TestSleepingRoomReturnsAFetchedServing(t *testing.T) {
 		t.Fatalf("saved customer = %+v", saved)
 	}
 }
+
+func TestARestoredBalloonKeepsItsLongerWait(t *testing.T) {
+	// A wait lifted by an entertainment machine (here 60 s) comes back from the
+	// dormancy with the same full balloon, not the rules' default.
+	saved := &gamewire.Patience{StartedAt: 0, Duration: 60_000}
+	a := &entity{patienceTotal: time.Duration(saved.Duration) * time.Millisecond}
+	until := time.UnixMilli(1_000_000)
+	a.restorePatience(until)
+	if a.Patience.Duration != 60_000 || a.Patience.StartedAt != until.UnixMilli()-60_000 {
+		t.Fatalf("restored balloon = %+v", a.Patience)
+	}
+	plain := &entity{}
+	plain.restorePatience(until)
+	if plain.Patience.Duration != gamerules.CustomerPatience().Milliseconds() {
+		t.Fatalf("default balloon = %+v", plain.Patience)
+	}
+}
