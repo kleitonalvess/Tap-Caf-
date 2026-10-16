@@ -19,7 +19,13 @@ export type RoomItemKind =
   /** Floor decoration: vases, plants, lamps, statues. */
   | 'ornament'
   /** Cash register: self-served customers tip too. */
-  | 'register';
+  | 'register'
+  /** Coffee and juice machines: they make drinks like a stove makes dishes. */
+  | 'machine'
+  /** Jukebox and arcade: built with parts, switched on with energy. */
+  | 'entertainment'
+  /** Spice shelf: opens the pantry and holds more spices. */
+  | 'shelf';
 
 export interface RoomItem {
   name: string;
@@ -94,6 +100,9 @@ export const ITEM_STYLES: Record<RoomItemKind, RoomItemStyle> = {
   decor: { height: 44 * ROOM_ASSET_SCALE, topColor: 0xd9c9a8, leftColor: 0xbaa985, rightColor: 0xa2916f, blocks: true, inset: 0.72 },
   ornament: { height: 44 * ROOM_ASSET_SCALE, topColor: 0x8fc77a, leftColor: 0x6fa55c, rightColor: 0x5b8a4a, blocks: true, inset: 0.6 },
   register: { height: 35 * ROOM_ASSET_SCALE, topColor: 0xd9d2c3, leftColor: 0x9b6232, rightColor: 0x7a4a24, blocks: true, inset: 0.62 },
+  machine: { height: 36 * ROOM_ASSET_SCALE, topColor: 0xd6dde3, leftColor: 0x8e2b22, rightColor: 0x6e1f18, blocks: true, inset: 0.7 },
+  entertainment: { height: 52 * ROOM_ASSET_SCALE, topColor: 0xf2c14e, leftColor: 0x7a3fb0, rightColor: 0x5a2d85, blocks: true, inset: 0.7 },
+  shelf: { height: 55 * ROOM_ASSET_SCALE, topColor: 0xc98a4b, leftColor: 0x9b6232, rightColor: 0x7a4a24, blocks: true, inset: 0.7 },
 };
 
 /** Colocações iniciais da sala. */

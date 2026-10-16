@@ -16,7 +16,7 @@ export function storeCategory(item) {
     case 'window': case 'panel': case 'curtain': return 'flower-window';
     case 'wall': return 'wallpaper';
     case 'door': return 'door';
-    case 'machine': case 'entertainment': case 'shelf': return 'machine';
+    case 'machine': case 'shelf': return 'stove';
     default: return 'flower';
   }
 }

@@ -90,7 +90,9 @@ func jobTime(value string) time.Time {
 func (r *room) adjacentStove(a *entity, id string) (Unit, bool) {
 	for _, u := range r.world.Units {
 		if u.StoveID == id && u.StoveID != "" {
-			return r.adjacentUnit(a, u.ID, "stove")
+			// Stoves and drink machines both have a cooking row.
+			item, _ := roomcatalog.ByID(u.ItemID)
+			return r.adjacentUnit(a, u.ID, item.Kind)
 		}
 	}
 	return Unit{}, false

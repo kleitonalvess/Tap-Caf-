@@ -24,7 +24,7 @@ import { ActionBarMood } from './ActionBarMood';
 import { createActionBarBetaSlots } from './ActionBarBetaSlots';
 import { MAIN_ACTION_BAR_SCALE, StoreActionBar, type StoreEntry } from './StoreActionBar';
 import { RoomStoreController } from './RoomStoreController';
-import { roomModelItems, type RoomSnapshot, type RoomInventoryClient } from '../../game/room-inventory';
+import { roomModelItems, type RoomCatalogItem, type RoomSnapshot, type RoomInventoryClient } from '../../game/room-inventory';
 import { RoomRealtime, type RoomEvent, type SharedActor, type SharedDirt, type SharedFood, type SharedPayment, type SharedWorld } from '../../game/room-realtime';
 import { cleanTable } from '../../game/tables';
 import { WardrobeScreenModal, type WardrobeScreenTextures } from './WardrobeScreenModal';
@@ -94,7 +94,10 @@ import { PopularityModal } from './PopularityModal';
 import { CashDayModal } from './CashDayModal';
 import { CratesModal } from './CratesModal';
 import { PantryModal } from './PantryModal';
-import { buySpice, CrateOpener, loadPantry, ownedSpices, type CrateResult } from '../../game/pantry';
+import { MachineModal } from './MachineModal';
+import { MachineEffects } from './MachineEffects';
+import { loadMachines, machineStateAt, operateMachine, type WorldMachine } from '../../game/machines';
+import { buySpice, CrateOpener, loadPantry, ownedSpices, useConsumable, type CrateResult } from '../../game/pantry';
 import { claimProgress, currencySources, loadProgress, popularityLines, renameCafe, type ProgressClaim, type ProgressSnapshot } from '../../game/progress';
 import { LevelUpModal } from './LevelUpModal';
 import { levelUnlocks, nextUnlocks } from '../../game/game-rules';
@@ -104,7 +107,7 @@ import { OutsideNpcManager, type PreparedNpcView } from './OutsideNpcManager';
 import { createProceduralWallView, type WallWallpaper } from './ProceduralWallView';
 import { TOP_BAR_ICON_FRAMES, TopBars, type TopBarsTextures } from './TopBars';
 import { FloatingRewards, LevelUpToast } from './FloatingRewards';
-import type { PlayerState } from '../../game/player-state';
+import { liveEnergy, type PlayerState } from '../../game/player-state';
 import { cancelRefund, cookingTime, staleness, stoveStatus, type CookingClient, type CookingSnapshot, type StoveCooking, type StoveStatus } from '../../game/cooking';
 import {
   PAN_KEY_STEP,
@@ -153,6 +156,10 @@ const SOON_SYSTEMS: Record<string, string> = {
   map: 'Mapa do bairro: visite a rua e os cafés vizinhos.',
 };
 const MOBILE_LANDSCAPE_HUD_SCALE = 1.15;
+/** The consumable that builds and upgrades the entertainment machines. */
+const MACHINE_PART = 820001;
+/** Stoves cook dishes and drink machines make drinks through the same flow. */
+const cooksOn = (item: RoomItem | undefined): boolean => item?.kind === 'stove' || item?.kind === 'machine';
 const ACTION_BAR_UI_SCALE = 1.15;
 /** Isolated renderer preview only; gameplay duration always comes from the server. */
 const LOCAL_COOKING_PREVIEW_MS = 2000;
@@ -337,6 +344,11 @@ export class RoomScreen implements Screen {
   private currencyModal?: CurrencyModal;
   private cashDayModal?: CashDayModal;
   private pantryModal?: PantryModal;
+  private machineModal?: MachineModal;
+  /** Placed entertainment machines from the shared world, and their badges. */
+  private readonly machines = new Map<string, WorldMachine>();
+  private readonly machineEffects = new Map<string, MachineEffects>();
+  private energyTickMs = 0;
   private cratesModal?: CratesModal;
   private readonly crateOpener = new CrateOpener();
   private readonly roomClient?: RoomInventoryClient;
@@ -991,9 +1003,12 @@ export class RoomScreen implements Screen {
         street: () => this.street,
         serverNow: () => this.serverNow(),
         harvest: async () => {
-          this.acceptStreet(await this.streetClient.harvest());
+          const harvested = await this.streetClient.harvest();
+          this.acceptStreet(harvested);
           this.audio?.play('season');
-          this.levelUpToast.showMessage('Ingredientes frescos!', `A próxima receita rende +${street.farm.bonusPercent}% de moedas e XP`);
+          // A spice shelf in the café may add a free spice to the harvest.
+          const spice = harvested.freeSpice ? this.rules?.spices?.list.find((entry) => entry.code === harvested.freeSpice)?.name : undefined;
+          this.levelUpToast.showMessage('Ingredientes frescos!', `A próxima receita rende +${street.farm.bonusPercent}% de moedas e XP${spice ? ` · Prateleira: +1 ${spice}` : ''}`);
         },
         startParty: async () => {
           this.acceptStreet(await this.streetClient.startParty());
@@ -1045,12 +1060,26 @@ export class RoomScreen implements Screen {
     // Pantry spices and mystery crates: each player's own, credited by the server.
     this.roomClient = options.roomClient;
     this.pantryModal = new PantryModal({
-      gold: () => this.roomSnapshot?.playerState?.gold ?? 0,
+      wallet: () => ({ gold: this.roomSnapshot?.playerState?.gold ?? 0, cash: this.roomSnapshot?.playerState?.cash ?? 0 }),
       onBuy: (code) => buySpice(code),
-      onBought: (result) => this.setPlayerState(result.state),
+      onUse: (code) => useConsumable(code),
+      onChanged: (result) => this.setPlayerState(result.state),
       ...(options.audio ? { audio: options.audio } : {}),
     });
     this.view.addChild(this.pantryModal.view);
+    this.machineModal = new MachineModal({
+      rules: () => this.rules?.entertainment,
+      parts: () => this.roomSnapshot?.playerState?.pantry?.[String(MACHINE_PART)] ?? 0,
+      energy: () => this.currentEnergy(),
+      serverNow: () => this.serverNow(),
+      onAction: (action, unitId) => operateMachine(action, unitId),
+      onDone: (result, action) => {
+        this.setPlayerState(result.state);
+        if (action === 'collect') this.floatOverUnit(this.machineModal?.unitId, result.coins ?? 0, result.xp ?? 0);
+      },
+      ...(options.audio ? { audio: options.audio } : {}),
+    });
+    this.view.addChild(this.machineModal.view);
     this.cratesModal = new CratesModal({
       wallet: () => ({ gold: this.roomSnapshot?.playerState?.gold ?? 0, cash: this.roomSnapshot?.playerState?.cash ?? 0 }),
       onOpen: (crate) => this.crateOpener.open(crate.id),
@@ -1094,6 +1123,7 @@ export class RoomScreen implements Screen {
       this.foods = event.world?.foods ?? [];
       this.dirt = event.world?.dirt ?? [];
       if (event.world?.street) this.acceptStreet(event.world.street);
+      this.acceptMachines(event.world?.machines ?? []);
       if (event.away) this.queueAway(event.away);
       this.welcomed = true;
     }
@@ -1101,6 +1131,7 @@ export class RoomScreen implements Screen {
     if (event.type === 'food') this.foods = event.foods ?? [];
     if (event.type === 'dirt') this.dirt = event.dirt ?? [];
     if (event.type === 'world' && event.street) this.acceptStreet(event.street);
+    if (event.type === 'world' && event.machines) this.acceptMachines(event.machines);
     for (const update of event.actors ?? []) {
       const state = this.realtime.actors.get(update.id); if (!state) continue;
       let entry = this.liveActors.get(state.id);
@@ -1314,7 +1345,7 @@ export class RoomScreen implements Screen {
         ? [[state.action.stoveId, state.action] as const] : []));
     let urgent = false;
     for (const stove of this.model.items) {
-      if (stove.kind !== 'stove' || !stove.instanceId) continue;
+      if (!cooksOn(stove) || !stove.instanceId) continue;
       stoveIds.add(stove.instanceId);
       const job = this.occupiedStoves.get(stove.instanceId);
       const status = job ? stoveStatus(job, now) : undefined;
@@ -1389,7 +1420,7 @@ export class RoomScreen implements Screen {
   private updateCounters(): void {
     const present = new Set<string>();
     for (const counter of this.model.items) {
-      if (counter.kind !== 'counter' || !counter.inventoryUnitId) continue;
+      if ((counter.kind !== 'counter' && counter.kind !== 'machine') || !counter.inventoryUnitId) continue;
       const food = this.foods.find((candidate) => candidate.counterId === counter.inventoryUnitId);
       if (!food) continue;
       present.add(counter.inventoryUnitId);
@@ -1397,8 +1428,9 @@ export class RoomScreen implements Screen {
       let dish = this.counterDishes.get(counter.inventoryUnitId);
       if (!dish) { dish = new CounterDish(texture); this.counterDishes.set(counter.inventoryUnitId, dish); this.world.addChild(dish.view); }
       dish.set(texture, Math.max(1, food.servings ?? 1), food.fresh ?? 0);
-      // The counter's worktop is 52 px above its tile centre.
-      dish.view.position.set(tileToScreenX(counter.tx, counter.ty), tileToScreenY(counter.tx, counter.ty) + 40 - 52 + 8);
+      // The counter's worktop is 52 px above its tile centre; drinks sit on the machine's top.
+      const worktop = counter.kind === 'machine' ? 72 : 52;
+      dish.view.position.set(tileToScreenX(counter.tx, counter.ty), tileToScreenY(counter.tx, counter.ty) + 40 - worktop + 8);
       dish.view.renderable = !this.storeBar?.isOpen;
       setItemOverlayDepth(dish.view, counter);
     }
@@ -1604,13 +1636,13 @@ export class RoomScreen implements Screen {
   }
 
   private stoveIsFree(stove: RoomItem | undefined): stove is RoomItem {
-    return Boolean(stove && stove.kind === 'stove' && this.model.items.includes(stove) && this.cookingProcess?.stove !== stove &&
+    return Boolean(stove && cooksOn(stove) && this.model.items.includes(stove) && this.cookingProcess?.stove !== stove &&
       !(stove.instanceId && this.occupiedStoves.has(stove.instanceId)));
   }
 
   /** The first stove without a dish, in the room's order. */
   private freeStove(): RoomItem | undefined {
-    return this.model.items.find((item) => this.stoveIsFree(item));
+    return this.model.items.find((item) => item.kind === 'stove' && this.stoveIsFree(item));
   }
 
   private showCookingProblem(title: string, detail: string): void {
@@ -1651,7 +1683,7 @@ export class RoomScreen implements Screen {
     this.emergencyRecipeId = snapshot.emergencyRecipeId;
     if (!restore || this.cookingProcess) return;
     for (const stove of this.model.items) {
-      if (stove.kind !== 'stove' || !stove.instanceId) continue;
+      if (!cooksOn(stove) || !stove.instanceId) continue;
       const job = this.occupiedStoves.get(stove.instanceId);
       if (!job) continue;
       const art = this.recipeArt.get(job.recipeId);
@@ -1660,8 +1692,69 @@ export class RoomScreen implements Screen {
     }
   }
 
+  /** Energy now, derived from the stored value and its regeneration instant. */
+  private currentEnergy(): number {
+    const state = this.roomSnapshot?.playerState;
+    return state ? liveEnergy(state, this.serverNow(), this.rules?.energy?.regenSeconds ?? 0) : 0;
+  }
+
+  /** The HUD shows the live energy; the stored state stays as the server sent it. */
+  private showPlayerHud(state: PlayerState): void {
+    const energy = liveEnergy(state, this.serverNow(), this.rules?.energy?.regenSeconds ?? 0);
+    this.topBars?.setState(energy === state.energy.current ? state : { ...state, energy: { ...state.energy, current: energy } });
+  }
+
+  /** Coins and XP rise over a unit (a collected machine run). */
+  private floatOverUnit(unitId: string | undefined, coins: number, xp: number): void {
+    const item = unitId ? this.model.items.find((entry) => entry.inventoryUnitId === unitId) : undefined;
+    if (!item || (coins <= 0 && xp <= 0)) return;
+    this.floatingRewards.spawn(tileToScreenX(item.tx, item.ty), tileToScreenY(item.tx, item.ty) - 40, itemDepth(item.tx, item.ty), coins, xp);
+  }
+
+  /** Jukebox or arcade window: the server's view of that machine. */
+  private openMachine(unitId: string): void {
+    if (!this.machineModal || this.isModalOpen || this.storeBar?.isOpen) return;
+    this.audio?.play('click');
+    this.closeStoveActions();
+    void loadMachines().then(({ machines }) => {
+      const machine = machines.find((entry) => entry.unitId === unitId);
+      if (!machine || this.destroyed || this.isModalOpen || this.storeBar?.isOpen) return;
+      this.machineModal?.show(machine, this.catalogItem(machine.itemId)?.name ?? 'Máquina');
+    }).catch((error: unknown) => this.showNotice(error instanceof Error ? error.message : 'Máquina indisponível.'));
+  }
+
+  private acceptMachines(machines: readonly WorldMachine[] | undefined): void {
+    if (!machines) return;
+    this.machines.clear();
+    for (const machine of machines) this.machines.set(machine.unitId, machine);
+  }
+
+  /** Each placed entertainment machine shows its badge (owner and visitors). */
+  private updateMachineEffects(deltaMs: number): void {
+    const present = new Set<string>();
+    const now = this.serverNow();
+    for (const item of this.model.items) {
+      if (item.kind !== 'entertainment' || !item.inventoryUnitId) continue;
+      const machine = this.machines.get(item.inventoryUnitId);
+      if (!machine) continue;
+      present.add(item.inventoryUnitId);
+      let effect = this.machineEffects.get(item.inventoryUnitId);
+      if (!effect) { effect = new MachineEffects(); this.machineEffects.set(item.inventoryUnitId, effect); this.world.addChild(effect.view); }
+      effect.set(machineStateAt(machine, now));
+      effect.view.position.set(tileToScreenX(item.tx, item.ty), tileToScreenY(item.tx, item.ty) - 100);
+      effect.view.renderable = !this.storeBar?.isOpen;
+      setItemOverlayDepth(effect.view, item);
+      effect.update(deltaMs);
+    }
+    for (const [id, effect] of this.machineEffects) if (!present.has(id)) { effect.destroy(); this.machineEffects.delete(id); }
+  }
+
+  private catalogItem(id: number): RoomCatalogItem | undefined {
+    return this.roomSnapshot?.catalog.find((item) => item.id === id);
+  }
+
   private recipeName(id: string): string {
-    return this.rules?.recipes.find((recipe) => recipe.id === id)?.name ?? 'Prato';
+    return [...(this.rules?.recipes ?? []), ...(this.rules?.drinks ?? [])].find((recipe) => recipe.id === id)?.name ?? 'Prato';
   }
 
   private showCooking(
@@ -1924,7 +2017,9 @@ export class RoomScreen implements Screen {
         if (!this.destroyed) this.acceptCookingSnapshot(snapshot, true);
       }).catch((error: unknown) => console.warn('[cooking] falha ao consultar tempo', error));
     } });
-    if (job && !job.seasoned && (status === 'preparing' || status === 'cooking')) {
+    // Drinks never take seasoning: the machine's menu has no season line.
+    const drink = job ? (this.rules?.drinks ?? []).some((entry) => entry.id === job.recipeId) : false;
+    if (job && !drink && !job.seasoned && (status === 'preparing' || status === 'cooking')) {
       const bonus = this.rules ? Math.max(1, Math.ceil((this.rules.recipes.find((recipe) => recipe.id === job.recipeId)?.servings ?? 1) * this.rules.stove.seasonBonusPercent / 100)) : 1;
       actions.push({ kind: 'season', caption: `Temperar (+${bonus} ${bonus === 1 ? 'porção' : 'porções'})`, onTap: () => this.seasonStove(stove) });
       // The owner's pantry spices: the regular seasoning plus the spice's effect.
@@ -2184,7 +2279,7 @@ export class RoomScreen implements Screen {
     if (this.isModalOpen || this.storeBar?.isOpen) return;
     const requested = stove ?? this.selectedStove ?? this.model.items.find((item) => item.kind === 'stove');
     const selected = requested?.instanceId
-      ? this.model.items.find((item) => item.kind === 'stove' && item.instanceId === requested.instanceId) ?? requested
+      ? this.model.items.find((item) => cooksOn(item) && item.instanceId === requested.instanceId) ?? requested
       : requested;
     if (!selected || this.servingProcess || this.startingCook || this.cancellingCook) return;
     const process = this.cookingProcess?.stove === selected ? this.cookingProcess : undefined;
@@ -2233,14 +2328,16 @@ export class RoomScreen implements Screen {
   /** The book reads recipes from the server rules and the owner's coins and level. */
   private openRecipeBook(): void {
     if (!this.cookModal) return;
-    if (!this.stoveIsFree(this.selectedStove)) this.selectedStove = this.freeStove() ?? this.selectedStove;
+    // A drink machine only makes its own drinks: never fall back to a stove for it.
+    const machine = this.selectedStove?.kind === 'machine' ? this.catalogItem(this.selectedStove.id)?.machine : undefined;
+    if (!machine && !this.stoveIsFree(this.selectedStove)) this.selectedStove = this.freeStove() ?? this.selectedStove;
     if (!this.rules) {
       this.showNotice('Receitas indisponíveis. Recarregue o jogo.');
       return;
     }
     const state = this.roomSnapshot?.playerState;
     this.cookModal.setBook({
-      recipes: this.rules.recipes,
+      recipes: machine ? (this.rules.drinks ?? []).filter((drink) => drink.machine === machine) : this.rules.recipes,
       context: {
         level: state?.level ?? 1, gold: state?.gold ?? 0, ...(this.emergencyRecipeId ? { emergencyRecipeId: this.emergencyRecipeId } : {}),
         ...((this.street?.freshCharges ?? 0) > 0 && this.rules?.street ? { freshPercent: this.rules.street.farm.bonusPercent } : {}),
@@ -2367,7 +2464,8 @@ export class RoomScreen implements Screen {
     return Boolean(this.cookModal?.isOpen || this.wardrobeModal?.isOpen || this.settingsModal?.isOpen || this.staffModal?.isOpen ||
       this.levelUpModal?.isOpen || this.expansionModal?.isOpen || this.streetModal?.isOpen || this.welcomeBack?.isOpen ||
       this.confirmDialog?.isOpen || this.dailyModal?.isOpen || this.mailModal?.isOpen || this.achievementsModal?.isOpen ||
-      this.popularityModal?.isOpen || this.currencyModal?.isOpen || this.cashDayModal?.isOpen || this.pantryModal?.isOpen || this.cratesModal?.isOpen);
+      this.popularityModal?.isOpen || this.currencyModal?.isOpen || this.cashDayModal?.isOpen || this.pantryModal?.isOpen || this.cratesModal?.isOpen ||
+      this.machineModal?.isOpen);
   }
 
   /** Bottom bar: open the system, or say it is not here yet (or not for visitors). */
@@ -2812,9 +2910,11 @@ export class RoomScreen implements Screen {
           bias = DEPTH_BIAS_WALL_DECOR;
         }
         const sprite = createArtView(item, rotated.frame, texture, { bias, occlusionAnchor: item.occlusionAnchor });
-        if (item.kind === 'stove') {
+        if (cooksOn(item)) {
           this.stoveViews.set(item, [sprite]);
           this.bindStoveTap(sprite, item);
+        } else if (item.kind === 'entertainment' || item.kind === 'shelf') {
+          this.bindFurnitureTap(sprite, item);
         }
         this.world.addChild(sprite);
         return;
@@ -2824,7 +2924,8 @@ export class RoomScreen implements Screen {
     // Sem arte: um pedaço de caixa por tile da pegada, cada um com sua
     // própria profundidade.
     for (const graphics of createItemViews(item)) {
-      if (item.kind === 'stove') {
+      if (item.kind === 'entertainment' || item.kind === 'shelf') this.bindFurnitureTap(graphics, item);
+      if (cooksOn(item)) {
         const views = this.stoveViews.get(item) ?? [];
         views.push(graphics);
         this.stoveViews.set(item, views);
@@ -2832,6 +2933,22 @@ export class RoomScreen implements Screen {
       }
       this.world.addChild(graphics);
     }
+  }
+
+  /** Jukebox, arcade and spice shelf open their windows with a tap (owner only). */
+  private bindFurnitureTap(target: Sprite | Graphics, item: RoomItem): void {
+    target.eventMode = 'static';
+    target.cursor = 'pointer';
+    target.on('pointerdown', this.onDragStart);
+    target.on('pointerup', this.onDragEnd);
+    target.on('pointerupoutside', this.onDragEnd);
+    target.on('pointertap', (event) => {
+      if (this.dragCancelledTap || this.storeBar?.isOpen) return;
+      event.stopPropagation();
+      if (this.roomSnapshot?.canEdit === false) { this.showNotice('Apenas no seu próprio café.'); return; }
+      if (item.kind === 'shelf') this.openPantry();
+      else if (item.inventoryUnitId) this.openMachine(item.inventoryUnitId);
+    });
   }
 
   /** O fogão participa do mesmo gesto do piso: um toque novo limpa arrastes antigos. */
@@ -3266,7 +3383,7 @@ export class RoomScreen implements Screen {
     const clicked = screenToTile(local.x, local.y);
 
     const clickedStove = this.model.items.find(
-      (item) => item.kind === 'stove' && footprintTiles(item).some((t) => t.tx === clicked.tx && t.ty === clicked.ty),
+      (item) => cooksOn(item) && footprintTiles(item).some((t) => t.tx === clicked.tx && t.ty === clicked.ty),
     );
     if (clickedStove) {
       this.openCookScreen(clickedStove);
@@ -3394,7 +3511,7 @@ export class RoomScreen implements Screen {
   setPlayerState(state: PlayerState): void {
     if (this.roomSnapshot) this.roomSnapshot.playerState = state;
     if (this.roomSnapshot?.canEdit !== false && state.level > this.knownLevel) this.celebrateLevel(state.level);
-    this.topBars?.setState(state);
+    this.showPlayerHud(state);
     // Visitors keep the visited café in the mood column.
     if (this.roomSnapshot?.canEdit !== false) {
       this.actionBarMood?.setSatisfaction(this.effectiveSatisfaction(state));
@@ -3441,6 +3558,14 @@ export class RoomScreen implements Screen {
       this.fpsFrames = 0;
     }
     if (this.hud) this.hud.visible = !this.cookModal?.isOpen;
+    // Energy regenerates on the server's clock: refresh the HUD once a second.
+    this.energyTickMs += Math.max(0, deltaMs);
+    if (this.energyTickMs >= 1000) {
+      this.energyTickMs = 0;
+      const state = this.roomSnapshot?.playerState;
+      if (state && state.energy.current < state.energy.maximum) this.showPlayerHud(state);
+    }
+    this.updateMachineEffects(deltaMs);
     this.cookModal?.update(deltaMs);
     this.wardrobeModal?.update(deltaMs);
     this.storeBar?.update(deltaMs);
@@ -3505,6 +3630,7 @@ export class RoomScreen implements Screen {
     this.cashDayModal?.update(deltaMs);
     this.pantryModal?.update(deltaMs);
     this.cratesModal?.update(deltaMs);
+    this.machineModal?.update(deltaMs);
     // New missions at São Paulo midnight, by the server's clock.
     if (this.progressNextAt > 0 && this.serverNow() >= this.progressNextAt) { this.progressNextAt = 0; this.scheduleProgress(); }
     this.streetScenery?.update(deltaMs);
@@ -3597,6 +3723,7 @@ export class RoomScreen implements Screen {
     this.cashDayModal?.setStageScale(scale);
     this.pantryModal?.setStageScale(scale);
     this.cratesModal?.setStageScale(scale);
+    this.machineModal?.setStageScale(scale);
     this.audioControl?.setStageScale(scale);
     const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
@@ -3667,6 +3794,8 @@ export class RoomScreen implements Screen {
     this.cashDayModal?.destroy();
     this.pantryModal?.destroy();
     this.cratesModal?.destroy();
+    this.machineModal?.destroy();
+    this.machineEffects.forEach((effect) => effect.destroy()); this.machineEffects.clear();
     this.partyLights.destroy();
     this.partyBadge.destroy();
     this.audio?.setOverride?.(null);

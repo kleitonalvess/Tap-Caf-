@@ -122,3 +122,19 @@ func TestBlockedPlayerCleansFromWhereTheyStand(t *testing.T) {
 		t.Fatalf("blocked player beside the table: %q, path=%v", message, owner.path)
 	}
 }
+
+func TestBrewingNeedsTheOwnerBesideTheDrinkMachine(t *testing.T) {
+	r, _ := economyRoom(&economyStore{})
+	r.world.Units = append(r.world.Units, gamewire.Unit{ID: "coffee", ItemID: 3700000, Placed: true, X: 6, Y: 3, StoveID: "coffee-stove"})
+	r.grid = newGrid(r.world)
+	owner := &entity{Actor: gamewire.Actor{ID: "human:owner", Kind: "human", X: 1, Y: 6, State: "idle"}}
+	r.actors[owner.ID] = owner
+	op := gamewire.Operation{Owner: "owner", User: "owner", Action: "cook_start", Body: json.RawMessage(`{"stoveId":"coffee-stove","recipeId":"cafe_expresso"}`)}
+	if message := r.validateOperation(op); message != "Aproxime seu personagem do fogão." {
+		t.Fatalf("far from the machine: %q", message)
+	}
+	owner.X, owner.Y = 6, 4
+	if message := r.validateOperation(op); message != "" {
+		t.Fatalf("beside the coffee machine: %q", message)
+	}
+}

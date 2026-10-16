@@ -6,6 +6,8 @@ export interface StreetState {
   partyStartedAt?: number;
   partyEndsAt?: number;
   partyReadyAt?: number;
+  /** Only in a harvest's answer: the spice a spice shelf gave with it. */
+  freeSpice?: number;
 }
 
 export interface FarmStatus {

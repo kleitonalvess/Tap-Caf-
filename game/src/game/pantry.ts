@@ -3,9 +3,16 @@ import { RequestError, request } from './rewards';
 
 /** Pantry spices and mystery crates (shared/cafe/pantry.go); the server pays and draws. */
 export interface Spice { code: number; name: string; effect: 'double' | 'rush' | 'preserve'; description: string; priceCoins: number; count: number }
-export interface CratePrize { weight: number; coins?: number; cash?: number; spice?: number; count?: number; item?: number }
+export interface CratePrize { weight: number; coins?: number; cash?: number; spice?: number; stock?: number; count?: number; item?: number }
 export interface Crate { id: string; code?: number; name: string; free?: boolean; coins?: number; cash?: number; prizes: CratePrize[] }
-export interface PantrySnapshot { spices: Spice[]; freeCrates: number; freeMax: number; crates: Crate[] }
+/** Energy drinks and machine parts, with how many the player holds. */
+export interface PantryItem { code: number; name: string; kind: 'energy' | 'part'; amount: number; priceCoins?: number; priceCash?: number; description: string; count: number }
+export interface PantrySnapshot {
+  spices: Spice[]; items?: PantryItem[];
+  /** Charges of each spice the pantry holds; more with a spice shelf placed. */
+  spiceLimit?: number; shelf?: boolean;
+  freeCrates: number; freeMax: number; crates: Crate[];
+}
 export interface PantryResult { pantry: PantrySnapshot; state: PlayerState }
 export interface CrateResult {
   crate: string;
@@ -18,6 +25,8 @@ export interface CrateResult {
 export const loadPantry = (): Promise<PantrySnapshot> => request('/api/coffe/pantry');
 export const buySpice = (code: number): Promise<PantryResult> => request('/api/coffe/pantry/buy', { code });
 export const openCrate = (crate: string, requestId: string): Promise<CrateResult> => request('/api/coffe/crates/open', { crate, requestId });
+/** Drinks an energy item from the pantry. */
+export const useConsumable = (code: number): Promise<PantryResult> => request('/api/coffe/pantry/use', { code });
 
 /** Spices the player holds, in pantry order, for the stove menu. */
 export function ownedSpices(spices: readonly Spice[], pantry: Readonly<Record<string, number>> | undefined): Spice[] {
@@ -36,6 +45,9 @@ export function crateContents(crate: Crate): string {
   const kinds: string[] = [];
   if (crate.prizes.some((prize) => prize.item)) kinds.push('itens exclusivos');
   if (crate.prizes.some((prize) => prize.spice)) kinds.push('temperos');
+  // Consumable codes: 810000+ energy drinks, 820000+ machine parts.
+  if (crate.prizes.some((prize) => (prize.stock ?? 0) >= 810000 && (prize.stock ?? 0) < 820000)) kinds.push('energéticos');
+  if (crate.prizes.some((prize) => (prize.stock ?? 0) >= 820000)) kinds.push('peças');
   if (crate.prizes.some((prize) => prize.coins)) kinds.push('moedas');
   if (crate.prizes.some((prize) => prize.cash)) kinds.push('Grana');
   return kinds.length > 1 ? `${kinds.slice(0, -1).join(', ')} ou ${kinds.at(-1)}` : kinds[0] ?? '';
@@ -65,4 +77,9 @@ export class CrateOpener {
       throw error;
     }
   }
+}
+
+/** "150 moedas" or "1 Grana": a pantry item's price. */
+export function itemPrice(item: { priceCoins?: number; priceCash?: number }): string {
+  return (item.priceCash ?? 0) > 0 ? `${item.priceCash} Grana` : `${(item.priceCoins ?? 0).toLocaleString('pt-BR')} moedas`;
 }

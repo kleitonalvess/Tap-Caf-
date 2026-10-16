@@ -11,7 +11,13 @@ export interface RecipeRule {
   xpPerServing: number;
   spoilSeconds: number;
   provisional?: boolean;
+  /** Drinks: the machine that makes them (coffee, juice) and the energy a batch costs. */
+  machine?: string;
+  energy?: number;
 }
+
+export interface Consumable { code: number; name: string; kind: 'energy' | 'part'; amount: number; priceCoins?: number; priceCash?: number; description: string }
+export interface EntertainmentLevel { parts: number; coins: number; runCoins: number; runXp: number; patiencePercent: number }
 
 /** One café expansion: the new side, the level that allows paying with coins, and its prices. */
 export interface ExpansionStep { tiles: number; level: number; coins: number; cash: number; xp: number }
@@ -43,6 +49,14 @@ export interface GameRules {
   spices?: { list: Array<{ code: number; name: string; effect: 'double' | 'rush' | 'preserve'; description: string; priceCoins: number }> };
   /** Stoves and counters allowed per expansion step, and the share a sale returns. */
   equipment?: { stoves: number[]; counters: number[]; sellPercent: number };
+  /** Energy: one point back every regenSeconds up to max; drinks go up to cap. */
+  energy?: { max: number; regenSeconds: number; cap: number };
+  /** Energy drinks and machine parts (pantry codes 810001+). */
+  consumables?: Consumable[];
+  pantry?: { spiceLimit: number; shelfSpiceLimit: number; shelfHarvestPercent: number };
+  /** Made by the coffee and juice machines. */
+  drinks?: RecipeRule[];
+  entertainment?: { runSeconds: number; maintenanceRuns: number; startEnergy: number; repairEnergy: number; machines: Array<{ item: number; levels: EntertainmentLevel[] }> };
 }
 
 export async function loadGameRules(signal?: AbortSignal): Promise<GameRules> {

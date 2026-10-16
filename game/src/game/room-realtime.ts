@@ -1,3 +1,4 @@
+import type { WorldMachine } from './machines';
 import type { CookingSnapshot } from './cooking';
 import type { RoomUnit } from './room-inventory';
 import type { StreetState } from './street';
@@ -34,6 +35,8 @@ export interface SharedActor {
 export interface SharedWorld {
   roomId: string; revision: number; tilesX: number; tilesY: number;
   units: RoomUnit[]; foods: SharedFood[]; dirt?: SharedDirt[]; cooking?: CookingSnapshot; street?: StreetState;
+  /** Placed entertainment machines (a running one lifts the customers' patience). */
+  machines?: WorldMachine[];
 }
 export interface RoomEvent {
   type: 'welcome' | 'actors' | 'world' | 'food' | 'dirt' | 'payment' | 'ack' | 'error'; epoch: string; seq: number; serverNow: number;
@@ -41,6 +44,8 @@ export interface RoomEvent {
   units?: RoomUnit[]; revision?: number;
   /** Set on a world event when the café grew (expansion) or a street building changed. */
   tilesX?: number; tilesY?: number; street?: StreetState;
+  /** World events: the complete machine list when a machine changed. */
+  machines?: WorldMachine[];
   foods?: SharedFood[]; dirt?: SharedDirt[]; cooking?: CookingSnapshot; payment?: SharedPayment;
   requestId?: string; message?: string;
   /** Welcome to the owner only: what the café did while they were away. */

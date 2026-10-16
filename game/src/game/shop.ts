@@ -12,6 +12,8 @@ export function storeCategory(item: RoomCatalogItem): string {
     case 'table': return 'table';
     case 'chair': return 'chair';
     case 'window': case 'panel': return 'flower-window';
+    // Drink machines and the spice shelf sit with the stoves (kitchen equipment).
+    case 'machine': case 'shelf': return 'stove';
     case 'wall': return 'wallpaper';
     case 'door': return 'door';
     default: return 'flower';
@@ -56,6 +58,9 @@ export function itemPerk(item: RoomCatalogItem): string {
   if (item.kind === 'stove' && item.spoilBonusPercent) parts.push(`o prato dura ${item.spoilBonusPercent}% mais`);
   if (item.kind === 'stove' && item.servingsBonusPercent) parts.push(`+${item.servingsBonusPercent}% de porções por lote`);
   if (item.kind === 'register') parts.push('quem se serve sozinho também dá gorjeta');
+  if (item.kind === 'machine') parts.push(item.machine === 'juice' ? 'faz sucos com energia' : 'faz cafés com energia');
+  if (item.kind === 'entertainment') parts.push('montada com peças; ligada, deixa os clientes mais pacientes');
+  if (item.kind === 'shelf') parts.push('guarda mais temperos e pode dar um na colheita');
   if (item.charm) parts.push(charmText(item.charm));
   if (item.theme) parts.push(`conjunto ${THEME_NAMES[item.theme]}`);
   return parts.join(' · ');

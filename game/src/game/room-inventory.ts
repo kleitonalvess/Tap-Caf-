@@ -22,6 +22,8 @@ export interface RoomCatalogItem {
   theme?: string;
   /** Multi-stoves: each batch yields this share more servings. */
   servingsBonusPercent?: number;
+  /** Drink machines: coffee or juice. */
+  machine?: string;
 }
 
 /** The decoration bonus of the placed units (shared/gamerules DecorBonus). */

@@ -192,6 +192,41 @@ function drawPan(g: CanvasRenderingContext2D, look: Look): void {
   for (const [x, y] of [[84, 128], [150, 134], [122, 146]]) { g.beginPath(); g.arc(x, y, 3, 0, Math.PI * 2); g.fill(); }
 }
 
+/** Drinks are served in a cup or a glass instead of on a plate. */
+const DRINKS: Readonly<Record<string, { vessel: 'cup' | 'glass'; drink: string; top?: string }>> = {
+  cafe_expresso: { vessel: 'cup', drink: '#4a2a16', top: '#8a5a32' },
+  cappuccino: { vessel: 'cup', drink: '#8a5a32', top: '#f3e6cf' },
+  mocha_gelado: { vessel: 'glass', drink: '#6b3f22', top: '#f3e6cf' },
+  suco_laranja: { vessel: 'glass', drink: '#f39a1e' },
+  suco_maracuja: { vessel: 'glass', drink: '#f2cc3a' },
+  vitamina_acai: { vessel: 'glass', drink: '#5b2a6e', top: '#a477b8' },
+};
+
+/** A cup on a saucer or a tall glass with a straw, in the 240 × 200 dish space. */
+function drawDrink(g: CanvasRenderingContext2D, style: { vessel: 'cup' | 'glass'; drink: string; top?: string }, empty: boolean): void {
+  ellipse(g, 120, 172, 70, 20, 'rgba(0,0,0,0.18)');
+  if (style.vessel === 'cup') {
+    ellipse(g, 120, 160, 74, 22, '#f4efe4', '#b9b0a0');
+    g.beginPath(); g.moveTo(66, 92); g.lineTo(174, 92); g.quadraticCurveTo(170, 158, 120, 160); g.quadraticCurveTo(70, 158, 66, 92); g.closePath();
+    g.fillStyle = '#fbf8f1'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#b9b0a0'; g.stroke();
+    g.lineWidth = 10; g.strokeStyle = '#fbf8f1'; g.beginPath(); g.arc(178, 116, 18, -Math.PI / 2, Math.PI / 2); g.stroke();
+    g.lineWidth = 3; g.strokeStyle = '#b9b0a0'; g.beginPath(); g.arc(178, 116, 23, -Math.PI / 2, Math.PI / 2); g.stroke();
+    ellipse(g, 120, 92, 54, 14, empty ? '#e9e2d4' : style.drink, '#b9b0a0');
+    if (!empty && style.top) ellipse(g, 120, 92, 36, 9, style.top);
+    if (!empty) { g.strokeStyle = 'rgba(255,255,255,0.8)'; g.lineWidth = 3; for (const x of [104, 120, 136]) { g.beginPath(); g.moveTo(x, 70); g.bezierCurveTo(x - 8, 58, x + 8, 48, x, 36); g.stroke(); } }
+    return;
+  }
+  g.beginPath(); g.moveTo(80, 50); g.lineTo(160, 50); g.lineTo(150, 168); g.lineTo(90, 168); g.closePath();
+  g.fillStyle = 'rgba(220,240,250,0.45)'; g.fill(); g.lineWidth = 3; g.strokeStyle = '#9fb7c4'; g.stroke();
+  if (!empty) {
+    g.beginPath(); g.moveTo(84, 74); g.lineTo(156, 74); g.lineTo(149, 164); g.lineTo(91, 164); g.closePath();
+    g.fillStyle = style.drink; g.fill();
+    if (style.top) ellipse(g, 120, 74, 36, 8, style.top);
+    g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(94, 82, 8, 70);
+  }
+  g.lineWidth = 7; g.strokeStyle = '#e8473c'; g.beginPath(); g.moveTo(132, 160); g.lineTo(150, 26); g.lineTo(176, 18); g.stroke();
+}
+
 export class RecipeArtLibrary {
   private readonly cache = new Map<string, RecipeArt>();
 
@@ -203,6 +238,12 @@ export class RecipeArtLibrary {
     const real = this.images[recipeId];
     if (real?.stage1 && real.stage2) {
       art = { stage1: real.stage1, stage2: real.stage2, placeholder: false };
+    } else if (DRINKS[recipeId]) {
+      const [cup, cupContext] = canvas();
+      drawDrink(cupContext, DRINKS[recipeId]!, false);
+      const [brewing, brewingContext] = canvas();
+      drawDrink(brewingContext, DRINKS[recipeId]!, true);
+      art = { stage1: Texture.from(brewing), stage2: Texture.from(cup), placeholder: true };
     } else {
       const look = lookFor(recipeId);
       const [dish, dishContext] = canvas();

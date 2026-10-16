@@ -438,7 +438,7 @@ export class CookScreenModal {
 
     const rows: Array<[string, string]> = [
       ['Preparo', formatDuration(recipe.cookSeconds)],
-      ['Custo', availability === 'free' ? 'Grátis' : `${recipe.costCoins} moedas`],
+      ['Custo', availability === 'free' ? 'Grátis' : `${recipe.costCoins} moedas${recipe.energy ? ` + ${recipe.energy} energia` : ''}`],
       ['Rende', `${recipe.servings} porções`],
       ['Venda', `${recipe.pricePerServing} por porção`],
       ['Experiência', `${recipe.xpPerServing} por porção`],
@@ -460,9 +460,10 @@ export class CookScreenModal {
       locked: [`Bloqueada até o nível ${recipe.level}`, BAD],
       free: ['Grátis (Ajuda de Emergência)', GOOD],
       unaffordable: ['Moedas insuficientes', BAD],
-      available: ['Temperar no fogo rende mais porções', INK],
+      available: [recipe.machine ? 'Os clientes pegam a bebida na própria máquina' : 'Temperar no fogo rende mais porções', INK],
     };
-    const fresh = (availability === 'available' || availability === 'free') && (book.context.freshPercent ?? 0) > 0;
+    // Fresh farm ingredients go into dishes, never into drinks.
+    const fresh = !recipe.machine && (availability === 'available' || availability === 'free') && (book.context.freshPercent ?? 0) > 0;
     const [status, color] = fresh ? [`Ingredientes frescos: +${book.context.freshPercent}% de moedas e XP`, GOOD] as [string, number] : statuses[availability];
     const quiet = availability === 'available' && !fresh;
     const statusText = fitWidth(text(status, quiet ? 18 : 21, color, quiet ? '400' : '700'), DETAILS.w - 30);

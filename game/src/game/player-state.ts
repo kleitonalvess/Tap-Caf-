@@ -18,6 +18,20 @@ export interface PlayerState {
   satisfaction: ResourceValue;
   /** Pantry spices by code: {"800001": 2}. */
   pantry?: Record<string, number>;
+  /** The instant energy regenerates from (server clock); absent while full or on older saves. */
+  energyAt?: string;
+}
+
+/**
+ * The energy shown now: the stored value plus one point per regen period since
+ * energyAt, up to the bar's maximum (shared/cafe energyNow does the same on the server).
+ */
+export function liveEnergy(state: Pick<PlayerState, 'energy' | 'energyAt'>, nowMs: number, regenSeconds: number): number {
+  const { current, maximum } = state.energy;
+  if (current >= maximum || !state.energyAt || regenSeconds <= 0) return current;
+  const at = Date.parse(state.energyAt.replace(' ', 'T'));
+  if (!Number.isFinite(at) || nowMs <= at) return current;
+  return Math.min(maximum, current + Math.floor((nowMs - at) / (regenSeconds * 1000)));
 }
 
 export function resourcePercentage(value: ResourceValue): number {

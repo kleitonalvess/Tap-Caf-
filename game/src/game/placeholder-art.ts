@@ -333,6 +333,7 @@ function drawWallPicture(g: Ctx, style: string): void {
 const ORNAMENTS = new Set(['vase-flowers', 'fern', 'floor-lamp', 'statue', 'fountain',
   'shoji', 'bonsai', 'paper-lantern', 'amphora', 'olive-tree', 'candelabra', 'piano']);
 const TABLES = new Set(['table-low', 'table-checker', 'table-imperial']);
+const MACHINES = new Set(['machine-coffee', 'machine-juice', 'jukebox', 'arcade', 'spice-shelf']);
 const THEMED_WALL_ART = new Set(['scroll', 'painting-canal', 'curtain-velvet', 'neon-sign']);
 
 /** Brick oven (Itália): a brick base, a domed chamber with the fire and a chimney. */
@@ -675,6 +676,157 @@ function drawThemedWallPicture(g: Ctx, style: string): void {
   }
 }
 
+/** Points on the two visible faces of a prism (see prism): `front` runs along the
+ * long axis (lower-left face), `side` along the depth (lower-right face). */
+function faces(back: { x: number; y: number }, along: number, deep: number) {
+  const fx = back.x - 2 * deep, fy = back.y + deep;
+  const px = fx + 2 * along, py = fy + along;
+  return {
+    front: (t: number, up: number): [number, number] => [fx + 2 * along * t, fy + along * t - up],
+    side: (t: number, up: number): [number, number] => [px + 2 * deep * t, py - deep * t - up],
+  };
+}
+
+function quad(g: Ctx, at: (t: number, up: number) => [number, number], t0: number, t1: number, u0: number, u1: number, fill: string, stroke?: string, width = 1.5): void {
+  poly(g, [at(t0, u0), at(t1, u0), at(t1, u1), at(t0, u1)], fill, stroke, width);
+}
+
+/** Coffee and juice machines, the jukebox, the arcade and the spice shelf. */
+function drawMachine(g: Ctx, style: string, cx: number, floor: number, height: number): void {
+  ellipse(g, cx, floor, 44, 16, 'rgba(0,0,0,0.16)');
+  switch (style) {
+    case 'machine-coffee': {
+      // An espresso machine: red body, steel top with cups warming, two group heads.
+      const along = 26, deep = 18, rise = height - 12;
+      const back = { x: cx - (along - deep), y: floor - (along + deep) / 2 };
+      prism(g, back, along, deep, rise, { top: '#d9dfe4', left: '#b8322a', right: '#8e2620', edge: '#3d1410' });
+      const f = faces(back, along, deep);
+      quad(g, f.front, 0.06, 0.94, rise - 12, rise - 4, '#e8edf0', '#5f6b75', 1);
+      quad(g, f.front, 0.08, 0.92, 6, 12, '#5f6b75', '#2f363c', 1);
+      for (const t of [0.3, 0.7]) {
+        const [x, y] = f.front(t, rise * 0.62);
+        ellipse(g, x, y, 7, 4, '#c9d1d7', '#4f5a63', 1.5);
+        poly(g, [[x - 2, y + 2], [x + 2, y + 2], [x + 2, y + 10], [x - 2, y + 10]], '#2b2f33');
+        g.strokeStyle = '#2b2f33'; g.lineWidth = 3; g.beginPath(); g.moveTo(x + 2, y + 6); g.lineTo(x + 12, y + 10); g.stroke();
+        const [cupX, cupY] = f.front(t, 13);
+        poly(g, [[cupX - 5, cupY - 8], [cupX + 5, cupY - 8], [cupX + 4, cupY], [cupX - 4, cupY]], '#fbf8f1', '#9b9284', 1);
+      }
+      const [gx, gy] = f.front(0.5, rise * 0.86);
+      ellipse(g, gx, gy, 6, 6, '#fbf8f1', '#4f5a63', 1.5);
+      g.strokeStyle = '#c0392b'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(gx, gy); g.lineTo(gx + 3, gy - 3); g.stroke();
+      for (const [dx, dy] of [[-10, 2], [4, -5], [16, 2]] as const) {
+        const tx = back.x + dx, ty = back.y + along / 2 - rise + 8 + dy;
+        poly(g, [[tx - 5, ty - 7], [tx + 5, ty - 7], [tx + 4, ty], [tx - 4, ty]], '#fbf8f1', '#9b9284', 1);
+      }
+      g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = 2;
+      for (const k of [-6, 4]) { g.beginPath(); g.moveTo(cx + k, floor - rise - 26); g.bezierCurveTo(cx + k - 5, floor - rise - 34, cx + k + 5, floor - rise - 40, cx + k, floor - rise - 48); g.stroke(); }
+      break;
+    }
+    case 'machine-juice': {
+      // A juice dispenser: white base with two clear tanks of orange and yellow juice.
+      const along = 26, deep = 18, rise = Math.round(height * 0.45);
+      const back = { x: cx - (along - deep), y: floor - (along + deep) / 2 };
+      prism(g, back, along, deep, rise, { top: '#f4f6f2', left: '#e7ebe4', right: '#c9d0c4', edge: '#5f6b5a' });
+      const f = faces(back, along, deep);
+      quad(g, f.front, 0.08, 0.92, 4, 10, '#5f6b5a', '#33402f', 1);
+      quad(g, f.front, 0.1, 0.9, rise - 10, rise - 3, '#3f9a4a');
+      for (const [t, juice] of [[0.3, '#f39a1e'], [0.72, '#f2cc3a']] as const) {
+        const [x, y] = f.front(t, rise);
+        const tank = height - rise - 14;
+        g.fillStyle = 'rgba(220,240,250,0.55)'; g.fillRect(x - 12, y - tank - 8, 24, tank);
+        g.fillStyle = juice; g.fillRect(x - 12, y - tank * 0.7 - 8, 24, tank * 0.7);
+        ellipse(g, x, y - tank - 8, 12, 4, 'rgba(235,248,252,0.8)', '#8fb1c0', 1.2);
+        g.strokeStyle = '#8fb1c0'; g.lineWidth = 1.5; g.strokeRect(x - 12, y - tank - 8, 24, tank);
+        g.fillStyle = 'rgba(255,255,255,0.45)'; g.fillRect(x - 9, y - tank - 4, 4, tank - 6);
+        const [tapX, tapY] = f.front(t, rise * 0.55);
+        poly(g, [[tapX - 3, tapY - 4], [tapX + 3, tapY - 4], [tapX + 3, tapY + 4], [tapX - 3, tapY + 4]], '#4f5a63');
+        const [cupX, cupY] = f.front(t, 11);
+        poly(g, [[cupX - 5, cupY - 10], [cupX + 5, cupY - 10], [cupX + 4, cupY], [cupX - 4, cupY]], 'rgba(220,240,250,0.7)', '#8fb1c0', 1);
+        poly(g, [[cupX - 4.5, cupY - 6], [cupX + 4.5, cupY - 6], [cupX + 4, cupY], [cupX - 4, cupY]], juice);
+      }
+      break;
+    }
+    case 'jukebox': {
+      // A retro jukebox: wooden cabinet, glowing arch, record window and speaker grille.
+      const along = 26, deep = 16, rise = height - 34;
+      const back = { x: cx - (along - deep), y: floor - (along + deep) / 2 };
+      prism(g, back, along, deep, rise, { top: '#a0582a', left: '#8a4a22', right: '#6a3618', edge: '#2e160a' });
+      const f = faces(back, along, deep);
+      // The arch rises over the front face.
+      const [ax0, ay0] = f.front(0, rise), [ax1, ay1] = f.front(1, rise);
+      const mx = (ax0 + ax1) / 2, my = (ay0 + ay1) / 2;
+      g.save();
+      g.translate(mx, my); g.transform(1, 0.5, 0, 1, 0, 0);
+      const span = along;
+      g.beginPath(); g.ellipse(0, 0, span, 34, 0, Math.PI, 0); g.closePath();
+      g.fillStyle = '#8a4a22'; g.fill(); g.strokeStyle = '#2e160a'; g.lineWidth = 1.5; g.stroke();
+      for (const [r, color] of [[30, '#ff6fb5'], [24, '#ffd166'], [18, '#6fd3ff']] as const) {
+        g.beginPath(); g.ellipse(0, 0, span * r / 34, r, 0, Math.PI, 0); g.strokeStyle = color; g.lineWidth = 4; g.stroke();
+      }
+      g.beginPath(); g.ellipse(0, 0, span * 0.42, 12, 0, Math.PI, 0); g.closePath(); g.fillStyle = 'rgba(255,240,200,0.85)'; g.fill();
+      g.restore();
+      quad(g, f.front, 0.12, 0.88, rise * 0.55, rise - 4, 'rgba(255,236,190,0.9)', '#2e160a', 1.5);
+      const [rx, ry] = f.front(0.5, rise * 0.75);
+      ellipse(g, rx, ry, 9, 6, '#1d1d22', '#555', 1); ellipse(g, rx, ry, 3, 2, '#e8473c');
+      quad(g, f.front, 0.15, 0.85, 8, rise * 0.45, '#3a2414', '#2e160a', 1.5);
+      g.strokeStyle = 'rgba(210,170,110,0.6)'; g.lineWidth = 1;
+      for (let k = 1; k < 6; k++) { const [x0, y0] = f.front(0.15, 8 + k * rise * 0.07), [x1, y1] = f.front(0.85, 8 + k * rise * 0.07); g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); }
+      for (const t of [0.04, 0.96]) {
+        const [x0, y0] = f.front(t, 4), [x1, y1] = f.front(t, rise + 4);
+        g.strokeStyle = t < 0.5 ? '#ff6fb5' : '#6fd3ff'; g.lineWidth = 3; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+      }
+      break;
+    }
+    case 'arcade': {
+      // An arcade cabinet: marquee, glowing screen with pixel aliens, joystick and buttons.
+      const along = 20, deep = 24, rise = height - 10;
+      const back = { x: cx - (along - deep), y: floor - (along + deep) / 2 };
+      prism(g, back, along, deep, rise, { top: '#3b2a6b', left: '#2a1d52', right: '#4c35a0', edge: '#120a2a' });
+      const f = faces(back, along, deep);
+      // The player faces the depth side: screen, marquee and controls on the right face.
+      quad(g, f.side, 0.1, 0.9, rise - 4, rise - 18, '#ffd166', '#120a2a', 1.5);
+      quad(g, f.side, 0.12, 0.88, rise * 0.52, rise - 26, '#0f1a2e', '#120a2a', 2);
+      const glow = (t: number, up: number, color: string) => { const [x, y] = f.side(t, up); poly(g, [[x - 2, y - 2], [x + 2, y - 4], [x + 2, y], [x - 2, y + 2]], color); };
+      for (const [t, up, color] of [[0.3, rise * 0.82, '#49e3ff'], [0.5, rise * 0.86, '#ff6fb5'], [0.7, rise * 0.82, '#49e3ff'], [0.4, rise * 0.68, '#a9f27a'], [0.6, rise * 0.62, '#ffd166']] as const) glow(t, up, color);
+      quad(g, f.side, 0.08, 0.92, rise * 0.4, rise * 0.48, '#6b4fd1', '#120a2a', 1.5);
+      const [jx, jy] = f.side(0.32, rise * 0.48);
+      g.strokeStyle = '#111'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(jx, jy); g.lineTo(jx, jy - 9); g.stroke();
+      ellipse(g, jx, jy - 10, 3.5, 3.5, '#e8473c');
+      for (const [t, color] of [[0.58, '#ffd166'], [0.7, '#49e3ff'], [0.82, '#ff6fb5']] as const) { const [bx, by] = f.side(t, rise * 0.47); ellipse(g, bx, by, 3, 2, color, '#111', 1); }
+      g.fillStyle = '#120a2a'; g.font = 'bold 8px sans-serif';
+      const [lx, ly] = f.side(0.22, rise - 9);
+      g.save(); g.translate(lx, ly); g.transform(1, -0.5, 0, 1, 0, 0); g.fillText('ARCADE', 0, 0); g.restore();
+      quad(g, f.front, 0.1, 0.9, 10, rise - 10, '#33246a');
+      g.strokeStyle = '#ff6fb5'; g.lineWidth = 2;
+      const [s0x, s0y] = f.front(0.15, rise * 0.3), [s1x, s1y] = f.front(0.85, rise * 0.7);
+      g.beginPath(); g.moveTo(s0x, s0y); g.lineTo(s1x, s1y); g.stroke();
+      break;
+    }
+    case 'spice-shelf': {
+      // A standing wooden shelf: back panel, three shelves of colourful spice jars.
+      const along = 28, deep = 10, rise = height - 8;
+      const back = { x: cx - (along - deep), y: floor - (along + deep) / 2 };
+      prism(g, back, along, 2, rise, { top: '#a0663a', left: '#7a4a24', right: '#5a3418', edge: '#2e1a0a' });
+      const f = faces({ x: back.x - 4, y: back.y + 2 }, along, deep - 2);
+      const jars = ['#3f9a4a', '#d2541b', '#7b4fc9', '#f2cc3a', '#c0392b', '#2f6fd0'];
+      [0.08, 0.38, 0.68].forEach((level, row) => {
+        const up = rise * level;
+        prism(g, { x: back.x - 4, y: back.y + 2 - up }, along, deep - 2, 4, { top: '#c98a4b', left: '#9b6232', right: '#7a4a24', edge: '#2e1a0a' });
+        for (let k = 0; k < 4; k++) {
+          const [x, y] = f.front(0.16 + k * 0.22, up + 6);
+          const color = jars[(row * 2 + k) % jars.length]!;
+          g.fillStyle = color; g.fillRect(x - 4, y - 14, 8, 12);
+          g.strokeStyle = '#2e1a0a'; g.lineWidth = 1; g.strokeRect(x - 4, y - 14, 8, 12);
+          g.fillStyle = '#b7863b'; g.fillRect(x - 4, y - 17, 8, 3);
+          g.fillStyle = '#fff8ea'; g.fillRect(x - 2.5, y - 10, 5, 3);
+        }
+      });
+      for (const t of [0, 1]) quad(g, f.front, t === 0 ? 0 : 0.97, t === 0 ? 0.03 : 1, 0, rise, '#8a5428', '#2e1a0a', 1);
+      break;
+    }
+  }
+}
+
 function texture(element: HTMLCanvasElement): Texture {
   const result = Texture.from(element);
   result.source.scaleMode = 'linear';
@@ -711,6 +863,7 @@ export function placeholderItemArt(style: string, itemHeight: number, file: stri
   else if (style === 'table-wood') drawTable(target.g, height);
   else if (TABLES.has(style)) drawStyledTable(target.g, style, height);
   else if (ORNAMENTS.has(style)) drawOrnament(target.g, style, height);
+  else if (MACHINES.has(style)) drawMachine(target.g, style, TILE_W / 2, height + TILE_H / 2, height);
   else return [];
   return [{ frame: { file, left: -TILE_W / 2, top: -height, width: TILE_W, height: TILE_H + height }, texture: texture(target.element) }];
 }
