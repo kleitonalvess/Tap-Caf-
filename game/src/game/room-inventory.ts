@@ -37,6 +37,8 @@ export interface DecorSummary {
 export interface EquipmentCount { placed: number; max: number }
 export interface RoomUnit {
   unitId: string; itemId: number; placed: boolean; tx: number; ty: number; rotation: number; stoveId?: string;
+  /** Came with the café (starter room, expansions): no sale value. */
+  granted?: boolean;
 }
 export interface RoomSnapshot {
   roomId?: string; canEdit?: boolean;

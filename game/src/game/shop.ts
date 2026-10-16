@@ -1,4 +1,4 @@
-import type { RoomCatalogItem } from './room-inventory';
+import type { RoomCatalogItem, RoomUnit } from './room-inventory';
 
 /** Store tabs by their icon (assets/ui/store-icons). Stoves that cook faster
  * go to the fire-stove tab; the cash register sits with the counters. */
@@ -75,8 +75,16 @@ export function sellValue(item: RoomCatalogItem, percent: number): number {
   return Math.floor(item.priceGold * percent / 100);
 }
 
+/** The stored unit of an item a sale would take: one the player bought (units
+ * that came with the café never sell), or the first stored one to explain why not. */
+export function saleUnit(inventory: readonly RoomUnit[], itemId: number): RoomUnit | undefined {
+  const stored = inventory.filter((unit) => unit.itemId === itemId && !unit.placed);
+  return stored.find((unit) => !unit.granted) ?? stored[0];
+}
+
 /** The confirmation text before selling, or why it cannot be sold. */
-export function sellPrompt(item: RoomCatalogItem, percent: number): { value: number; message: string } {
+export function sellPrompt(item: RoomCatalogItem, percent: number, granted = false): { value: number; message: string } {
+  if (granted) return { value: 0, message: `${item.name} veio com o café e não tem valor de venda.` };
   const value = sellValue(item, percent);
   if (value <= 0) {
     return { value, message: (item.priceCash ?? 0) > 0 ? `${item.name} foi comprado com Grana e não tem valor de venda em moedas.` : `${item.name} não tem valor de venda.` };

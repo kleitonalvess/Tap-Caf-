@@ -6,7 +6,7 @@ import type { RoomModel, RoomItem } from '../../world/RoomModel';
 import { DEPTH_BIAS_WALLPAPER, FLOOR_DRAW_PRIORITY, screenToTile, tileToScreen, wallDepth, type Tile } from '../../world/iso';
 import { wallGeometry } from '../../world/wallGeometry';
 import { StoreActionBar, type StoreEntry } from './StoreActionBar';
-import { itemLevel, itemLocked, itemPerk, newsItems, sellPrompt, storeCategory } from '../../game/shop';
+import { itemLevel, itemLocked, itemPerk, newsItems, saleUnit, sellPrompt, storeCategory } from '../../game/shop';
 import type { ConfirmRequest } from './ConfirmDialog';
 import { createArtView, rotateFloorSprite, tileDiamond } from './iso-art';
 import { createProceduralWallView } from './ProceduralWallView';
@@ -125,9 +125,9 @@ export class RoomStoreController {
   /** Sells one stored unit of the entry after the player confirms. */
   sell(entry: StoreEntry): void {
     if (this.busy || !entry.unit || entry.unit.placed || !this.options.confirm) return;
-    const unit = entry.unit;
+    const unit = saleUnit(this.snapshot.inventory, entry.item.id) ?? entry.unit;
     const percent = this.options.sellPercent?.() ?? 50;
-    const prompt = sellPrompt(entry.item, percent);
+    const prompt = sellPrompt(entry.item, percent, unit.granted);
     if (prompt.value <= 0) { this.message(prompt.message); return; }
     this.options.confirm({
       title: 'Vender item?', message: prompt.message, confirm: `Vender por ${prompt.value.toLocaleString('pt-BR')}`, cancel: 'Manter', danger: true,
