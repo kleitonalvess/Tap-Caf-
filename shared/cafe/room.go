@@ -42,6 +42,8 @@ type RoomUnit struct {
 	TY       int    `json:"ty"`
 	Rotation int    `json:"rotation"`
 	StoveID  string `json:"stoveId,omitempty"`
+	// Granted: came with the café (starter room, expansions) and has no sale value.
+	Granted bool `json:"granted,omitempty"`
 }
 type RoomSnapshot struct {
 	RoomID      string             `json:"roomId"`
@@ -193,7 +195,7 @@ func SnapshotRoom(s Store, userID string) (RoomSnapshot, error) {
 	tiles := min(result.TilesX, result.TilesY)
 	result.Equipment = Equipment{Stoves: EquipmentCount{Max: gamerules.EquipmentLimit("stove", tiles)}, Counters: EquipmentCount{Max: gamerules.EquipmentLimit("counter", tiles)}}
 	for _, unit := range units {
-		result.Inventory = append(result.Inventory, RoomUnit{unit.ID(), unit.GetInt("item_id"), unit.GetBool("placed"), unit.GetInt("tx"), unit.GetInt("ty"), unit.GetInt("rotation"), unit.GetString("stove_id")})
+		result.Inventory = append(result.Inventory, RoomUnit{unit.ID(), unit.GetInt("item_id"), unit.GetBool("placed"), unit.GetInt("tx"), unit.GetInt("ty"), unit.GetInt("rotation"), unit.GetString("stove_id"), unit.GetBool("granted")})
 		if item, ok := roomcatalog.ByID(unit.GetInt("item_id")); ok && unit.GetBool("placed") {
 			switch item.Kind {
 			case "stove":
