@@ -24,7 +24,9 @@ type Connection struct {
 	mu     sync.Mutex
 	open   bool
 	joined bool
-	peer   *gameruntime.Peer
+	// The room the join ticket named: the player's café or a neighbour's.
+	room string
+	peer *gameruntime.Peer
 	// Bumped whenever the peer changes, so a late event from an old room
 	// never reaches the client after the new welcome.
 	gen int
@@ -114,6 +116,9 @@ func (c *Connection) read() {
 			c.mu.Lock()
 			first := !c.joined
 			c.joined = true
+			if first {
+				c.room = c.engine.ticketRoom(command.Ticket)
+			}
 			c.mu.Unlock()
 			if first {
 				c.attach()
@@ -153,7 +158,10 @@ func (c *Connection) attach() {
 	if m == nil {
 		return
 	}
-	peer := &gameruntime.Peer{ID: c.engine.nextPeerID(), Ticket: c.engine.ticket(), Out: make(chan []byte, 256)}
+	c.mu.Lock()
+	room := c.room
+	c.mu.Unlock()
+	peer := &gameruntime.Peer{ID: c.engine.nextPeerID(), Ticket: c.engine.ticketFor(room), Out: make(chan []byte, 256)}
 	stop := make(chan struct{})
 	var once sync.Once
 	peer.Kick = func() {

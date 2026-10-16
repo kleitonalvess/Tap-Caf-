@@ -55,8 +55,8 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 		data, _ := json.Marshal(map[string]string{"message": message})
 		return gamewire.Result{Status: status, Body: data}
 	}
-	// Visitors may only season a friend's stove.
-	if op.Owner == "" || op.User == "" || op.Owner != op.User && op.Action != "cook_season" {
+	// Visitors may season, clear a table and cheer a customer up in a neighbour's café.
+	if op.Owner == "" || op.User == "" || op.Owner != op.User && !VisitorActions[op.Action] {
 		return fail(403, "Somente o dono pode alterar o quarto.")
 	}
 	var body any
@@ -80,6 +80,7 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 			return fail(400, "Pedido inválido.")
 		}
 		var refund, seasonXP int64
+		var help *HelpResult
 		switch op.Action {
 		case "cook_start":
 			err = StartCooking(s, op.Owner, command.StoveID, command.RecipeID, now)
@@ -90,7 +91,7 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 		case "cook_clean":
 			err = CleanStove(s, op.Owner, command.StoveID, now)
 		case "cook_season":
-			err = SeasonCooking(s, op.Owner, op.User, command.StoveID, command.Spice, now)
+			help, err = seasonAsNeighbor(s, op, command.StoveID, command.Spice, now)
 		case "cook_rescue":
 			err = RescueCooking(s, op.Owner, command.StoveID, command.Spice, now)
 		case "cook_boost":
@@ -101,6 +102,7 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 			snapshot, err = SnapshotCooking(s, op.Owner, now)
 			snapshot.Refund = refund
 			snapshot.SeasonXP = seasonXP
+			snapshot.Help = help
 			body = snapshot
 		}
 	case "table_clean":
@@ -111,8 +113,32 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 			return fail(400, "Pedido inválido.")
 		}
 		var plates int
-		plates, err = CleanTableAt(s, op.Owner, command.TableID, true, now)
-		body = map[string]any{"tableId": command.TableID, "plates": plates, "xp": gamerules.Tables().CleaningXP}
+		if op.User == op.Owner {
+			plates, err = CleanTableAt(s, op.Owner, command.TableID, true, now)
+			body = map[string]any{"tableId": command.TableID, "plates": plates, "xp": gamerules.Tables().CleaningXP}
+			break
+		}
+		// A neighbour's help: the visitor is paid, the owner gets the clean table.
+		var help HelpResult
+		err = s.Transaction(func(tx Store) error {
+			var err error
+			if help, err = HelpNeighbor(tx, op.User, op.Owner, "table", now); err != nil {
+				return err
+			}
+			plates, err = CleanTableAt(tx, op.Owner, command.TableID, false, now)
+			return err
+		})
+		body = map[string]any{"tableId": command.TableID, "plates": plates, "xp": 0, "help": help}
+	case "npc_cheer":
+		var command struct {
+			ActorID string `json:"actorId"`
+		}
+		if json.Unmarshal(op.Body, &command) != nil || command.ActorID == "" || op.User == op.Owner {
+			return fail(400, "Pedido inválido.")
+		}
+		var help HelpResult
+		help, err = HelpNeighbor(s, op.User, op.Owner, "cheer", now)
+		body = map[string]any{"actorId": command.ActorID, "help": help}
 	case "staff_hire", "staff_role", "staff_dismiss":
 		var command struct {
 			ProfileID string `json:"profileId"`
@@ -173,6 +199,33 @@ func Operate(s Store, op gamewire.Operation, now time.Time) gamewire.Result {
 	return gamewire.Result{Status: status, Body: data, World: &w}
 }
 
+// VisitorActions are the room operations a visitor may run in another café:
+// seasoning a stove, clearing a table and cheering a waiting customer up.
+var VisitorActions = map[string]bool{"cook_season": true, "table_clean": true, "npc_cheer": true}
+
+// seasonAsNeighbor seasons; a visitor's seasoning also counts as a neighbour's
+// help while there is help left today (seasoning a friend's dish is always allowed).
+func seasonAsNeighbor(s Store, op gamewire.Operation, stoveID string, spice int, now time.Time) (*HelpResult, error) {
+	var help *HelpResult
+	err := s.Transaction(func(tx Store) error {
+		if err := SeasonCooking(tx, op.Owner, op.User, stoveID, spice, now); err != nil {
+			return err
+		}
+		if op.User == op.Owner {
+			return nil
+		}
+		result, err := HelpNeighbor(tx, op.User, op.Owner, "season", now)
+		if errors.Is(err, ErrHelpLimit) || errors.Is(err, ErrNotNeighbor) {
+			return nil
+		}
+		if err == nil {
+			help = &result
+		}
+		return err
+	})
+	return help, err
+}
+
 // ErrorStatus maps a rule error to its HTTP status and the message shown to
 // the player; routes that run the rules without the room service use it too.
 func ErrorStatus(err error) (int, string) { return errorStatus(err) }
@@ -190,8 +243,10 @@ func errorStatus(err error) (int, string) {
 	switch {
 	case is(ErrRoomOwned, ErrStoveNotOwned, ErrMachineMissing):
 		return 404, "Item indisponível."
-	case is(ErrStaffMissing):
+	case is(ErrStaffMissing, ErrNotNeighbor):
 		return 404, err.Error()
+	case is(ErrHelpLimit, ErrHelpSelf):
+		return 409, err.Error()
 	case is(ErrStaffProfile, ErrStaffRole, ErrExpansionPay):
 		return 400, err.Error()
 	case is(ErrStaffSlots, ErrStaffHired, ErrStaffCoins, ErrExpansionMax, ErrExpansionStep, ErrExpansionLevel,

@@ -74,6 +74,8 @@ type CookingSnapshot struct {
 	Refund int64 `json:"refund,omitempty"`
 	// XP a serve just credited for the owner's own seasoning; only in a serve's answer.
 	SeasonXP int64 `json:"seasonXp,omitempty"`
+	// A visitor's seasoning counted as a neighbour's help (only in that answer).
+	Help *HelpResult `json:"help,omitempty"`
 }
 
 // EnsureStarterStove gives a café its first stove once. A café with any stove

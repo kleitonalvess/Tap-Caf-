@@ -61,3 +61,26 @@ func TestAVisitorPaysAsAVisitor(t *testing.T) {
 		t.Fatalf("the serving reached persistence as %v", store.vips)
 	}
 }
+
+func TestAVisitorCheersOnlyAWaitingCustomer(t *testing.T) {
+	r, _ := economyRoom(&economyStore{})
+	now := time.Now()
+	r.world.Foods = nil
+	customer := seatedCustomer(r, now)
+	customer.Kind = "npc"
+	op := gamewire.Operation{Owner: "owner", User: "friend", Action: "npc_cheer", Body: []byte(`{"actorId":"npc:seated"}`)}
+	if message := r.validateOperation(op); message != "Entre no café para animar os clientes." {
+		t.Fatalf("a visitor outside: %q", message)
+	}
+	r.actors["human:friend"] = &entity{Actor: gamewire.Actor{ID: "human:friend", Kind: "human", X: 5, Y: 5}}
+	if message := r.validateOperation(op); message != "" {
+		t.Fatalf("cheering a waiting customer: %q", message)
+	}
+	customer.Food = &gamewire.Food{ID: "dish"}
+	if message := r.validateOperation(op); message != "Este cliente não está esperando." {
+		t.Fatalf("cheering a customer who eats: %q", message)
+	}
+	if !cafeVisitorActions["npc_cheer"] || cafeVisitorActions["cook_cancel"] {
+		t.Fatal("visitor actions")
+	}
+}

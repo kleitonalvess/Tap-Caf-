@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/pocketbase/pocketbase/core"
 	"sort"
 	"testing"
 	"time"
@@ -487,18 +488,106 @@ func parityLog(t *testing.T, s cafe.Store, owner string, t0 time.Time) []string 
 		boosted, _ := s.First(cafe.PlayerCollection, cafe.Where{"user": owner})
 		log("energy after the boost", map[string]any{"current": boosted.GetInt("energy_current"), "at": offset(boosted.GetTime("energy_at").UTC().Format(cafe.TimeLayout))})
 	}
+
+	// Sprint 16, the neighbourhood: a generated neighbour's café, the help paid
+	// there (neighbor_helps) and the daily gifts (player_gifts), read back.
+	social := t0.Add(200 * time.Hour)
+	if _, err := cafe.GetOrCreatePlayer(s, parityFriend); err != nil {
+		t.Fatal(err)
+	}
+	neighbors, err := cafe.ListNeighbors(s, owner, social)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := []string{}
+	for _, n := range neighbors.Neighbors {
+		listed = append(listed, fmt.Sprintf("%s %s L%d helps=%d", n.Kind, n.Name, n.Level, n.HelpsLeft))
+	}
+	log("neighbours", listed)
+	log("neighbour cafe", outcome(cafe.EnsureNeighborCafe(s, parityNeighbor, social)))
+	neighborDirt, _ := cafe.RoomDirt(s, parityNeighbor)
+	neighborCooking, _ := cafe.SnapshotCooking(s, parityNeighbor, social)
+	dish := ""
+	if len(neighborCooking.Stoves) > 0 && neighborCooking.Stoves[0].Cooking != nil {
+		dish = neighborCooking.Stoves[0].Cooking.RecipeID + " " + neighborCooking.Stoves[0].Cooking.Status
+	}
+	log("neighbour chores", map[string]any{"dirty": len(neighborDirt), "dish": dish})
+	if len(neighborDirt) > 0 {
+		body, _ := json.Marshal(map[string]string{"tableId": neighborDirt[0].TableID})
+		result := cafe.Operate(s, gamewire.Operation{Owner: parityNeighbor, User: owner, Action: "table_clean", Body: body}, social)
+		var cleaned struct {
+			Plates int             `json:"plates"`
+			Help   cafe.HelpResult `json:"help"`
+		}
+		_ = json.Unmarshal(result.Body, &cleaned)
+		log("help: clean a table", map[string]any{"status": result.Status, "plates": cleaned.Plates, "coins": cleaned.Help.Coins, "xp": cleaned.Help.XP, "left": cleaned.Help.HelpsLeft, "gold": cleaned.Help.State.Gold})
+	}
+	for i := 0; i < 3; i++ {
+		help, err := cafe.HelpNeighbor(s, owner, parityNeighbor, "cheer", social)
+		log(fmt.Sprintf("help: cheer %d", i), map[string]any{"err": outcome(err), "coins": help.Coins, "xp": help.XP, "energy": help.Energy, "left": help.HelpsLeft})
+	}
+	sent, err := cafe.SendGift(s, owner, parityFriend, "coins", social)
+	log("gift to the friend", map[string]any{"err": outcome(err), "sent": sent.SentToday})
+	_, err = cafe.SendGift(s, owner, parityFriend, "coins", social)
+	log("gift twice", outcome(err))
+	_, err = cafe.SendGift(s, owner, parityNeighbor, "part", social)
+	log("gift to the neighbour", outcome(err))
+	waiting, err := cafe.SnapshotGifts(s, parityFriend, social)
+	friendGift := ""
+	for _, g := range waiting.Received {
+		if g.From == owner {
+			friendGift = g.ID
+		}
+	}
+	log("friend's gifts", map[string]any{"err": outcome(err), "waiting": len(waiting.Received), "fromOwner": friendGift != ""})
+	opened, err := cafe.ClaimGift(s, parityFriend, friendGift, social)
+	log("friend opens", map[string]any{"err": outcome(err), "item": opened.Gift.Item.ID, "xp": opened.XP, "gold": opened.State.Gold, "claimed": opened.Gifts.ClaimedToday})
+	mine, err := cafe.SnapshotGifts(s, owner, social)
+	if err == nil && len(mine.Received) > 0 {
+		npcGift, err := cafe.ClaimGift(s, owner, mine.Received[0].ID, social)
+		log("open the neighbour's gift", map[string]any{"err": outcome(err), "from": npcGift.Gift.FromName, "item": npcGift.Gift.Item.ID, "pantry": npcGift.State.Pantry})
+	}
+	after, err := cafe.ListNeighbors(s, owner, social)
+	for _, n := range after.Neighbors {
+		if n.ID == parityNeighbor || n.ID == parityFriend {
+			log("neighbour after", map[string]any{"err": outcome(err), "name": n.Name, "helps": n.HelpsLeft, "giftSent": n.GiftSent})
+		}
+	}
 	world("final")
 	return lines
 }
+
+// The neighbourhood steps use a generated neighbour and a second player; the
+// server test creates both users first (relations need them).
+const (
+	parityNeighbor = "npcneighbor0001"
+	parityFriend   = "parityfriend001"
+)
 
 // The server (PocketBase) and the standalone build (memory) run the same
 // rules; this game, played on both, must look the same on both.
 func TestMemoryStoreMatchesPocketBase(t *testing.T) {
 	app, owner := newEconomyApp(t)
+	if err := ensureNeighborUser(app, parityNeighbor); err != nil {
+		t.Fatal(err)
+	}
+	users, _ := app.FindCollectionByNameOrId("users")
+	friend := core.NewRecord(users)
+	friend.Id = parityFriend
+	friend.SetEmail("friend@local.mail")
+	friend.SetPassword("123456")
+	if err := app.Save(friend); err != nil {
+		t.Fatal(err)
+	}
 	t0 := time.Now().UTC().Truncate(time.Millisecond)
 	server := parityLog(t, pb(app), owner, t0)
 	browser := parityLog(t, cafe.NewMemoryStore(), owner, t0)
 	if len(server) != len(browser) {
+		for i := 0; i < min(len(server), len(browser)); i++ {
+			if server[i] != browser[i] {
+				t.Fatalf("%d lines on the server, %d in memory; first difference at %d\nserver: %s\nmemory: %s", len(server), len(browser), i, server[i], browser[i])
+			}
+		}
 		t.Fatalf("%d lines on the server, %d in memory", len(server), len(browser))
 	}
 	for i := range server {

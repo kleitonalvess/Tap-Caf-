@@ -320,8 +320,8 @@ func (m *Manager) Command(ctx context.Context, p *Peer, c gamewire.Command) erro
 }
 func (m *Manager) Operate(ctx context.Context, op gamewire.Operation) (gamewire.Result, error) {
 	v, err := m.call(ctx, op.Owner, func(r *room) any {
-		// A visitor in the café may season a friend's stove; nothing else.
-		if op.User != op.Owner && op.Action != "cook_season" {
+		// A visitor in the café may season, clear a table or cheer a customer up.
+		if op.User != op.Owner && !cafeVisitorActions[op.Action] {
 			return gamewire.Result{Status: 403, Body: json.RawMessage(`{"message":"Somente o dono pode alterar o quarto."}`)}
 		}
 		if message := r.validateOperation(op); message != "" {
@@ -357,6 +357,20 @@ func (m *Manager) Operate(ctx context.Context, op gamewire.Operation) (gamewire.
 					}
 					_ = json.Unmarshal(op.Body, &body)
 					r.startCookingAction(a, body.StoveID, time.Now())
+					r.broadcast(gamewire.Event{Type: "actors", Actors: []gamewire.Actor{r.status(a, false)}}, "")
+				}
+			}
+			if op.Action == "npc_cheer" {
+				var body struct {
+					ActorID string `json:"actorId"`
+				}
+				_ = json.Unmarshal(op.Body, &body)
+				if a := r.actors[body.ActorID]; a != nil && r.cheerable(a) {
+					// A neighbour's visit: the customer waits the whole patience again, smiling.
+					now := time.Now()
+					r.startPatience(a, now)
+					// A smile only: the verdict emotion (startEmotion) still comes at the end.
+					a.Emotion = &gamewire.Emotion{ID: uuid.NewString(), Kind: "satisfied", StartedAt: now.UnixMilli(), Duration: emotionDuration.Milliseconds()}
 					r.broadcast(gamewire.Event{Type: "actors", Actors: []gamewire.Actor{r.status(a, false)}}, "")
 				}
 			}
@@ -1173,8 +1187,29 @@ func (r *room) validateOperation(op gamewire.Operation) string {
 	if op.Action == "cook_season" && r.actors["human:"+op.User] == nil {
 		return "Entre no café para temperar."
 	}
+	if op.Action == "npc_cheer" {
+		var target struct {
+			ActorID string `json:"actorId"`
+		}
+		_ = json.Unmarshal(op.Body, &target)
+		if r.actors["human:"+op.User] == nil {
+			return "Entre no café para animar os clientes."
+		}
+		if a := r.actors[target.ActorID]; a == nil || !r.cheerable(a) {
+			return "Este cliente não está esperando."
+		}
+	}
 	return ""
 }
+
+// cafeVisitorActions mirrors cafe.VisitorActions: what a visitor may do in another café.
+var cafeVisitorActions = map[string]bool{"cook_season": true, "table_clean": true, "npc_cheer": true}
+
+// cheerable: a seated customer still waiting for food, whose patience a visitor may renew.
+func (r *room) cheerable(a *entity) bool {
+	return a.Kind == "npc" && a.State == "seated" && a.Food == nil && !a.patienceUntil.IsZero()
+}
+
 func (r *room) updateWorld(w gamewire.World) {
 	old := map[string]Unit{}
 	for _, u := range r.world.Units {

@@ -41,6 +41,7 @@ func main() {
 		registerStreetRoutes(e)
 		registerMachineRoutes(e)
 		registerRewardRoutes(e)
+		registerNeighborRoutes(e)
 		registerRoomRoutes(e)
 		publicDir := os.Getenv("COFFE_PUBLIC_DIR")
 		if publicDir == "" {

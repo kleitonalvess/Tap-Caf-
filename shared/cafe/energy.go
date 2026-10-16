@@ -69,3 +69,18 @@ func AddEnergy(state Record, amount int, now time.Time) {
 	current := settleEnergy(state, now)
 	state.Set("energy_current", min(gamerules.Energy().Cap, current+amount))
 }
+
+// RefillEnergy gives back up to amount energy without passing the maximum
+// (a help in a neighbour's café); it returns what it added.
+func RefillEnergy(state Record, amount int, now time.Time) int {
+	current := settleEnergy(state, now)
+	limit := state.GetInt("energy_max")
+	if limit < 1 {
+		limit = gamerules.Energy().Max
+	}
+	added := max(0, min(amount, limit-current))
+	if added > 0 {
+		state.Set("energy_current", current+added)
+	}
+	return added
+}

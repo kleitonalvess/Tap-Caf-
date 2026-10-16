@@ -31,7 +31,7 @@ func registerRoomRoutes(e *core.ServeEvent) {
 		if owner == "" {
 			owner = user.Id
 		}
-		if _, err := r.App.FindRecordById("users", owner); err != nil {
+		if err := prepareRoomOwner(r.App, owner); err != nil {
 			return r.NotFoundError("Quarto não encontrado.", nil)
 		}
 		if err := ensureRoom(r.App, owner); err != nil {

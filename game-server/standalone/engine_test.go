@@ -474,3 +474,50 @@ func TestUnknownFieldsAreRefusedLikeOnTheServer(t *testing.T) {
 		t.Fatalf("harvest with a body = %d", status)
 	}
 }
+
+// A non-player neighbour's café opens in the browser: a ticket into it, the
+// visitor's view of the room, the help paid there and nothing else allowed.
+func TestVisitingANeighborCafe(t *testing.T) {
+	e := newEngine(t, cafe.NewMemoryStore(), time.Time{})
+	const neighbor = "npcneighbor0003"
+	var ticket struct {
+		Ticket  string `json:"ticket"`
+		RoomID  string `json:"roomId"`
+		CanEdit bool   `json:"canEdit"`
+	}
+	if status := fetchJSON(t, e, "POST", "/api/coffe/game-ticket", map[string]string{"roomId": neighbor}, &ticket); status != 200 || ticket.RoomID != neighbor || ticket.CanEdit {
+		t.Fatalf("ticket: %d %+v", status, ticket)
+	}
+	if status := fetchJSON(t, e, "POST", "/api/coffe/game-ticket", map[string]string{"roomId": "someoneelse0001"}, nil); status != 404 {
+		t.Fatalf("a stranger's café: %d", status)
+	}
+	var room cafe.RoomSnapshot
+	if status := fetchJSON(t, e, "GET", "/api/coffe/room?room="+neighbor, nil, &room); status != 200 || room.CanEdit || room.TipJar != nil || room.RoomID != neighbor {
+		t.Fatalf("visitor room: %d %+v", status, room.RoomID)
+	}
+	c := open(t, e)
+	c.send(gamewire.Command{Type: "join", Ticket: ticket.Ticket})
+	welcome := c.wait("welcome")
+	if welcome.World == nil || welcome.World.RoomID != neighbor || len(welcome.World.Dirt) == 0 {
+		t.Fatalf("welcome into the neighbour's café: %+v", welcome.World)
+	}
+	table := welcome.World.Dirt[0].TableID
+	// The help needs the visitor beside the table; far away the room refuses it.
+	if status := fetchJSON(t, e, "POST", "/api/coffe/room/tables/clean", map[string]string{"tableId": table, "roomId": neighbor}, nil); status != 409 {
+		t.Fatalf("cleaning from across the room: %d", status)
+	}
+	if status := fetchJSON(t, e, "POST", "/api/coffe/room/purchase", map[string]any{"itemId": 3500000, "tx": 2, "ty": 2, "rotation": 0, "revision": 1, "requestId": "visitor-purchase-0001", "roomId": neighbor}, nil); status != 400 {
+		t.Fatalf("a visitor buying for the neighbour: %d", status)
+	}
+	var neighbors cafe.NeighborsSnapshot
+	if status := fetchJSON(t, e, "GET", "/api/coffe/neighbors", nil, &neighbors); status != 200 || len(neighbors.Neighbors) == 0 {
+		t.Fatalf("neighbours: %d", status)
+	}
+	var gifts cafe.GiftsSnapshot
+	if status := fetchJSON(t, e, "GET", "/api/coffe/gifts", nil, &gifts); status != 200 || len(gifts.Received) == 0 {
+		t.Fatalf("gifts: %d", status)
+	}
+	if status := fetchJSON(t, e, "POST", "/api/coffe/gifts/send", map[string]string{"to": neighbor, "item": "coins"}, nil); status != 200 {
+		t.Fatalf("send a gift: %d", status)
+	}
+}

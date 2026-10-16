@@ -294,7 +294,8 @@ func TestClaimAchievementTiersInOrder(t *testing.T) {
 	if _, err := ClaimAchievement(s, "owner", "customers", progressT0); !errors.Is(err, ErrRewardLocked) {
 		t.Fatalf("third tier without progress: %v", err)
 	}
-	if _, err := ClaimAchievement(s, "owner", "amount_neighbors", progressT0); !errors.Is(err, ErrRewardMissing) {
+	// The social achievements are visible since the neighbours (Sprint 16): locked without help given.
+	if _, err := ClaimAchievement(s, "owner", "amount_neighbors", progressT0); !errors.Is(err, ErrRewardLocked) {
 		t.Fatalf("social achievement: %v", err)
 	}
 }

@@ -22,10 +22,12 @@ func registerTableRoutes(e *core.ServeEvent) {
 		}
 		var body struct {
 			TableID string `json:"tableId"`
+			// A neighbour's café: the visitor's help (the room checks the visitor stands beside the table).
+			RoomID string `json:"roomId,omitempty"`
 		}
 		decoder := json.NewDecoder(r.Request.Body)
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&body); err != nil || body.TableID == "" || len(body.TableID) > 40 {
+		if err := decoder.Decode(&body); err != nil || body.TableID == "" || len(body.TableID) > 40 || len(body.RoomID) > 15 {
 			return r.BadRequestError("Mesa inválida.", nil)
 		}
 		if err := decoder.Decode(new(any)); err != io.EOF {
@@ -33,8 +35,15 @@ func registerTableRoutes(e *core.ServeEvent) {
 		}
 		r.Response.Header().Set("Cache-Control", "no-store")
 		command := map[string]string{"tableId": body.TableID}
+		owner := user.Id
+		if body.RoomID != "" {
+			owner = body.RoomID
+		}
 		if roomService(r.App) != nil {
-			return proxyRoomOperationAs(r, user.Id, user.Id, "table_clean", command)
+			return proxyRoomOperationAs(r, owner, user.Id, "table_clean", command)
+		}
+		if owner != user.Id {
+			return apis.NewApiError(503, "O café do vizinho está fechado agora.", nil)
 		}
 		data, _ := json.Marshal(command)
 		result := persistenceOperation(r.App, gamewire.Operation{Owner: user.Id, User: user.Id, Action: "table_clean", Body: data})

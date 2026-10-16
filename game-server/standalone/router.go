@@ -38,6 +38,9 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 	if action, ok := operations[path]; ok {
 		return e.operate(action, body)
 	}
+	if path == "/api/coffe/room/cheer" {
+		return e.operate("npc_cheer", body)
+	}
 	switch path {
 	case "/api/coffe/session/login":
 		return reply(200, e.session())
@@ -51,7 +54,14 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 			return failure(400, "Quarto inválido.")
 		}
 		if request.RoomID != "" && request.RoomID != e.profile.ID {
-			return failure(404, "Quarto não encontrado.")
+			// A non-player neighbour's café: ready for the visit, then a ticket into it.
+			if _, npc := gamerules.NeighborByID(request.RoomID); !npc {
+				return failure(404, "Quarto não encontrado.")
+			}
+			if err := cafe.EnsureNeighborCafe(e.store, request.RoomID, time.Now()); err != nil {
+				return failure(500, "Quarto indisponível.")
+			}
+			return reply(200, map[string]any{"ticket": "local:" + request.RoomID, "roomId": request.RoomID, "canEdit": false})
 		}
 		if err := cafe.EnsureRoom(e.store, e.profile.ID); err != nil {
 			return failure(500, "Quarto indisponível.")
@@ -196,6 +206,31 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 			return failure(cafe.PantryErrorStatus(err))
 		}
 		return reply(200, result)
+	case "/api/coffe/gifts/send":
+		var request struct {
+			To   string `json:"to"`
+			Item string `json:"item"`
+		}
+		if strictJSON(body, &request) != nil || request.To == "" {
+			return failure(400, "Presente inválido.")
+		}
+		gifts, err := cafe.SendGift(e.store, e.profile.ID, request.To, request.Item, time.Now())
+		if err != nil {
+			return failure(cafe.NeighborErrorStatus(err))
+		}
+		return reply(200, gifts)
+	case "/api/coffe/gifts/claim":
+		var request struct {
+			ID string `json:"id"`
+		}
+		if strictJSON(body, &request) != nil || request.ID == "" {
+			return failure(400, "Presente inválido.")
+		}
+		claim, err := cafe.ClaimGift(e.store, e.profile.ID, request.ID, time.Now())
+		if err != nil {
+			return failure(cafe.NeighborErrorStatus(err))
+		}
+		return reply(200, claim)
 	case "/api/coffe/room/away/ack":
 		if err := cafe.AcknowledgeAway(e.store, e.profile.ID); err != nil && !errors.Is(err, cafe.ErrNotFound) {
 			return failure(500, "Não foi possível salvar.")
@@ -206,12 +241,27 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 }
 
 func (e *Engine) get(path string, query url.Values) (int, []byte) {
-	// A local café has one room: the player's.
-	if room := query.Get("room"); room != "" && room != e.profile.ID {
-		return failure(404, "Quarto não encontrado.")
-	}
+	// The player's café, or a non-player neighbour's for the room and its cooking.
 	owner := e.profile.ID
+	if room := query.Get("room"); room != "" && room != e.profile.ID {
+		if _, npc := gamerules.NeighborByID(room); !npc || path != "/api/coffe/room" && path != "/api/coffe/cooking" {
+			return failure(404, "Quarto não encontrado.")
+		}
+		return e.visit(path, room)
+	}
 	switch path {
+	case "/api/coffe/neighbors":
+		neighbors, err := cafe.ListNeighbors(e.store, owner, time.Now())
+		if err != nil {
+			return failure(500, "Não foi possível carregar os vizinhos.")
+		}
+		return reply(200, neighbors)
+	case "/api/coffe/gifts":
+		gifts, err := cafe.SnapshotGifts(e.store, owner, time.Now())
+		if err != nil {
+			return failure(500, "Não foi possível carregar os presentes.")
+		}
+		return reply(200, gifts)
 	case "/api/coffe/session":
 		return reply(200, e.session())
 	case "/api/coffe/rules":
@@ -290,6 +340,43 @@ func (e *Engine) get(path string, query url.Values) (int, []byte) {
 	return failure(404, "Recurso indisponível no modo offline.")
 }
 
+// visit answers the room and cooking of a neighbour's café as a visitor sees
+// them (database/room.go and cooking.go): the placed units with the player's
+// own HUD, nothing private, and no emergency help.
+func (e *Engine) visit(path, room string) (int, []byte) {
+	if err := cafe.EnsureNeighborCafe(e.store, room, time.Now()); err != nil {
+		return failure(500, "Não foi possível carregar o quarto.")
+	}
+	if path == "/api/coffe/cooking" {
+		snapshot, err := cafe.SnapshotCooking(e.store, room, time.Now())
+		if err != nil {
+			return failure(500, "Não foi possível carregar o preparo.")
+		}
+		snapshot.EmergencyRecipeID = ""
+		return reply(200, snapshot)
+	}
+	snapshot, err := cafe.SnapshotRoom(e.store, room)
+	if err != nil {
+		return failure(500, "Não foi possível carregar o inventário.")
+	}
+	snapshot.CanEdit = false
+	snapshot.AwaySummary = nil
+	snapshot.TipJar = nil
+	placed := []cafe.RoomUnit{}
+	for _, unit := range snapshot.Inventory {
+		if unit.Placed {
+			placed = append(placed, unit)
+		}
+	}
+	snapshot.Inventory = placed
+	state, err := cafe.GetOrCreatePlayer(e.store, e.profile.ID)
+	if err != nil {
+		return failure(500, "Não foi possível carregar os dados do jogador.")
+	}
+	snapshot.PlayerState = cafe.PlayerView(state)
+	return reply(200, snapshot)
+}
+
 func (e *Engine) operate(action string, body []byte) (int, []byte) {
 	if len(body) == 0 {
 		body = []byte("{}")
@@ -305,9 +392,23 @@ func (e *Engine) operate(action string, body []byte) (int, []byte) {
 	if m == nil {
 		return failure(503, "O café está em pausa. Tente novamente.")
 	}
+	// A visitor's help goes to the neighbour's room (roomId); everything else to the player's.
+	owner := e.profile.ID
+	var target struct {
+		RoomID string `json:"roomId"`
+	}
+	_ = json.Unmarshal(body, &target)
+	if target.RoomID != "" && target.RoomID != e.profile.ID {
+		if _, npc := gamerules.NeighborByID(target.RoomID); !npc || !cafe.VisitorActions[action] {
+			return failure(403, "Somente o dono pode alterar o quarto.")
+		}
+		owner = target.RoomID
+	} else if action == "npc_cheer" {
+		return failure(400, "Pedido inválido.")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
-	result, err := m.Operate(ctx, gamewire.Operation{Owner: e.profile.ID, User: e.profile.ID, Action: action, Body: body})
+	result, err := m.Operate(ctx, gamewire.Operation{Owner: owner, User: e.profile.ID, Action: action, Body: body})
 	if err != nil {
 		return failure(503, "O serviço do quarto está indisponível. Tente novamente.")
 	}
@@ -392,7 +493,7 @@ var streetActions = func() map[string]bool {
 var operationFields = func() map[string][]string {
 	room := []string{"itemId", "unitId", "tx", "ty", "rotation", "revision", "requestId"}
 	fields := map[string][]string{"purchase": room, "move": room, "store": room, "sell": room,
-		"table_clean": {"tableId"}, "room_expand": {"tiles", "pay"}}
+		"table_clean": {"tableId", "roomId"}, "room_expand": {"tiles", "pay"}, "npc_cheer": {"roomId", "actorId"}}
 	for _, route := range cafe.CookingActions {
 		fields[route.Action] = []string{"stoveId", "recipeId", "roomId", "spice"}
 	}

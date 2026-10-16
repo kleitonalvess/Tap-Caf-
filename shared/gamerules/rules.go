@@ -483,6 +483,8 @@ type Rules struct {
 	Tips              []Tip              `json:"tips"`
 	TipJar            TipJarRules        `json:"tipJar"`
 	Visitors          VisitorRules       `json:"visitors"`
+	Neighbors         NeighborRules      `json:"neighbors"`
+	Gifts             GiftRules          `json:"gifts"`
 	EmployeeLocks     []EmployeeLock     `json:"employeeLocks"`
 	Recipes           []Recipe           `json:"recipes"`
 }
@@ -534,6 +536,9 @@ func validate(r Rules) string {
 		}
 	}
 	if message := validateVisitors(r); message != "" {
+		return message
+	}
+	if message := validateNeighbors(r); message != "" {
 		return message
 	}
 	if len(r.Tips) == 0 || r.Tips[0].Level != 1 || r.TipJar.DepositPercent < 0 || r.TipJar.DepositPercent > 100 || r.TipJar.DepositMin < 0 {

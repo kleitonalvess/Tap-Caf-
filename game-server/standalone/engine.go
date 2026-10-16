@@ -10,6 +10,7 @@ import (
 	"errors"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -267,6 +268,17 @@ func (e *Engine) Close(ctx context.Context) error {
 	return err
 }
 
+// ticketRoom reads the room of a local join ticket ("local" or "local:<room>");
+// only the player's café and the non-player neighbours' cafés exist here.
+func (e *Engine) ticketRoom(ticket string) string {
+	if room, ok := strings.CutPrefix(ticket, "local:"); ok {
+		if _, npc := gamerules.NeighborByID(room); npc {
+			return room
+		}
+	}
+	return e.profile.ID
+}
+
 func (e *Engine) nextPeerID() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -274,8 +286,12 @@ func (e *Engine) nextPeerID() string {
 	return "local-" + strconv.Itoa(e.peers)
 }
 
-func (e *Engine) ticket() gamewire.Ticket {
-	t := gamewire.Ticket{Room: e.profile.ID, User: e.profile.ID, Name: e.profile.Name}
+// ticketFor is the player's ticket into a room: their café or a neighbour's.
+func (e *Engine) ticketFor(room string) gamewire.Ticket {
+	if room == "" {
+		room = e.profile.ID
+	}
+	t := gamewire.Ticket{Room: room, User: e.profile.ID, Name: e.profile.Name}
 	if state, err := cafe.GetOrCreatePlayer(e.store, e.profile.ID); err == nil {
 		t.Appearance = state.GetString("appearance")
 	}

@@ -171,7 +171,13 @@ func (t *memTx) Find(collection string, query Query) ([]Record, error) {
 	if len(query.Sort) > 0 {
 		sort.SliceStable(rows, func(i, j int) bool {
 			for _, field := range query.Sort {
-				if c := rows[i].compare(rows[j], field); c != 0 {
+				// "-field" sorts descending, as in PocketBase.
+				descending := strings.HasPrefix(field, "-")
+				c := rows[i].compare(rows[j], strings.TrimPrefix(field, "-"))
+				if descending {
+					c = -c
+				}
+				if c != 0 {
 					return c < 0
 				}
 			}

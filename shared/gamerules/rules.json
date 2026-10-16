@@ -96,6 +96,30 @@
     ]
   },
   "tipJar": { "depositPercent": 20, "depositMin": 1, "provisional": true },
+  "neighbors": {
+    "provisional": true,
+    "helpsPerDay": 3,
+    "helpReward": { "coins": 20, "xp": 2, "energy": 2 },
+    "list": [
+      { "id": "npcneighbor0001", "special": -1, "name": "Papa dos Pudins", "cafeName": "Doceria do Papa", "level": 30, "theme": "noble", "recipe": "pudim", "tagline": "Vizinho especial: sempre por perto para uma ajuda." },
+      { "id": "npcneighbor0002", "special": -2, "name": "Tia Cotinha", "cafeName": "Cantinho da Tia Cotinha", "level": 70, "theme": "italy", "recipe": "feijoada", "tagline": "Vizinha especial: aparece a partir do nível 69.", "minLevel": 69 },
+      { "id": "npcneighbor0003", "name": "Seu Takeshi", "cafeName": "Banzai Lanches", "level": 12, "theme": "japan", "recipe": "coxinha", "tagline": "Mestre do balcão de sushi da rua." },
+      { "id": "npcneighbor0004", "name": "Dona Pina", "cafeName": "Mamma Pina", "level": 18, "theme": "italy", "recipe": "lasanha", "tagline": "A melhor lasanha do bairro." },
+      { "id": "npcneighbor0005", "name": "Conde Raul", "cafeName": "Salão do Conde", "level": 25, "theme": "noble", "recipe": "torta_de_frango", "tagline": "Chá das cinco com candelabro aceso." },
+      { "id": "npcneighbor0006", "name": "Mestre Juca", "cafeName": "Churrascaria do Juca", "level": 9, "recipe": "coxinha", "tagline": "Brasa acesa desde cedo." },
+      { "id": "npcneighbor0007", "name": "Lia", "cafeName": "Lia Sucos e Cafés", "level": 7, "recipe": "pao_de_queijo", "tagline": "Suco na hora e pão de queijo quentinho." },
+      { "id": "npcneighbor0008", "name": "Vovó Lurdinha", "cafeName": "Doces da Vovó", "level": 15, "recipe": "cake_1", "tagline": "Bolo de cenoura com cobertura de chocolate." }
+    ]
+  },
+  "gifts": {
+    "coins": 250, "xp": 3, "dailyGifts": 5, "daysLimit": 10,
+    "items": [
+      { "id": "coins", "name": "250 moedas", "coins": 250 },
+      { "id": "turbo", "name": "Cafezinho Turbo", "stock": 810001 },
+      { "id": "part", "name": "Peça de Máquina", "stock": 820001 },
+      { "id": "salt", "name": "Sal Turbinado", "spice": 800001 }
+    ]
+  },
   "visitors": {
     "provisional": true,
     "minLevel": 4, "chancePercent": 10, "cooldownSeconds": 300,
@@ -141,13 +165,13 @@
         { "target": 25, "coins": 2000, "xp": 50, "cash": 0 },
         { "target": 50, "coins": 5000, "xp": 250, "cash": 0 },
         { "target": 100, "coins": 7500, "xp": 350, "cash": 0 } ] },
-      { "id": "amount_neighbors", "code": 3, "name": "Boa Vizinhança", "description": "Tenha vizinhos no jogo.", "stat": "neighbors", "social": true, "goals": [
+      { "id": "amount_neighbors", "code": 3, "name": "Boa Vizinhança", "description": "Ajude vizinhos diferentes nos cafés deles.", "stat": "neighbors", "goals": [
         { "target": 1, "coins": 1000, "xp": 0, "cash": 0 },
         { "target": 5, "coins": 5000, "xp": 0, "cash": 0 },
         { "target": 10, "coins": 10000, "xp": 0, "cash": 0 },
         { "target": 25, "coins": 20000, "xp": 0, "cash": 0 },
         { "target": 50, "coins": 50000, "xp": 0, "cash": 0 } ] },
-      { "id": "sent_gifts", "code": 4, "name": "Generosidade", "description": "Envie presentes aos vizinhos.", "stat": "gifts", "social": true, "goals": [
+      { "id": "sent_gifts", "code": 4, "name": "Generosidade", "description": "Envie presentes aos vizinhos.", "stat": "gifts", "goals": [
         { "target": 1, "coins": 100, "xp": 0, "cash": 0 },
         { "target": 5, "coins": 200, "xp": 0, "cash": 0 },
         { "target": 15, "coins": 500, "xp": 0, "cash": 0 },

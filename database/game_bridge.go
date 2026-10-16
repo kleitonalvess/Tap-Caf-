@@ -116,7 +116,8 @@ func registerGameBridge(e *core.ServeEvent) error {
 		if owner == "" {
 			owner = user.Id
 		}
-		if _, err := r.App.FindRecordById("users", owner); err != nil {
+		// A non-player neighbour's café is made ready (user, room, chores) on the visit.
+		if err := prepareRoomOwner(r.App, owner); err != nil {
 			return r.NotFoundError("Quarto não encontrado.", nil)
 		}
 		if err := ensureRoom(r.App, owner); err != nil {

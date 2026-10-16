@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"coffe-mania/shared/gamewire"
@@ -113,8 +114,24 @@ func TestTableCleanOperation(t *testing.T) {
 	if result.Status != 200 || result.World == nil || len(result.World.Dirt) != 0 {
 		t.Fatalf("cleaning: %d %s", result.Status, result.Body)
 	}
-	op.User = "visitor"
-	if result = persistenceOperation(app, op); result.Status != 403 {
-		t.Fatalf("visitor cleaning: %d", result.Status)
+	// Since the neighbourhood (Sprint 16) a visitor's cleaning is a paid help;
+	// other owner operations stay refused to visitors.
+	users, _ := app.FindCollectionByNameOrId("users")
+	visitor := core.NewRecord(users)
+	visitor.SetEmail("visitor@local.mail")
+	visitor.SetPassword("123456")
+	if err := app.Save(visitor); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := serveCustomer(app, owner, addFood(t, app, owner, 1), table); err != nil {
+		t.Fatal(err)
+	}
+	op.User = visitor.Id
+	if result = persistenceOperation(app, op); result.Status != 200 || !strings.Contains(string(result.Body), `"help"`) {
+		t.Fatalf("visitor cleaning: %d %s", result.Status, result.Body)
+	}
+	cancel := gamewire.Operation{Owner: owner, User: visitor.Id, Action: "cook_cancel", Body: []byte(`{"stoveId":"x"}`)}
+	if result = persistenceOperation(app, cancel); result.Status != 403 {
+		t.Fatalf("visitor cancelling: %d", result.Status)
 	}
 }
