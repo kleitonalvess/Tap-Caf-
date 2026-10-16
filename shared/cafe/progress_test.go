@@ -286,6 +286,10 @@ func TestClaimAchievementTiersInOrder(t *testing.T) {
 			claim.State.Experience.Current != before.GetFloat("experience_current")+float64(goal.XP) {
 			t.Fatalf("tier %d paid %+v, state %+v", tier, claim.Reward, claim.State)
 		}
+		// Each tier also fills a free surprise crate.
+		if !claim.FreeCrate || claim.State.Crates.Current != before.GetFloat("crates_current")+1 {
+			t.Fatalf("tier %d crate: %v, crates %+v", tier, claim.FreeCrate, claim.State.Crates)
+		}
 	}
 	if _, err := ClaimAchievement(s, "owner", "customers", progressT0); !errors.Is(err, ErrRewardLocked) {
 		t.Fatalf("third tier without progress: %v", err)

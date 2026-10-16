@@ -42,7 +42,6 @@
   },
   "decor": { "fullCopies": 3, "halfCopies": 3, "maxBonusTenths": 150 },
   "spices": {
-    "provisional": true,
     "list": [
       { "code": 800001, "name": "Tempero Caseiro", "effect": "double", "description": "Dobra as porções extras do tempero.", "priceCoins": 150 },
       { "code": 800002, "name": "Tempero do Chef", "effect": "rush", "description": "Adianta pela metade o tempo que falta no fogo.", "priceCoins": 400 },
@@ -50,7 +49,6 @@
     ]
   },
   "crates": {
-    "provisional": true,
     "freeMax": 10,
     "list": [
       { "id": "surprise", "name": "Caixa Surpresa", "free": true, "prizes": [
@@ -59,10 +57,10 @@
       { "id": "brown", "code": 980400, "name": "Caixa Marrom", "coins": 2000, "prizes": [
         { "weight": 3, "coins": 1200 }, { "weight": 2, "coins": 3000 }, { "weight": 2, "spice": 800001, "count": 3 },
         { "weight": 2, "spice": 800002, "count": 2 }, { "weight": 1, "item": 3020005 }, { "weight": 1, "item": 3040006 } ] },
-      { "id": "purple", "code": 980100, "name": "Caixa Roxa", "cash": 7, "prizes": [
+      { "id": "purple", "code": 980100, "name": "Caixa Roxa", "cash": 4, "prizes": [
         { "weight": 2, "item": 3000013 }, { "weight": 2, "item": 3010003 }, { "weight": 2, "item": 3020005 },
         { "weight": 2, "spice": 800003, "count": 3 }, { "weight": 1, "coins": 6000 }, { "weight": 1, "cash": 10 } ] },
-      { "id": "gold", "code": 980300, "name": "Caixa Dourada", "cash": 15, "prizes": [
+      { "id": "gold", "code": 980300, "name": "Caixa Dourada", "cash": 8, "prizes": [
         { "weight": 2, "item": 3040006 }, { "weight": 2, "item": 3010003 }, { "weight": 2, "item": 3000013 },
         { "weight": 2, "item": 3500004 }, { "weight": 1, "spice": 800002, "count": 4 }, { "weight": 1, "cash": 25 } ] }
     ]

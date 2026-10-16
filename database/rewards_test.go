@@ -242,3 +242,17 @@ func TestMissionsAndAchievementsOnPocketBase(t *testing.T) {
 		t.Fatalf("rename: %+v %v", state, err)
 	}
 }
+
+func TestPlayerLevelReachesTheLastLevelOfTheRules(t *testing.T) {
+	app, owner := newEconomyApp(t)
+	state := playerState(t, app, owner)
+	last := len(gamerules.Public().Levels)
+	state.Set("level", last)
+	if err := app.Save(state); err != nil {
+		t.Fatalf("level %d refused by the schema: %v", last, err)
+	}
+	state.Set("level", last+1)
+	if err := app.Save(state); err == nil {
+		t.Fatalf("level %d accepted", last+1)
+	}
+}

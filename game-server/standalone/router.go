@@ -1,10 +1,13 @@
 package standalone
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/url"
+	"slices"
 	"time"
 
 	"coffe-mania/shared/appearance"
@@ -44,7 +47,7 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 		var request struct {
 			RoomID string `json:"roomId"`
 		}
-		if len(body) > 0 && json.Unmarshal(body, &request) != nil {
+		if len(body) > 0 && strictJSON(body, &request) != nil {
 			return failure(400, "Quarto inválido.")
 		}
 		if request.RoomID != "" && request.RoomID != e.profile.ID {
@@ -58,7 +61,7 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 		var request struct {
 			Appearance string `json:"appearance"`
 		}
-		if json.Unmarshal(body, &request) != nil {
+		if strictJSON(body, &request) != nil {
 			return failure(400, "Visual inválido.")
 		}
 		value, err := appearance.Validate(request.Appearance)
@@ -88,7 +91,7 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 		var request struct {
 			ID string `json:"id"`
 		}
-		if json.Unmarshal(body, &request) != nil || request.ID == "" {
+		if strictJSON(body, &request) != nil || request.ID == "" {
 			return failure(400, "Carta inválida.")
 		}
 		claim, err := cafe.ClaimLetter(e.store, e.profile.ID, request.ID, time.Now())
@@ -106,7 +109,7 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 			Kind string `json:"kind"`
 			ID   string `json:"id"`
 		}
-		if json.Unmarshal(body, &request) != nil || request.ID == "" {
+		if strictJSON(body, &request) != nil || request.ID == "" {
 			return failure(400, "Prêmio inválido.")
 		}
 		var claim cafe.ProgressClaim
@@ -132,7 +135,7 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 		var request struct {
 			Name string `json:"name"`
 		}
-		if json.Unmarshal(body, &request) != nil {
+		if strictJSON(body, &request) != nil {
 			return failure(400, "Nome inválido.")
 		}
 		state, err := cafe.RenameCafe(e.store, e.profile.ID, request.Name)
@@ -147,7 +150,7 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 		var request struct {
 			Code int `json:"code"`
 		}
-		if json.Unmarshal(body, &request) != nil {
+		if strictJSON(body, &request) != nil {
 			return failure(400, "Tempero inválido.")
 		}
 		result, err := cafe.BuySpice(e.store, e.profile.ID, request.Code, time.Now())
@@ -160,7 +163,7 @@ func (e *Engine) Fetch(method, target string, body []byte) (int, []byte) {
 			Crate     string `json:"crate"`
 			RequestID string `json:"requestId"`
 		}
-		if json.Unmarshal(body, &request) != nil {
+		if strictJSON(body, &request) != nil {
 			return failure(400, "Caixa inválida.")
 		}
 		result, err := cafe.OpenCrate(e.store, e.profile.ID, request.Crate, request.RequestID, time.Now())
@@ -260,7 +263,11 @@ func (e *Engine) operate(action string, body []byte) (int, []byte) {
 	if len(body) == 0 {
 		body = []byte("{}")
 	}
-	if !json.Valid(body) {
+	// The same request shapes the PocketBase routes accept: an unknown field is
+	// refused, and the street buildings take no body at all.
+	if _, street := streetActions[action]; street {
+		body = []byte("{}")
+	} else if !allowedFields(action, body) {
 		return failure(400, "Pedido inválido.")
 	}
 	m := e.current()
@@ -321,4 +328,54 @@ func reply(status int, value any) (int, []byte) {
 func failure(status int, message string) (int, []byte) {
 	data, _ := json.Marshal(map[string]any{"status": status, "message": message, "data": map[string]any{}})
 	return status, data
+}
+
+// strictJSON decodes one JSON value and refuses unknown fields, like the
+// PocketBase routes (json.Decoder with DisallowUnknownFields).
+func strictJSON(body []byte, value any) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(value); err != nil {
+		return err
+	}
+	if decoder.Decode(new(any)) != io.EOF {
+		return errors.New("trailing data")
+	}
+	return nil
+}
+
+var streetActions = func() map[string]bool {
+	actions := map[string]bool{}
+	for _, action := range cafe.StreetActions {
+		actions[action] = true
+	}
+	return actions
+}()
+
+// operationFields lists the fields each room operation's PocketBase route
+// accepts (database/room.go, cooking.go, staff.go, tables.go, expansion.go).
+var operationFields = func() map[string][]string {
+	room := []string{"itemId", "unitId", "tx", "ty", "rotation", "revision", "requestId"}
+	fields := map[string][]string{"purchase": room, "move": room, "store": room,
+		"table_clean": {"tableId"}, "room_expand": {"tiles", "pay"}}
+	for _, route := range cafe.CookingActions {
+		fields[route.Action] = []string{"stoveId", "recipeId", "roomId", "spice"}
+	}
+	for _, action := range cafe.StaffActions {
+		fields[action] = []string{"profileId", "staffId", "role"}
+	}
+	return fields
+}()
+
+func allowedFields(action string, body []byte) bool {
+	var object map[string]json.RawMessage
+	if strictJSON(body, &object) != nil || object == nil {
+		return false
+	}
+	for key := range object {
+		if !slices.Contains(operationFields[action], key) {
+			return false
+		}
+	}
+	return true
 }

@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { renderAssetCatalog } from './asset-catalog-doc.mjs';
 
 const root = resolve(import.meta.dirname, '..');
 const directory = resolve(root, 'game/public/assets/items');
@@ -48,4 +49,5 @@ for (const item of items) {
 if (new Set(items.map((item) => item.id)).size !== items.length) throw new Error('IDs de catálogo duplicados.');
 writeFileSync(resolve(directory, 'catalog.json'), JSON.stringify({ items: items.map((item) => ({ id: item.id, classname: item.classname, manifest: `${item.classname}/item.json` })) }, null, 2) + '\n');
 writeFileSync(resolve(root, 'shared/roomcatalog/catalog.json'), JSON.stringify({ items }, null, 2) + '\n');
+writeFileSync(resolve(root, 'docs/ASSET_CATALOG.md'), renderAssetCatalog(items));
 console.log(`Catálogo do servidor sincronizado com ${items.length} pastas de itens.`);

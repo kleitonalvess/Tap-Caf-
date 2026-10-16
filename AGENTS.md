@@ -98,6 +98,7 @@ Distribuição do código fonte para desenvolvimento local. Banco, servidor do j
 | `scripts/` | Inicialização do ambiente e sincronização do catálogo. |
 | `tools/` | Asset Studio (Posicionador, Image Cutter e Twister) e gerador de gabaritos isométricos. |
 | `ripped/` | Efeitos sonoros e game-config.xml modificado, como referências do jogo. |
+| `docs/` | `ASSET_CATALOG.md` (gerado pelo `npm run assets:room`: origem, tema, dimensões, preço e função de cada item), `REFERENCE_AUDIT.md` (fontes históricas lidas ou bloqueadas) e `referencias/` (capturas salvas pelo responsável). |
 
 ## Iniciar em desenvolvimento
 

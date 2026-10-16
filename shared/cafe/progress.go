@@ -359,7 +359,8 @@ func ClaimAchievement(s Store, user, id string, now time.Time) (ProgressClaim, e
 		}
 		data.achievement[id] = tier + 1
 		writeStats(record, data)
-		claim, err = claimReward(tx, user, record, goals[tier].Reward, now, false)
+		// Every achievement tier also fills a free surprise crate (up to the bar's maximum).
+		claim, err = claimReward(tx, user, record, goals[tier].Reward, now, true)
 		return err
 	})
 	return claim, err

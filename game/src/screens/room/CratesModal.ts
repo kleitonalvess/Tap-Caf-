@@ -53,7 +53,7 @@ export class CratesModal extends RoomDialog {
     if (!pantry) return;
     this.clear();
     this.text('Caixas misteriosas', this.width / 2, 40, 60, DIALOG_COLORS.title);
-    this.text(`Caixas surpresa grátis: ${pantry.freeCrates}/${pantry.freeMax} (o trio de missões do dia dá mais uma). Itens exclusivos vão para o Inventário da loja.`,
+    this.text(`Caixas surpresa grátis: ${pantry.freeCrates}/${pantry.freeMax} (o trio de missões do dia e cada conquista dão mais uma). Itens exclusivos vão para o Inventário da loja.`,
       this.width / 2, 118, 22, DIALOG_COLORS.ink, { weight: '600', wrap: this.width - 160 });
     const crates = pantry.crates;
     const total = crates.length * CARD.w + (crates.length - 1) * CARD.gap;

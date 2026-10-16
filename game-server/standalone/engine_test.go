@@ -450,3 +450,27 @@ func TestPrepareImportFreezesTheCafe(t *testing.T) {
 		t.Fatal("another profile was accepted")
 	}
 }
+
+func TestUnknownFieldsAreRefusedLikeOnTheServer(t *testing.T) {
+	e := newEngine(t, cafe.NewMemoryStore(), time.Time{})
+	var cooking cafe.CookingSnapshot
+	fetchJSON(t, e, "GET", "/api/coffe/cooking", nil, &cooking)
+	for _, call := range []struct {
+		path string
+		body any
+	}{
+		{"/api/coffe/crates/open", map[string]any{"crate": "surprise", "requestId": "strict-request-0001", "extra": 1}},
+		{"/api/coffe/pantry/buy", map[string]any{"code": 800001, "free": true}},
+		{"/api/coffe/progress/claim", map[string]any{"kind": "mission", "id": "x", "force": true}},
+		{"/api/coffe/cooking/start", map[string]any{"stoveId": cooking.Stoves[0].ID, "recipeId": "pao_de_queijo", "costCoins": 0}},
+		{"/api/coffe/room/expand", map[string]any{"tiles": 10, "pay": "coins", "level": 99}},
+	} {
+		if status := fetchJSON(t, e, "POST", call.path, call.body, nil); status != 400 {
+			t.Fatalf("%s with an unknown field = %d, want 400", call.path, status)
+		}
+	}
+	// The street buildings ignore any body, as the PocketBase route does.
+	if status := fetchJSON(t, e, "POST", "/api/coffe/street/farm/harvest", map[string]any{"anything": 1}, nil); status != 200 {
+		t.Fatalf("harvest with a body = %d", status)
+	}
+}
